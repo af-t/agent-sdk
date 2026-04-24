@@ -1,0 +1,19 @@
+{
+  "name": "openrouter",
+  "version": "1.0.0",
+  "description": "",
+  "license": "MIT",
+  "author": "",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "dotenv": "^17.4.2",
+    "ignore": "^7.0.5",
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {}
+}
