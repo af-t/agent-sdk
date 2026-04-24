@@ -1,9 +1,22 @@
 {
   "name": "openrouter",
   "version": "1.0.0",
-  "description": "",
+  "description": "Minimal SDK to connect to openrouter API",
+  "keywords": [
+    "openrouter",
+    "api",
+    "agent"
+  ],
+  "homepage": "https://github.com/af-t/openrouter#readme",
+  "bugs": {
+    "url": "https://github.com/af-t/openrouter/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/af-t/openrouter.git"
+  },
   "license": "MIT",
-  "author": "",
+  "author": "Angga Firman",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
