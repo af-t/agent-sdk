@@ -19,6 +19,7 @@ async function createAgent() {
     apiKey: config.API_KEY,
     model: config.MODEL,
     order: config.ORDERS,
+    only: config.ONLY,
     tools
   });
 }

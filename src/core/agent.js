@@ -9,6 +9,7 @@ class Agent {
       model,
       tools,
       order,
+      only,
       systemPrompt = "You are a helpful AI assistant.",
       isSubagent = false,
       // Inject managers if provided (for subagents)
@@ -17,7 +18,10 @@ class Agent {
 
     this.apiKey = apiKey;
     this.model = model;
-    this.order = order || [];
+    this.provider = {
+      order: order,
+      only: only
+    };
     this.messages = [];
     this.system = [{ type: 'text', text: systemPrompt }];
     this.tools = tools;
@@ -60,7 +64,7 @@ class Agent {
       system: this.system,
       tools: this.tools?.getDefinitions?.(),
       thinking: this.thinking,
-      provider: { order: this.order },
+      provider: this.provider,
       //stream: false
     };
     const lastMsg = messages.slice(-1)[0];

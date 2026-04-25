@@ -25,7 +25,7 @@ Create a `.env` file or export environment variables:
 
 ```bash
 OPENROUTER_API_KEY=your_api_key
-MODEL=google/gemini-2.0-flash-001 # or any other OpenRouter model
+OPENROUTER_MODEL=google/gemini-3-flash-preview # or any other OpenRouter model
 ```
 
 ## Usage
