@@ -1,17 +1,14 @@
 # OpenRouter Agent
 
-A minimal yet powerful AI agent SDK designed to interact with the OpenRouter API. This agent is built for CLI efficiency, featuring multimodal input support and a rich set of instructional tools for file management, terminal interaction, and web research.
+A minimal yet powerful AI agent SDK designed to interact with the OpenRouter API. This agent is built for CLI efficiency, featuring multimodal input support, a rich set of instructional tools, and native support for the Model Context Protocol (MCP).
 
 ## Key Features
 
 - **Multimodal Input:** Supports both text and image-based prompts.
 - **Persistent Terminal:** Maintains stateful shell sessions across multiple turns.
+- **Model Context Protocol (MCP):** Connect to external MCP servers to extend agent capabilities with custom tools and resources.
+- **Native Implementation:** Lightweight and efficient; MCP client is implemented natively without external SDK dependencies.
 - **Instructional Toolset:** Tools are designed with imperative guidance to ensure the LLM uses them effectively and safely.
-- **Comprehensive Capabilities:**
-  - **File:** Find, List, Read, Edit, and Write files.
-  - **Terminal:** Spawn, Read, Write, and Wait for shell processes.
-  - **Web:** Fetch and clean content from URLs.
-  - **System:** Delegate tasks to sub-agents.
 
 ## Installation
 
@@ -38,6 +35,24 @@ const agent = await createAgent();
 await agent.run("Summarize the files in the current directory.");
 ```
 
+### Using MCP Servers
+Extend your agent's capabilities by connecting to external MCP servers:
+
+```javascript
+import createAgent from './src/index.js';
+
+const agent = await createAgent();
+
+// Connect to an MCP server (e.g., SQLite)
+await agent.tools.connectMcpServer({
+  name: "sqlite",
+  command: "npx",
+  args: ["-y", "@modelcontextprotocol/server-sqlite", "--db", "./data.db"]
+});
+
+await agent.run("What are the tables in my database?");
+```
+
 ### Multimodal (Image) Prompt
 ```javascript
 import createAgent from './src/index.js';
@@ -45,7 +60,7 @@ import createAgent from './src/index.js';
 const agent = await createAgent();
 await agent.run([
   { type: 'text', text: 'Describe this image:' },
-  { type: 'image_url', image_url: { url: 'https://example.com/image.png' } }
+  { type: 'image', source: { type: 'url', url: 'https://example.com/image.png' } }
 ]);
 ```
 

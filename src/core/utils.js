@@ -72,10 +72,10 @@ export class ToolRegistry {
   async connectMcpServer({ name, command, args, env }) {
     const client = new McpClientWrapper({ command, args, env });
     const remoteTools = await client.connectAndGetTools();
-    
+
     for (const remoteTool of remoteTools) {
       const toolName = `${name}_${remoteTool.name}`;
-      
+
       this.register(
         toolName,
         remoteTool.description || `Tool ${remoteTool.name} from ${name}`,
@@ -95,7 +95,7 @@ export class ToolRegistry {
     }
     this._mcpClients.push(client);
   }
-  
+
   async cleanup() {
     for (const client of this._mcpClients) {
       try {

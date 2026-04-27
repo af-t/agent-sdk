@@ -68,12 +68,12 @@ export class McpNativeClient extends EventEmitter {
         this.pendingRequests.delete(id);
         reject(new Error(`Request ${method} timed out after ${timeout}ms`));
       }, timeout);
-      
-      this.pendingRequests.set(id, { 
+
+      this.pendingRequests.set(id, {
         resolve: (val) => { clearTimeout(timer); resolve(val); },
         reject: (err) => { clearTimeout(timer); reject(err); }
       });
-      
+
       try {
         this.process.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + '\n');
       } catch (err) {
