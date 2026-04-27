@@ -1,3 +1,4 @@
+import { McpClientWrapper } from './mcp.js';
 import config from '../config.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -43,6 +44,7 @@ export async function withRetry(func, count = config.MAX_RETRIES) {
 
 export class ToolRegistry {
   _tools = new Map();
+  _mcpClients = [];
 
   getDefinitions() {
     const res = [];
@@ -66,6 +68,43 @@ export class ToolRegistry {
     const tool = this._tools.get(name);
     if (!tool) throw Error(`Tool ${name} not found`);
     return await tool.execute(input, context);
+  }
+
+  async connectMcpServer({ name, command, args, env }) {
+    const client = new McpClientWrapper({ command, args, env });
+    const remoteTools = await client.connectAndGetTools();
+    
+    for (const remoteTool of remoteTools) {
+      const toolName = `${name}_${remoteTool.name}`;
+      
+      this.register(
+        toolName,
+        remoteTool.description || `Tool ${remoteTool.name} from ${name}`,
+        remoteTool.inputSchema || { type: 'object', properties: {} },
+        async (input) => {
+          const result = await client.executeTool(remoteTool.name, input);
+          if (result.isError) {
+            throw new Error(result.content.map(c => c.text).join('\n'));
+          }
+          return result.content.map(c => {
+             if (c.type === 'text') return c.text;
+             if (c.type === 'resource') return `[Resource: ${c.resource.uri}]`;
+             return JSON.stringify(c);
+          }).join('\n');
+        }
+      );
+    }
+    this._mcpClients.push(client);
+  }
+  
+  async cleanup() {
+    for (const client of this._mcpClients) {
+      try {
+        await client.close();
+      } catch (err) {
+      }
+    }
+    this._mcpClients = [];
   }
 }
 

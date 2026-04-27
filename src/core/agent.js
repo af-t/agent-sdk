@@ -27,7 +27,7 @@ class Agent {
     this.tools = tools;
     this.terminalManager = tManager;
     this.isSubagent = isSubagent;
-    this.thinking = { type: 'adaptive' };
+    this.thinking = { type: 'enabled', budget_tokens: 32000 };
     this.usage = { cost: 0, tokens: 0 };
     this.finalReport = null; // Store subagent result
   }
