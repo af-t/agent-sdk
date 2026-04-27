@@ -58,8 +58,7 @@ export class ToolRegistry {
     return res;
   }
 
-  register(name, description, input_schema, execute) {
-    if (this._tools.has(name)) throw Error(`tools with name ${name} have been registered`);
+  register({ name, description, input_schema, execute }) {
     if (typeof execute !== 'function') throw Error('tools cannot be executed');
     this._tools.set(name, { description, input_schema, execute });
   }

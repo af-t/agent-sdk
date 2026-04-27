@@ -57,17 +57,17 @@ class Agent {
       Promise.reject(responseBody);
   }
 
-  async _send(messages) {
+  async _send() {
     const payload = {
       model: this.model,
-      messages: messages.slice(0, -1),
+      messages: this.messages.slice(0, -1),
       system: this.system,
       tools: this.tools?.getDefinitions?.(),
       thinking: this.thinking,
       provider: this.provider,
       //stream: false
     };
-    const lastMsg = messages.slice(-1)[0];
+    const lastMsg = this.messages.slice(-1)[0];
 
     // inject cache_control
     if (lastMsg.content.length > 0) {
@@ -87,6 +87,16 @@ class Agent {
     return response;
   }
 
+  async use(tools) {
+    if (Array.isArray(tools)) {
+      for (const tool of tools) {
+        this.tools.register(tool);
+      }
+      return;
+    }
+    this.tools.register(tools);
+  }
+
   async run(prompt, callback = () => null) {
     let response;
     let toolUses;
@@ -103,8 +113,8 @@ class Agent {
     }
 
     while (true) {
-      response = await withRetry(() => this._send(this.messages), 5);
-      callback(response.content); // suitable for capturing thoughts from LLM and displaying them as temporary messages
+      response = await withRetry(() => this._send(), 5);
+      callback(response.content);
       this.messages.push({ role: response.role, content: response.content });
 
       toolUses = response.content.filter(x => x.type === 'tool_use');
@@ -113,7 +123,6 @@ class Agent {
       const content = [];
       for (const tc of toolUses) {
         logger.debug(`Executing tool: ${tc.name}`);
-        // Pass 'this' as context to all tools
         const result = await this.tools.execute(tc.name, tc.input, { agent: this });
 
         content.push({

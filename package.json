@@ -23,11 +23,9 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
     "cheerio": "^1.2.0",
     "dotenv": "^17.4.2",
     "ignore": "^7.0.5",
     "node-pty": "^1.1.0"
-  },
-  "devDependencies": {}
+  }
 }
