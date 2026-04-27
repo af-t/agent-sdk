@@ -14,7 +14,7 @@ export const input_schema = {
 export const execute = async ({ id, clear = false }) => {
   try {
     const output = terminalManager.read(id, clear);
-    return output.text || "(No new output)";
+    return output.text || "(No new output may be you forgot to write \\n after executing command)";
   } catch (error) {
     return `ERROR: ${error.message}`;
   }

@@ -37,7 +37,7 @@ export const execute = async ({ path: filePath, new_text, old_text, start_line, 
     } else {
       throw new Error("Either 'old_text' or both 'start_line' and 'end_line' must be provided.");
     }
-    return `SUCCESS: File ${filePath} updated successfully`;
+    return `File ${filePath} updated successfully`;
   } catch (error) {
     return `ERROR: ${error.message}`;
   }

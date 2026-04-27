@@ -17,8 +17,8 @@ export const execute = async ({ shell, cwd, cols, rows }) => {
   try {
     const id = `term_${crypto.randomBytes(2).toString('hex')}`;
     terminalManager.spawn(id, { shell, cwd, cols, rows });
-    return `SUCCESS: Session started with ID: ${id}`;
+    return `Session started with ID: ${id}`;
   } catch (error) {
-    return `ERROR: Failed to spawn session: ${error.message}`;
+    return `Failed to spawn session: ${error.message}`;
   }
 };

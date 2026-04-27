@@ -19,8 +19,12 @@ export const execute = async ({ id, input }) => {
       throw Error('using echo to write files is prohibited');
     }
 
+    if (input.includes('cat') && input.includes('>') && input.includes('<<')) {
+      throw Error('using cat to write files is prohibited');
+    }
+
     terminalManager.write(id, input);
-    return `SUCCESS: Input sent to session ${id}`;
+    return `Input sent to session ${id}`;
   } catch (error) {
     return `ERROR: ${error.message}`;
   }

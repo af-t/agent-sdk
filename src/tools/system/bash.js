@@ -27,7 +27,7 @@ export const execute = async ({ command, cwd = process.cwd(), env = process.env,
     let output = '';
     const timer = setTimeout(() => {
       ptyProcess.kill();
-      resolve(`ERROR: Execution timed out after ${timeout}ms\n\nPartial Output:\n${output}`);
+      resolve(`Execution timed out after ${timeout}ms\n\nPartial Output:\n${output}`);
     }, timeout);
 
     ptyProcess.onData((data) => {
@@ -39,7 +39,7 @@ export const execute = async ({ command, cwd = process.cwd(), env = process.env,
       if (exitCode !== 0) {
         // node-pty combines stdout and stderr
         // return the accumulated output if the process exited with error
-        resolve(output || `Process exited with code ${exitCode}${signal ? ` and signal ${signal}` : ''}`);
+        resolve(output || `Process exited with code ${exitCode}${signal ? ' and signal ' + signal : ''}`);
       } else {
         resolve(output);
       }

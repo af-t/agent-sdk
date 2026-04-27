@@ -17,7 +17,7 @@ export const execute = async ({ path: filePath, content }) => {
     const fullPath = path.resolve(filePath);
     await fs.mkdir(path.dirname(fullPath), { recursive: true });
     await fs.writeFile(fullPath, content, 'utf8');
-    return `SUCCESS: File written to ${filePath}`;
+    return `File written to ${filePath}`;
   } catch (error) {
     return `ERROR: ${error.message}`;
   }

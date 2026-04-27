@@ -1,6 +1,7 @@
 import { withRetry } from './utils.js';
 import terminalManager from './terminal.js';
 import logger from './logger.js';
+import config from '../config.js';
 
 class Agent {
   constructor (options = {}) {
@@ -12,6 +13,7 @@ class Agent {
       only,
       systemPrompt = "You are a helpful AI assistant.",
       isSubagent = false,
+      maxTokens,
       // Inject managers if provided (for subagents)
       tManager = terminalManager
     } = options;
@@ -28,8 +30,84 @@ class Agent {
     this.terminalManager = tManager;
     this.isSubagent = isSubagent;
     this.thinking = { type: 'enabled', budget_tokens: 32000 };
+    this.max_tokens = parseInt(maxTokens || config.MAX_TOKENS) || undefined;
     this.usage = { cost: 0, tokens: 0 };
     this.finalReport = null; // Store subagent result
+    this.context = new Map();
+
+    // register builtin tools
+    this.use([
+      {
+        name: 'Report',
+        description: 'Signal the completion of an assigned task. Call this tool to return a final summary and a list of artifacts (files created or modified) to the requester.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            data: { type: 'string', description: 'The final JSON data to return' },
+            summary: { type: 'string', description: 'Executive summary of work performed' }
+          },
+          required: ['data']
+        },
+        execute: async() => null
+      },
+      {
+        name: 'StoreSet',
+        description: 'Store a value in the short-term context.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            key: { type: 'string', description: 'The key to store' },
+            value: { type: 'string', description: 'The value to store' }
+          },
+          required: ['key', 'value']
+        },
+        execute: async({ key, value }) => {
+          this.context.set(key, value);
+          return 'Success';
+        }
+      },
+      {
+        name: 'StoreGet',
+        description: 'Read a value from the short-term context.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            key: { type: 'string', description: 'The key to retrieve' }
+          },
+          required: ['key']
+        },
+        execute: async({ key }) => this.context.has(key) ? this.context.get(key) : 'null'
+      },
+      {
+        name: 'StoreList',
+        description: 'Get a list of keys that are currently active in the short-term context.',
+        input_schema: {
+          type: 'object',
+          properties: {}
+        },
+        execute: async() => Array.from(this.context.keys())
+      },
+      {
+        name: 'StoreRm',
+        description: 'Remove a value from the short-term context.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            keys: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'The keys to remove'
+            }
+          },
+          required: ['keys']
+        },
+        execute: async({ keys }) => {
+          const keyList = Array.isArray(keys) ? keys : [keys];
+          for (const key of keyList) this.context.delete(key);
+          return 'Success';
+        }
+      }
+    ]);
   }
 
   async _request(payload) {
@@ -65,6 +143,7 @@ class Agent {
       tools: this.tools?.getDefinitions?.(),
       thinking: this.thinking,
       provider: this.provider,
+      max_tokens: this.max_tokens,
       //stream: false
     };
     const lastMsg = this.messages.slice(-1)[0];
@@ -78,8 +157,9 @@ class Agent {
     logger.debug(`Sending request to LLM (${this.model})...`);
     const response = await this._request(payload);
     logger.debug(`Received response from LLM.`);
-    this.usage.cost += response.usage.cost;
-    this.usage.tokens += response.usage.input_tokens + response.usage.output_tokens;
+
+    this.usage.cost += (response.usage?.cost || 0);
+    this.usage.tokens += (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0);
 
     // delete cache_control
     delete lastMsg.content[lastMsg.content.length - 1].cache_control;
@@ -132,7 +212,7 @@ class Agent {
         });
 
         // Check for termination signal from finish_task
-        if (tc.name === 'FinishTask') {
+        if (tc.name === 'Report') {
           this.messages.push({ role: 'user', content });
           this.finalReport = tc.input; // { summary, artifacts }
           return this.finalReport;

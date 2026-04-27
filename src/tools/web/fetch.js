@@ -46,6 +46,6 @@ export const execute = async ({ url, useRaw = false, limit = 20000 }) => {
 
     return cleanText.length > limit ? cleanText.slice(0, limit) + '\n[... truncated]' : cleanText;
   } catch (error) {
-    return `ERROR: Fetch failed: ${error.message}`;
+    return `Fetch failed: ${error.message}`;
   }
 };

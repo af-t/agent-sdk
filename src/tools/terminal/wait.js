@@ -15,7 +15,7 @@ export const input_schema = {
 export const execute = async ({ id, pattern, idleTimeout }) => {
   try {
     terminalManager.addObserver(id, { pattern, idleTimeout: idleTimeout || 300 });
-    return "SUCCESS: Observer registered. I will notify you when the event occurs.";
+    return "Observer registered. I will notify you when the event occurs.";
   } catch (error) {
     return `ERROR: ${error.message}`;
   }

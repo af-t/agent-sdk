@@ -23,6 +23,7 @@ Create a `.env` file or export environment variables:
 ```bash
 OPENROUTER_API_KEY=your_api_key
 OPENROUTER_MODEL=google/gemini-3-flash-preview # or any other OpenRouter model
+OPENROUTER_MAX_TOKENS=4096 # Optional: limit output tokens
 ```
 
 ## Usage
@@ -83,7 +84,13 @@ await agent.run([
 ### Web & System
 - **WebFetch:** Fetch and analyze content from a URL. Use this to retrieve documentation, research technical topics, or read raw code from the web. It automatically cleans HTML for readability.
 - **Delegate:** Delegate a specific task to a specialized sub-agent. Use this for complex research, repetitive operations, or tasks with high-volume output to keep the main session history clean.
-- **FinishTask:** Signal the completion of an assigned task. Call this tool to return a final summary and a list of artifacts (files created or modified) to the requester.
+- **Report:** Signal the completion of an assigned task. Call this tool to return a final summary and result data to the requester.
+
+### Store Tools (Context Management)
+- **StoreSet:** Store a value in the short-term context. Use this to remember small pieces of information across subagent turns without polluting the main prompt.
+- **StoreGet:** Read a value from the short-term context.
+- **StoreList:** List all active keys in the short-term context.
+- **StoreRm:** Remove specific keys from the short-term context to free up memory.
 
 ## License
 

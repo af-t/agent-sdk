@@ -15,7 +15,7 @@ export const execute = async ({ task, context_files }, { agent }) => {
   try {
     const subagentPrompt = `You are a specialized subagent. Your goal is to fulfill the task assigned by the Main Agent.
 Shared Resources: You have FULL ACCESS to the Terminal, File, and Web tools.
-Finalization: You MUST end your work by calling the 'FinishTask' tool with a summary and a list of artifacts (files changed).
+Finalization: You MUST end your work by calling the 'Report' tool with a summary and a list of artifacts (files changed).
 Context: The Main Agent and you share the same working directory and terminal sessions.`;
 
     const subagent = new Agent({
@@ -24,7 +24,8 @@ Context: The Main Agent and you share the same working directory and terminal se
       tools: agent.tools,
       systemPrompt: subagentPrompt,
       isSubagent: true,
-      tManager: agent.terminalManager
+      tManager: agent.terminalManager,
+      maxTokens: agent.max_tokens
     });
 
     let fullTask = task;
@@ -35,10 +36,8 @@ Context: The Main Agent and you share the same working directory and terminal se
     console.log(`[DELEGATE] Spawning subagent for task: ${task.slice(0, 50)}...`);
     const report = await subagent.run(fullTask);
 
-    // Convert report object to a clean string for the Main Agent
-    const artifactsStr = report.artifacts?.map(a => `- ${a.path} (${a.status})`).join('\n') || 'None';
-    return `SUBAGENT REPORT:\nSummary: ${report.summary}\nArtifacts:\n${artifactsStr}`;
+    return `Summary: ${report.summary}\nData:` + '```json\n' + JSON.stringify(JSON.parse(report.data), null, 2) + '\n```';
   } catch (error) {
-    return `ERROR: Delegation failed: ${error.message}`;
+    return `Delegation failed: ${error.message}`;
   }
 };

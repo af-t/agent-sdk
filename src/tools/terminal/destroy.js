@@ -13,7 +13,7 @@ export const input_schema = {
 export const execute = async ({ id }) => {
   try {
     terminalManager.destroy(id);
-    return `SUCCESS: Session ${id} destroyed`;
+    return `Session ${id} destroyed`;
   } catch (error) {
     return `ERROR: ${error.message}`;
   }
