@@ -1,10 +1,12 @@
 # OpenRouter Agent
 
-A minimal yet powerful AI agent SDK designed to interact with the OpenRouter API. This agent is built for CLI efficiency, featuring multimodal input support, a rich set of instructional tools, and native support for the Model Context Protocol (MCP).
+A minimal yet powerful AI agent SDK designed to interact with the OpenRouter API using OpenAI-compatible payloads. This agent is built for CLI efficiency, featuring broad multimodal input support, a rich set of instructional tools, and native support for the Model Context Protocol (MCP).
 
 ## Key Features
 
-- **Multimodal Input:** Supports both text and image-based prompts.
+- **OpenAI Compatible:** Uses the standard `/chat/completions` payload, making it compatible with the widest range of models and modalities.
+- **Multimodal Input:** Supports text, images (`image_url`), and other OpenAI-supported modalities.
+- **Smart Caching:** Built-in support for OpenRouter's Prompt Caching (`cache_control`). System instructions and the latest user messages are automatically cached to reduce latency and costs.
 - **Persistent Terminal:** Maintains stateful shell sessions across multiple turns.
 - **Model Context Protocol (MCP):** Connect to external MCP servers to extend agent capabilities with custom tools and resources.
 - **Native Implementation:** Lightweight and efficient; MCP client is implemented natively without external SDK dependencies.
@@ -55,42 +57,51 @@ await agent.run("What are the tables in my database?");
 ```
 
 ### Multimodal (Image) Prompt
+The SDK uses the standard OpenAI content part format.
 ```javascript
 import createAgent from './src/index.js';
 
 const agent = await createAgent();
 await agent.run([
   { type: 'text', text: 'Describe this image:' },
-  { type: 'image', source: { type: 'url', url: 'https://example.com/image.png' } }
+  { 
+    type: 'image_url', 
+    image_url: { 
+      url: 'https://example.com/image.png' 
+    } 
+  }
 ]);
 ```
+
+## Prompt Caching (OpenRouter)
+
+The agent automatically manages `cache_control` for you:
+- **System Prompt:** Automatically marked with `cache_control: { type: 'ephemeral' }`.
+- **Context:** The last user message in each turn is automatically cached to optimize multi-turn conversations.
 
 ## Tool Reference
 
 ### File Tools
-- **Find:** Search for files by name or content within a directory, respecting .gitignore rules. Use this to locate specific files or code snippets when the exact path is unknown.
-- **List:** List files and directories at a specified path, respecting .gitignore rules. Use this to explore the project structure and discover available files and folders.
-- **Read:** Read the contents of a file with pagination and line numbers. Use pagination (start_line/end_line) for large files to avoid context overflow and ensure efficient reading.
-- **Edit:** Surgically update a file by replacing a specific text block or line range. Provide exact context to ensure the replacement is targeted, safe, and avoids unintended matches.
-- **Write:** Create a new file or completely overwrite an existing one with full content. This tool will automatically create any missing parent directories.
+- **Find:** Search for files by name or content. Respects `.gitignore`.
+- **List:** Explore project structure and discover available files.
+- **Read:** Read file contents with pagination and line numbers.
+- **Edit:** Surgically update a file by replacing a specific text block.
+- **Write:** Create or completely overwrite a file.
 
 ### Terminal Tools
-- **TerminalSpawn:** Start a new persistent shell session. Use this for tasks that require interactive shell access or persistent state across multiple turns.
-- **TerminalRead:** Retrieve the current accumulated output from a terminal session. Use this to check the result of long-running commands or to inspect the current state of the terminal.
-- **TerminalWrite:** Send input strings or commands to an active terminal session. Use this to interact with shell processes or CLI tools running in the terminal.
-- **TerminalWait:** Register a background observer to watch for a specific pattern or idle timeout in a terminal session. Use this to synchronize with asynchronous processes.
-- **TerminalDestroy:** Terminate an active shell session. Use this to clean up resources once a terminal-based task is finished or the session is no longer needed.
+- **TerminalSpawn:** Start a new persistent shell session.
+- **TerminalRead:** Retrieve current output from a session.
+- **TerminalWrite:** Send commands to an active terminal.
+- **TerminalWait:** Wait for specific patterns or idle timeout.
+- **TerminalDestroy:** Clean up active shell sessions.
 
 ### Web & System
-- **WebFetch:** Fetch and analyze content from a URL. Use this to retrieve documentation, research technical topics, or read raw code from the web. It automatically cleans HTML for readability.
-- **Delegate:** Delegate a specific task to a specialized sub-agent. Use this for complex research, repetitive operations, or tasks with high-volume output to keep the main session history clean.
-- **Report:** Signal the completion of an assigned task. Call this tool to return a final summary and result data to the requester.
+- **WebFetch:** Fetch and clean HTML content from any URL.
+- **Delegate:** Spawn sub-agents for specialized or high-volume tasks.
+- **Report:** Return final summary and data to the requester.
 
 ### Store Tools (Context Management)
-- **StoreSet:** Store a value in the short-term context. Use this to remember small pieces of information across subagent turns without polluting the main prompt.
-- **StoreGet:** Read a value from the short-term context.
-- **StoreList:** List all active keys in the short-term context.
-- **StoreRm:** Remove specific keys from the short-term context to free up memory.
+- **StoreSet/Get/List/Rm:** Manage short-term key-value context for subagent operations.
 
 ## License
 

@@ -16,6 +16,15 @@ export async function getIgnoreFilter() {
   }
 }
 
+export function ensureSafePath(filePath) {
+  const root = process.cwd();
+  const resolvedPath = path.resolve(filePath);
+  if (!resolvedPath.startsWith(root)) {
+    throw new Error(`Access denied: Path '${filePath}' is outside project root`);
+  }
+  return resolvedPath;
+}
+
 export function formatSize(bytes) {
   if (bytes === 0) return '0B';
   const k = 1024;
@@ -50,9 +59,12 @@ export class ToolRegistry {
     const res = [];
     for (const [name, val] of this._tools) {
       res.push({
-        name,
-        description: val.description,
-        input_schema: val.input_schema
+        type: 'function',
+        function: {
+          name,
+          description: val.description,
+          parameters: val.input_schema
+        }
       });
     }
     return res;
@@ -76,11 +88,11 @@ export class ToolRegistry {
     for (const remoteTool of remoteTools) {
       const toolName = `${name}_${remoteTool.name}`;
 
-      this.register(
-        toolName,
-        remoteTool.description || `Tool ${remoteTool.name} from ${name}`,
-        remoteTool.inputSchema || { type: 'object', properties: {} },
-        async (input) => {
+      this.register({
+        name: toolName,
+        description: remoteTool.description || `Tool ${remoteTool.name} from ${name}`,
+        input_schema: remoteTool.inputSchema || { type: 'object', properties: {} },
+        execute: async (input) => {
           const result = await client.executeTool(remoteTool.name, input);
           if (result.isError) {
             throw new Error(result.content.map(c => c.text).join('\n'));
@@ -91,7 +103,7 @@ export class ToolRegistry {
              return JSON.stringify(c);
           }).join('\n');
         }
-      );
+      });
     }
     this._mcpClients.push(client);
   }

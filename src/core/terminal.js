@@ -49,8 +49,18 @@ class TerminalManager {
       // Check pattern observers (one-shot)
       const remainingObservers = [];
       for (const obs of session.observers) {
-        if (obs.pattern && new RegExp(obs.pattern).test(cleanData)) {
-          this.pendingNotifications.push(`Pattern '${obs.pattern}' detected in session ${sessionId}`);
+        if (obs.pattern) {
+          try {
+            const regex = new RegExp(obs.pattern);
+            if (regex.test(cleanData)) {
+              this.pendingNotifications.push(`Pattern '${obs.pattern}' detected in session ${sessionId}`);
+            } else {
+              remainingObservers.push(obs);
+            }
+          } catch (err) {
+            this.pendingNotifications.push(`Invalid regex pattern '${obs.pattern}' in session ${sessionId}: ${err.message}`);
+            // Don't push to remainingObservers, effectively removing the broken observer
+          }
         } else {
           remainingObservers.push(obs);
         }

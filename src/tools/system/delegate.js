@@ -35,8 +35,13 @@ Context: The Main Agent and you share the same working directory and terminal se
 
     console.log(`[DELEGATE] Spawning subagent for task: ${task.slice(0, 50)}...`);
     const report = await subagent.run(fullTask);
+    let data = {};
 
-    return `Summary: ${report.summary}\nData:` + '```json\n' + JSON.stringify(JSON.parse(report.data), null, 2) + '\n```';
+    try {
+      data = JSON.parse(report.data);
+    } catch {}
+
+    return `Summary: ${report.summary}\nData:` + '```json\n' + JSON.stringify(data, null, 2) + '\n```';
   } catch (error) {
     return `Delegation failed: ${error.message}`;
   }

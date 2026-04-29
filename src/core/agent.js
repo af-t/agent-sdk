@@ -1,4 +1,5 @@
-import { withRetry } from './utils.js';
+import { withRetry, ToolRegistry } from './utils.js';
+import { randomUUID } from 'node:crypto';
 import terminalManager from './terminal.js';
 import logger from './logger.js';
 import config from '../config.js';
@@ -25,21 +26,26 @@ class Agent {
       only: only
     };
     this.messages = [];
-    this.system = [{ type: 'text', text: systemPrompt }];
-    this.tools = tools;
+    this.system = [{
+      type: 'text',
+      text: systemPrompt,
+      cache_control: { type: 'ephemeral' }
+    }];
+    this.tools = tools || new ToolRegistry();
     this.terminalManager = tManager;
     this.isSubagent = isSubagent;
     this.thinking = { type: 'enabled', budget_tokens: 32000 };
-    this.max_tokens = parseInt(maxTokens || config.MAX_TOKENS) || undefined;
+    this.max_tokens = parseInt(maxTokens || config.MAX_TOKENS || 0) || undefined;
     this.usage = { cost: 0, tokens: 0 };
     this.finalReport = null; // Store subagent result
     this.context = new Map();
+    this.session_id = randomUUID();
 
     // register builtin tools
     this.use([
       {
         name: 'Report',
-        description: 'Signal the completion of an assigned task. Call this tool to return a final summary and a list of artifacts (files created or modified) to the requester.',
+        description: 'Signal the completion of an assigned task. Call this tool to return a final summary and data to the requester.',
         input_schema: {
           type: 'object',
           properties: {
@@ -48,7 +54,7 @@ class Agent {
           },
           required: ['data']
         },
-        execute: async() => null
+        execute: async() => 'Report sent'
       },
       {
         name: 'StoreSet',
@@ -76,7 +82,7 @@ class Agent {
           },
           required: ['key']
         },
-        execute: async({ key }) => this.context.has(key) ? this.context.get(key) : 'null'
+        execute: async({ key }) => this.context.has(key) ? this.context.get(key) : '(Empty)'
       },
       {
         name: 'StoreList',
@@ -111,7 +117,7 @@ class Agent {
   }
 
   async _request(payload) {
-    const res = await fetch('https://openrouter.ai/api/v1/messages', {
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.apiKey}`,
@@ -136,38 +142,48 @@ class Agent {
   }
 
   async _send() {
+    const lastMsg = this.messages[this.messages.length - 1];
+    let hasCacheControl = false;
+
+    // inject cache_control to the last message if it's a user message with array content
+    if (lastMsg?.role === 'user' && Array.isArray(lastMsg.content) && lastMsg.content.length > 0) {
+      lastMsg.content[lastMsg.content.length - 1].cache_control = { type: 'ephemeral' };
+      hasCacheControl = true;
+    }
+
     const payload = {
       model: this.model,
-      messages: this.messages.slice(0, -1),
-      system: this.system,
-      tools: this.tools?.getDefinitions?.(),
+      messages: [
+        { role: 'system', content: this.system },
+        ...this.messages
+      ],
+      tools: this.tools.getDefinitions(),
       thinking: this.thinking,
       provider: this.provider,
       max_tokens: this.max_tokens,
-      //stream: false
+      metadata: {
+        user_id: JSON.stringify({ device_id: '', account_uuid: '', session_id: this.session_id })
+      }
     };
-    const lastMsg = this.messages.slice(-1)[0];
 
-    // inject cache_control
-    if (lastMsg.content.length > 0) {
-      lastMsg.content[lastMsg.content.length - 1].cache_control = { type: 'ephemeral' };
-    }
-    payload.messages.push(lastMsg);
+    if (payload.tools.length === 0) delete payload.tools;
 
     logger.debug(`Sending request to LLM (${this.model})...`);
     const response = await this._request(payload);
     logger.debug(`Received response from LLM.`);
 
-    this.usage.cost += (response.usage?.cost || 0);
-    this.usage.tokens += (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0);
+    // delete cache_control after request
+    if (hasCacheControl) {
+      delete lastMsg.content[lastMsg.content.length - 1].cache_control;
+    }
 
-    // delete cache_control
-    delete lastMsg.content[lastMsg.content.length - 1].cache_control;
+    this.usage.cost += (response.usage?.cost || 0);
+    this.usage.tokens += (response.usage?.total_tokens || 0);
 
     return response;
   }
 
-  async use(tools) {
+  use(tools) {
     if (Array.isArray(tools)) {
       for (const tool of tools) {
         this.tools.register(tool);
@@ -178,14 +194,11 @@ class Agent {
   }
 
   async run(prompt, callback = () => null) {
-    let response;
-    let toolUses;
-
     if (prompt) {
       const contents = Array.isArray(prompt) ? prompt : [{ type: 'text', text: prompt }];
       const lastIdx = this.messages.length - 1;
 
-      if (this.messages[lastIdx]?.role === 'user') {
+      if (this.messages[lastIdx]?.role === 'user' && Array.isArray(this.messages[lastIdx].content)) {
         this.messages[lastIdx].content.push(...contents);
       } else {
         this.messages.push({ role: 'user', content: contents });
@@ -193,28 +206,42 @@ class Agent {
     }
 
     while (true) {
-      response = await withRetry(() => this._send(), 5);
-      callback(response.content);
-      this.messages.push({ role: response.role, content: response.content });
+      const response = await withRetry(() => this._send(), 5);
+      const choice = response.choices?.[0]?.message;
+      if (!choice) break;
 
-      toolUses = response.content.filter(x => x.type === 'tool_use');
-      if (!toolUses.length) break;
+      callback(choice.content, choice.tool_calls);
+      this.messages.push(choice);
 
-      const content = [];
-      for (const tc of toolUses) {
-        logger.debug(`Executing tool: ${tc.name}`);
-        const result = await this.tools.execute(tc.name, tc.input, { agent: this });
+      if (!choice.tool_calls || choice.tool_calls.length === 0) break;
 
-        content.push({
-          tool_use_id: tc.id,
-          type: 'tool_result',
+      for (const tc of choice.tool_calls) {
+        const name = tc.function.name;
+        let input;
+        try {
+          input = JSON.parse(tc.function.arguments);
+        } catch (e) {
+          logger.error(`Failed to parse tool arguments for ${name}: ${e.message}`);
+          this.messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: `Error: Failed to parse tool arguments as JSON: ${e.message}`
+          });
+          continue;
+        }
+
+        logger.debug(`Executing tool: ${name}`);
+        const result = await this.tools.execute(name, input, { agent: this });
+
+        this.messages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
           content: (typeof result === 'string') ? result : JSON.stringify(result)
         });
 
         // Check for termination signal from finish_task
-        if (tc.name === 'Report') {
-          this.messages.push({ role: 'user', content });
-          this.finalReport = tc.input; // { summary, artifacts }
+        if (name === 'Report') {
+          this.finalReport = input;
           return this.finalReport;
         }
       }
@@ -222,16 +249,17 @@ class Agent {
       // Inject background terminal notifications
       const notifications = this.terminalManager.popNotifications();
       if (notifications.length) {
-        content.push({
-          type: 'text',
-          text: `<system-reminder>\n${notifications.join('\n')}\n</system-reminder>`
+        this.messages.push({
+          role: 'user',
+          content: [{
+            type: 'text',
+            text: `<system-reminder>\n${notifications.join('\n')}\n</system-reminder>`
+          }]
         });
       }
-
-      this.messages.push({ role: 'user', content });
     }
 
-    return this.messages.slice(-1)[0].content;
+    return this.messages[this.messages.length - 1].content;
   }
 }
 
