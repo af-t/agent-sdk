@@ -34,12 +34,11 @@ class Agent {
     this.tools = tools || new ToolRegistry();
     this.terminalManager = tManager;
     this.isSubagent = isSubagent;
-    this.thinking = { type: 'enabled', budget_tokens: 32000 };
+    this.effort = 'high';
     this.max_tokens = parseInt(maxTokens || config.MAX_TOKENS || 0) || undefined;
     this.usage = { cost: 0, tokens: 0 };
     this.finalReport = null; // Store subagent result
     this.context = new Map();
-    this.session_id = randomUUID();
 
     // register builtin tools
     this.use([
@@ -161,9 +160,8 @@ class Agent {
       thinking: this.thinking,
       provider: this.provider,
       max_tokens: this.max_tokens,
-      metadata: {
-        user_id: JSON.stringify({ device_id: '', account_uuid: '', session_id: this.session_id })
-      }
+      reasoning: { effort: this.effort },
+      //stream: false,
     };
 
     if (payload.tools.length === 0) delete payload.tools;
@@ -206,7 +204,12 @@ class Agent {
     }
 
     while (true) {
-      const response = await withRetry(() => this._send(), 5);
+      const response = await withRetry(() => this._send(), 5, () => {
+        const lastMsg = this.messages.pop();
+        if (lastMsg.role !== 'user') {
+          this.messages.push(lastMsg);
+        }
+      });
       const choice = response.choices?.[0]?.message;
       if (!choice) break;
 

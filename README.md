@@ -64,11 +64,11 @@ import createAgent from './src/index.js';
 const agent = await createAgent();
 await agent.run([
   { type: 'text', text: 'Describe this image:' },
-  { 
-    type: 'image_url', 
-    image_url: { 
-      url: 'https://example.com/image.png' 
-    } 
+  {
+    type: 'image_url',
+    image_url: {
+      url: 'https://example.com/image.png'
+    }
   }
 ]);
 ```

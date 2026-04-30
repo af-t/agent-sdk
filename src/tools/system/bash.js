@@ -17,7 +17,7 @@ export const execute = async ({ command, cwd = process.cwd(), env = process.env,
   return new Promise((resolve) => {
     // node-pty spawn creates a pseudo-terminal
     const ptyProcess = pty.spawn('bash', ['-c', command], {
-      name: 'xterm-color',
+      name: 'xterm-256color',
       cols: 80,
       rows: 30,
       cwd,

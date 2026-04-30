@@ -33,7 +33,7 @@ export function formatSize(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + sizes[i];
 }
 
-export async function withRetry(func, count = config.MAX_RETRIES) {
+export async function withRetry(func, count = config.MAX_RETRIES, callback) {
   let delay = 5000;
   let lastError;
 
@@ -48,6 +48,7 @@ export async function withRetry(func, count = config.MAX_RETRIES) {
     }
   }
 
+  callback?.();
   throw lastError;
 }
 
