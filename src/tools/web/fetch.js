@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import { CONSTANTS } from '../../core/utils.js';
 
 export const name = 'WebFetch';
 export const description = 'Fetch and analyze content from a URL. Use this to retrieve documentation, research technical topics, or read raw code from the web. It automatically cleans HTML for readability.';
@@ -15,7 +16,7 @@ export const input_schema = {
 export const execute = async ({ url, useRaw = false, limit = 20000 }) => {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), CONSTANTS.FETCH_TIMEOUT);
 
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timeout);

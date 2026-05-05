@@ -1,8 +1,14 @@
 import { withRetry, ToolRegistry } from './utils.js';
-import { randomUUID } from 'node:crypto';
-import terminalManager from './terminal.js';
+import { fileURLToPath } from 'node:url';
+import { ApiError, ConfigError } from './errors.js';
 import logger from './logger.js';
 import config from '../config.js';
+import os from 'node:os';
+import fs from 'node:fs';
+import path from 'node:path';
+
+// import.meta.dirname is experimental; provide fallback
+const __dirname = import.meta.dirname || path.dirname(fileURLToPath(import.meta.url));
 
 class Agent {
   constructor (options = {}) {
@@ -12,107 +18,42 @@ class Agent {
       tools,
       order,
       only,
-      systemPrompt = "You are a helpful AI assistant.",
-      isSubagent = false,
       maxTokens,
-      // Inject managers if provided (for subagents)
-      tManager = terminalManager
+      systemPrompt
     } = options;
 
+    if (!apiKey && !config.API_KEY) {
+      throw new ConfigError('OPENROUTER_API_KEY is required. Set it in .env or pass it as an option.');
+    }
     this.apiKey = apiKey;
     this.model = model;
-    this.provider = {
-      order: order,
-      only: only
-    };
+    this.provider = { order, only };
     this.messages = [];
-    this.system = [{
-      type: 'text',
-      text: systemPrompt,
-      cache_control: { type: 'ephemeral' }
-    }];
     this.tools = tools || new ToolRegistry();
-    this.terminalManager = tManager;
-    this.isSubagent = isSubagent;
     this.effort = 'high';
     this.max_tokens = parseInt(maxTokens || config.MAX_TOKENS || 0) || undefined;
     this.usage = { cost: 0, tokens: 0 };
-    this.finalReport = null; // Store subagent result
-    this.context = new Map();
-
-    // register builtin tools
-    this.use([
-      {
-        name: 'Report',
-        description: 'Signal the completion of an assigned task. Call this tool to return a final summary and data to the requester.',
-        input_schema: {
-          type: 'object',
-          properties: {
-            data: { type: 'string', description: 'The final JSON data to return' },
-            summary: { type: 'string', description: 'Executive summary of work performed' }
-          },
-          required: ['data']
-        },
-        execute: async() => 'Report sent'
-      },
-      {
-        name: 'StoreSet',
-        description: 'Store a value in the short-term context.',
-        input_schema: {
-          type: 'object',
-          properties: {
-            key: { type: 'string', description: 'The key to store' },
-            value: { type: 'string', description: 'The value to store' }
-          },
-          required: ['key', 'value']
-        },
-        execute: async({ key, value }) => {
-          this.context.set(key, value);
-          return 'Success';
-        }
-      },
-      {
-        name: 'StoreGet',
-        description: 'Read a value from the short-term context.',
-        input_schema: {
-          type: 'object',
-          properties: {
-            key: { type: 'string', description: 'The key to retrieve' }
-          },
-          required: ['key']
-        },
-        execute: async({ key }) => this.context.has(key) ? this.context.get(key) : '(Empty)'
-      },
-      {
-        name: 'StoreList',
-        description: 'Get a list of keys that are currently active in the short-term context.',
-        input_schema: {
-          type: 'object',
-          properties: {}
-        },
-        execute: async() => Array.from(this.context.keys())
-      },
-      {
-        name: 'StoreRm',
-        description: 'Remove a value from the short-term context.',
-        input_schema: {
-          type: 'object',
-          properties: {
-            keys: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'The keys to remove'
-            }
-          },
-          required: ['keys']
-        },
-        execute: async({ keys }) => {
-          const keyList = Array.isArray(keys) ? keys : [keys];
-          for (const key of keyList) this.context.delete(key);
-          return 'Success';
-        }
+    this.systemPrompt = systemPrompt || (() => {
+      let base = 'You are an interactive agent that helps users with software engineering tasks.';
+      try {
+        base = fs.readFileSync(path.join(__dirname, '..', '..', 'RULE.md'), 'utf8');
+      } catch {
+        logger.debug('No RULE.md found, using default instruction.');
       }
-    ]);
+
+      const envInfo = [
+        '', '',
+        '# Environment',
+        'You have been invoked in the following environment:',
+        ` - Primary working directory: ${process.cwd()}`,
+        ` - Is a git repository: ${!!fs.existsSync('.git')}`,
+        ` - Platform: ${os.platform()}`,
+        ` - Shell: ${process.env.SHELL || 'unknown'}`,
+        ` - OS version: ${os.release()}`
+      ];
+
+      return base + envInfo.join('\n');
+    })();
   }
 
   async _request(payload) {
@@ -125,58 +66,73 @@ class Agent {
       body: JSON.stringify({ ...payload, stream: false })
     });
 
-    let responseBody;
+    let responseBody = await res.text();
     try {
-      responseBody = await res.json();
+      responseBody = JSON.parse(responseBody);
     } catch {
-      try {
-        responseBody = await res.arrayBuffer();
-        responseBody = Buffer.from(responseBody).toString();
-      } catch {}
+      if (!res.ok) {
+        throw new ApiError(`OpenRouter API error (${res.status})`, res.status, responseBody.slice(0, 500));
+      }
+      throw new Error(`Failed to parse OpenRouter response as JSON: ${responseBody.slice(0, 500)}`);
     }
 
-    return res.ok ?
-      Promise.resolve(responseBody) :
-      Promise.reject(responseBody);
+    if (!res.ok) {
+      throw new ApiError(
+        responseBody?.error?.message || `OpenRouter API error (${res.status})`,
+        res.status,
+        responseBody
+      );
+    }
+
+    return responseBody;
   }
 
   async _send() {
     const lastMsg = this.messages[this.messages.length - 1];
-    let hasCacheControl = false;
 
-    // inject cache_control to the last message if it's a user message with array content
-    if (lastMsg?.role === 'user' && Array.isArray(lastMsg.content) && lastMsg.content.length > 0) {
-      lastMsg.content[lastMsg.content.length - 1].cache_control = { type: 'ephemeral' };
-      hasCacheControl = true;
-    }
+    // Build messages for payload with cache_control on a defensive copy
+    const messagesForPayload = this.messages.map((msg, idx) => {
+      // Only add cache_control to the last user message's last content part (on a copy)
+      if (idx === this.messages.length - 1 && msg.role === 'user' && Array.isArray(msg.content) && msg.content.length > 0) {
+        const contentCopy = msg.content.map((part, partIdx) => {
+          if (partIdx === msg.content.length - 1) {
+            return { ...part, cache_control: { type: 'ephemeral' } };
+          }
+          return part;
+        });
+        return { ...msg, content: contentCopy };
+      }
+      return msg;
+    });
 
     const payload = {
       model: this.model,
       messages: [
-        { role: 'system', content: this.system },
-        ...this.messages
+        {
+          role: 'system',
+          content: [{
+            type: 'text',
+            text: this.systemPrompt,
+            cache_control: { type: 'ephemeral' }
+          }]
+        },
+        ...messagesForPayload
       ],
       tools: this.tools.getDefinitions(),
-      thinking: this.thinking,
       provider: this.provider,
       max_tokens: this.max_tokens,
-      reasoning: { effort: this.effort },
-      //stream: false,
+      reasoning_effort: this.effort
     };
 
     if (payload.tools.length === 0) delete payload.tools;
+    if (!payload.max_tokens) delete payload.max_tokens;
 
     logger.debug(`Sending request to LLM (${this.model})...`);
     const response = await this._request(payload);
     logger.debug(`Received response from LLM.`);
 
-    // delete cache_control after request
-    if (hasCacheControl) {
-      delete lastMsg.content[lastMsg.content.length - 1].cache_control;
-    }
-
     this.usage.cost += (response.usage?.cost || 0);
-    this.usage.tokens += (response.usage?.total_tokens || 0);
+    this.usage.tokens = (response.usage?.total_tokens || 0);
 
     return response;
   }
@@ -191,7 +147,9 @@ class Agent {
     this.tools.register(tools);
   }
 
-  async run(prompt, callback = () => null) {
+  async run(prompt, notify = () => null, options = {}) {
+    const { signal } = options;
+
     if (prompt) {
       const contents = Array.isArray(prompt) ? prompt : [{ type: 'text', text: prompt }];
       const lastIdx = this.messages.length - 1;
@@ -204,60 +162,37 @@ class Agent {
     }
 
     while (true) {
-      const response = await withRetry(() => this._send(), 5, () => {
-        const lastMsg = this.messages.pop();
-        if (lastMsg.role !== 'user') {
-          this.messages.push(lastMsg);
+      // Check abort signal
+      if (signal?.aborted) {
+        throw new Error('Agent run aborted');
+      }
+
+      const response = await withRetry(() => this._send(), 5);
+      const message = response.choices?.[0]?.message;
+      if (!message) break;
+
+      const { content, reasoning, tool_calls } = message;
+      notify({ content, reasoning, tool_calls });
+
+      this.messages.push({ role: 'assistant', reasoning, content, tool_calls });
+
+      if (!tool_calls || tool_calls.length === 0) break;
+      for (const tc of tool_calls) {
+        // Check abort signal before each tool execution
+        if (signal?.aborted) {
+          throw new Error('Agent run aborted');
         }
-      });
-      const choice = response.choices?.[0]?.message;
-      if (!choice) break;
 
-      callback(choice.content, choice.tool_calls);
-      this.messages.push(choice);
-
-      if (!choice.tool_calls || choice.tool_calls.length === 0) break;
-
-      for (const tc of choice.tool_calls) {
         const name = tc.function.name;
-        let input;
-        try {
-          input = JSON.parse(tc.function.arguments);
-        } catch (e) {
-          logger.error(`Failed to parse tool arguments for ${name}: ${e.message}`);
-          this.messages.push({
-            role: 'tool',
-            tool_call_id: tc.id,
-            content: `Error: Failed to parse tool arguments as JSON: ${e.message}`
-          });
-          continue;
-        }
+        const input = JSON.parse(tc.function.arguments);
 
-        logger.debug(`Executing tool: ${name}`);
+        logger.debug('Agent: Executing tool:', name);
         const result = await this.tools.execute(name, input, { agent: this });
 
         this.messages.push({
           role: 'tool',
-          tool_call_id: tc.id,
-          content: (typeof result === 'string') ? result : JSON.stringify(result)
-        });
-
-        // Check for termination signal from finish_task
-        if (name === 'Report') {
-          this.finalReport = input;
-          return this.finalReport;
-        }
-      }
-
-      // Inject background terminal notifications
-      const notifications = this.terminalManager.popNotifications();
-      if (notifications.length) {
-        this.messages.push({
-          role: 'user',
-          content: [{
-            type: 'text',
-            text: `<system-reminder>\n${notifications.join('\n')}\n</system-reminder>`
-          }]
+          content: (typeof result === 'string') ? result : JSON.stringify(result),
+          tool_call_id: tc.id
         });
       }
     }

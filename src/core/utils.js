@@ -5,21 +5,63 @@ import path from 'node:path';
 import ignore from 'ignore';
 import logger from './logger.js';
 
+// Constants
+export const CONSTANTS = Object.freeze({
+  MAX_FILE_SIZE_SEARCH: 500 * 1024, // 500KB
+  RETRY_BASE_DELAY: 5000,           // ms
+  RETRY_BACKOFF_FACTOR: 1.3,
+  MCP_TIMEOUT: 30000,               // ms
+  FETCH_TIMEOUT: 15000,             // ms
+  MAX_TOKENS_SUBAGENT: 32000,
+});
+
+// Cached gitignore filter
+let _ignoreFilterCache = null;
+let _ignoreFilterCacheKey = null;
 
 export async function getIgnoreFilter() {
-  try {
-    const gitignorePath = path.join(process.cwd(), '.gitignore');
-    const content = await fs.readFile(gitignorePath, 'utf8');
-    return ignore().add(content);
-  } catch {
-    return ignore();
+  const cwd = process.cwd();
+  // Invalidate cache if cwd changed
+  if (_ignoreFilterCache && _ignoreFilterCacheKey === cwd) {
+    return _ignoreFilterCache;
   }
+
+  const ig = ignore();
+  try {
+    const gitignorePath = path.join(cwd, '.gitignore');
+    const content = await fs.readFile(gitignorePath, 'utf8');
+    ig.add(content);
+  } catch {
+    logger.debug('.gitignore not found or unreadable, ignoring.');
+  }
+
+  _ignoreFilterCache = {
+    test: (filePath) => {
+      const relPath = path.relative(cwd, ensureSafePath(filePath));
+      return ig.test(relPath);
+    },
+    ignores: (filePath) => {
+      const relPath = path.relative(cwd, ensureSafePath(filePath));
+      return ig.ignores(relPath);
+    },
+    add: (content) => ig.add(content)
+  };
+  _ignoreFilterCacheKey = cwd;
+
+  return _ignoreFilterCache;
+}
+
+export function clearIgnoreFilterCache() {
+  _ignoreFilterCache = null;
+  _ignoreFilterCacheKey = null;
 }
 
 export function ensureSafePath(filePath) {
   const root = process.cwd();
   const resolvedPath = path.resolve(filePath);
-  if (!resolvedPath.startsWith(root)) {
+  const relative = path.relative(root, resolvedPath);
+
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
     throw new Error(`Access denied: Path '${filePath}' is outside project root`);
   }
   return resolvedPath;
@@ -34,7 +76,7 @@ export function formatSize(bytes) {
 }
 
 export async function withRetry(func, count = config.MAX_RETRIES, callback) {
-  let delay = 5000;
+  let delay = CONSTANTS.RETRY_BASE_DELAY;
   let lastError;
 
   for (let i = 0; i < count; i++) {
@@ -42,9 +84,11 @@ export async function withRetry(func, count = config.MAX_RETRIES, callback) {
       const res = await func();
       return res;
     } catch (err) {
-      await new Promise(resolve => setTimeout(resolve, delay));
+      // Add jitter: ±20% random variation to prevent thundering herd
+      const jitter = delay * (0.8 + Math.random() * 0.4);
+      await new Promise(resolve => setTimeout(resolve, jitter));
       lastError = err;
-      delay *= 1.3;
+      delay *= CONSTANTS.RETRY_BACKOFF_FACTOR;
     }
   }
 
@@ -71,6 +115,18 @@ export class ToolRegistry {
     return res;
   }
 
+  listTools() {
+    const tools = [];
+    for (const [name, val] of this._tools) {
+      tools.push({
+        name,
+        description: val.description,
+        input_schema: val.input_schema
+      });
+    }
+    return tools;
+  }
+
   register({ name, description, input_schema, execute }) {
     if (typeof execute !== 'function') throw Error('tools cannot be executed');
     this._tools.set(name, { description, input_schema, execute });
@@ -78,7 +134,42 @@ export class ToolRegistry {
 
   async execute(name, input, context) {
     const tool = this._tools.get(name);
-    if (!tool) throw Error(`Tool ${name} not found`);
+    if (!tool) throw new Error(`Tool ${name} not found`);
+
+    // Validate input against schema
+    if (tool.input_schema) {
+      const { required = [], properties = {} } = tool.input_schema;
+      for (const key of required) {
+        if (input[key] === undefined || input[key] === null || input[key] === '') {
+          throw new Error(`Tool '${name}' requires parameter '${key}'`);
+        }
+      }
+      // Type check for provided parameters
+      for (const [key, value] of Object.entries(input)) {
+        const propSchema = properties[key];
+        if (propSchema && value !== undefined && value !== null) {
+          if (propSchema.type === 'number' && typeof value !== 'number') {
+            throw new Error(`Tool '${name}': parameter '${key}' must be a number, got ${typeof value}`);
+          }
+          if (propSchema.type === 'string' && typeof value !== 'string') {
+            throw new Error(`Tool '${name}': parameter '${key}' must be a string, got ${typeof value}`);
+          }
+          if (propSchema.type === 'boolean' && typeof value !== 'boolean') {
+            throw new Error(`Tool '${name}': parameter '${key}' must be a boolean, got ${typeof value}`);
+          }
+          if (propSchema.type === 'array' && !Array.isArray(value)) {
+            throw new Error(`Tool '${name}': parameter '${key}' must be an array, got ${typeof value}`);
+          }
+          if (propSchema.type === 'object' && (typeof value !== 'object' || Array.isArray(value))) {
+            throw new Error(`Tool '${name}': parameter '${key}' must be an object, got ${typeof value}`);
+          }
+          if (propSchema.enum && !propSchema.enum.includes(value)) {
+            throw new Error(`Tool '${name}': parameter '${key}' must be one of [${propSchema.enum.join(', ')}], got '${value}'`);
+          }
+        }
+      }
+    }
+
     return await tool.execute(input, context);
   }
 
@@ -121,8 +212,12 @@ export class ToolRegistry {
 }
 
 async function isDirectory(dirPath) {
-  const stat = await fs.stat(dirPath);
-  return stat.isDirectory();
+  try {
+    const stat = await fs.stat(dirPath);
+    return stat.isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 export async function* loadTools(dirPath) {

@@ -8,12 +8,12 @@ export const input_schema = {
   type: 'object',
   properties: {
     path: { type: 'string', description: 'Directory to list' },
-    recursive: { type: 'boolean', description: 'List subdirectories' },
     depth: { type: 'number', description: 'Recursion depth (default 1)' }
-  }
+  },
+  required: ['path']
 };
 
-export const execute = async ({ path: dirPath = '.', recursive = false, depth = 1 }) => {
+export const execute = async ({ path: dirPath = '.', depth = 1 }) => {
   try {
     const absPath = path.resolve(dirPath);
     const filter = await getIgnoreFilter();
@@ -28,17 +28,19 @@ export const execute = async ({ path: dirPath = '.', recursive = false, depth = 
 
         const filterPath = relativePath + (entry.isDirectory() ? '/' : '');
         if (filter.ignores(filterPath)) continue;
+        if (relativePath.match(/\.git\//)) continue;
 
-        let type = '[FILE]';
-        let name = entry.name;
+        let type = '';
         let suffix = '';
 
         if (entry.isDirectory()) {
-          type = '[DIR]';
-          name += '/';
+          type = '/';
         } else if (entry.isSymbolicLink()) {
-          type = '[LINK]';
-          name += '@';
+          type = '@';
+        } else if (entry.isFIFO()) {
+          type = '|';
+        } else if (entry.isSocket()) {
+          type = '=';
         }
 
         if (entry.isFile()) {
@@ -48,9 +50,9 @@ export const execute = async ({ path: dirPath = '.', recursive = false, depth = 
           } catch {}
         }
 
-        results.push(`${type} ${relativePath}${suffix}`);
+        results.push(`${relativePath}${type}${suffix}`);
 
-        if (recursive && entry.isDirectory() && currentDepth < depth) {
+        if (entry.isDirectory() && currentDepth < depth) {
           await walk(fullPath, currentDepth + 1);
         }
       }
@@ -59,6 +61,10 @@ export const execute = async ({ path: dirPath = '.', recursive = false, depth = 
     await walk(absPath, 0);
     return results.join('\n') || '(Empty directory)';
   } catch (error) {
+    const causeOutside = error.message.match(/outside project root/i);
+    if (causeOutside) {
+      return `list request to "${dirPath}" is not allowed because it targeted outside the workspace`;
+    }
     return `ERROR: ${error.message}`;
   }
 };

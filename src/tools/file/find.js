@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { getIgnoreFilter } from '../../core/utils.js';
+import { getIgnoreFilter, CONSTANTS } from '../../core/utils.js';
 
 export const name = 'Find';
 export const description = 'Search for files by name or content within a directory, respecting .gitignore rules. Use this to locate specific files or code snippets when the exact path is unknown.';
@@ -34,7 +34,7 @@ export const execute = async ({ path: dirPath = '.', pattern, mode }) => {
           if (regex.test(entry.name)) matches.push(relativePath);
         } else if (mode === 'content' && entry.isFile()) {
           const stats = await fs.stat(fullPath);
-          if (stats.size > 1024 * 500) continue;
+          if (stats.size > CONSTANTS.MAX_FILE_SIZE_SEARCH) continue;
 
           const content = await fs.readFile(fullPath, 'utf8');
           if (content.includes('\u0000')) continue;
