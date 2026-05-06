@@ -1,5 +1,8 @@
-import { spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
 import path from 'node:path';
+import { ensureSafePath, CONSTANTS } from '../../core/utils.js';
+
+const MAX_READ_SIZE = 10 * 1024 * 1024; // 10MB
 
 export const name = 'Read';
 export const description = 'Read the contents of a file with pagination and line numbers. Use pagination (start_line/end_line) for large files to avoid context overflow and ensure efficient reading.';
@@ -9,49 +12,44 @@ export const input_schema = {
     path: { type: 'string', description: 'File path' },
     start_line: { type: 'number', description: 'Line to start reading from' },
     end_line: { type: 'number', description: 'Line to end reading at' },
-    max_lines: { type: 'number', description: 'Max lines to return (default 500)' }
+    max_lines: { type: 'number', description: 'Max lines to return (default 1500)' }
   },
   required: ['path']
 };
 
-export const execute = async ({ path: filePath, start_line = 1, end_line = Infinity, max_lines = 500 }) => {
-  return new Promise((resolve) => {
-    const fullPath = path.resolve(filePath);
-    const cat = spawn('cat', ['-n', fullPath]);
-    let output = '';
-    let error = '';
+export const execute = async ({ path: filePath, start_line = 1, end_line = Infinity, max_lines = 1500 }) => {
+  try {
+    const safePath = ensureSafePath(filePath);
 
-    cat.stdout.on('data', (data) => { output += data.toString(); });
-    cat.stderr.on('data', (data) => { error += data.toString(); });
+    // Check file size before reading to prevent memory exhaustion
+    const stat = await fs.stat(safePath);
+    if (stat.size > MAX_READ_SIZE) {
+      throw new Error(`File too large (${stat.size} bytes). Maximum readable size is ${MAX_READ_SIZE} bytes (10MB).`);
+    }
 
-    cat.on('close', (code) => {
-      if (code !== 0) {
-        resolve(`ERROR: ${error.trim() || 'cat failed'}`);
-        return;
-      }
+    // Read entire file content — use fs.readFile instead of spawn('cat') for portability & security
+    const content = await fs.readFile(safePath, 'utf8');
+    const lines = content.split('\n');
+    // Remove trailing empty line from split
+    if (lines[lines.length - 1] === '') {
+      lines.pop();
+    }
 
-      // cat -n includes an extra newline at the end of the file if the file ends with a newline,
-      // and split('\n') will create an extra empty element at the end.
-      const lines = output.split('\n');
-      if (lines[lines.length - 1] === '') {
-        lines.pop();
-      }
+    const start = Math.max(0, start_line - 1);
+    const end = Math.min(lines.length, end_line || lines.length);
+    const slice = lines.slice(start, end).slice(0, max_lines);
 
-      const start = Math.max(0, start_line - 1);
-      const end = Math.min(lines.length, end_line || lines.length);
-      const slice = lines.slice(start, end).slice(0, max_lines);
+    // Format with line numbers like cat -n would
+    let result = slice.map((line, i) => {
+      const lineNum = start + i + 1;
+      return `${String(lineNum).padStart(6, ' ')}\t${line}`;
+    }).join('\n');
 
-      // result already has line numbers from cat -n, but they have leading spaces.
-      // e.g. "     1	content"
-      // the original tool returned "1: content"
-      // to stay somewhat consistent but use cat -n as requested, we'll keep the output as is from cat -n
-      // but trim the leading spaces to be more user-friendly.
-
-      let result = slice.join('\n');
-      if (lines.length > end || (end - start) > max_lines) {
-        result += '\n[... truncated]';
-      }
-      resolve(result);
-    });
-  });
+    if (lines.length > end || (end - start) > max_lines) {
+      result += '\n[... truncated]';
+    }
+    return result;
+  } catch (error) {
+    throw error;
+  }
 };

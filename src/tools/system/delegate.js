@@ -1,5 +1,6 @@
 import Agent from '../../core/agent.js';
-import { CONSTANTS } from '../../core/utils.js';
+import { CONSTANTS, ToolRegistry } from '../../core/utils.js';
+import logger from '../../core/logger.js';
 
 export const name = 'Delegate';
 export const description = 'Delegate a specific task to a specialized sub-agent. Use this for complex research, repetitive operations, or tasks with high-volume output to keep the main session history clean.';
@@ -15,25 +16,34 @@ export const input_schema = {
 };
 
 export const execute = async ({ description, prompt, persona, context_files }, { agent }) => {
+  const depth = (agent._delegateDepth || 0) + 1;
+  const MAX_DELEGATE_DEPTH = 3;
+  if (depth > MAX_DELEGATE_DEPTH) {
+    throw new Error(`Delegate depth limit reached (${MAX_DELEGATE_DEPTH}). Cannot nest deeper.`);
+  }
+
   const subagent = new Agent({
     apiKey: agent.apiKey,
     model: agent.model,
-    tools: agent.tools,
+    provider: agent.provider,
+    tools: agent.tools,  // inherit all tools including Delegate (depth check prevents unbounded recursion)
     systemPrompt: persona,
-    maxTokens: CONSTANTS.MAX_TOKENS_SUBAGENT
+    maxTokens: CONSTANTS.MAX_TOKENS_SUBAGENT,
+    maxToolLoops: 1000  // subagents need more iterations than the default 25
   });
+  subagent._delegateDepth = depth;
 
   let task = prompt;
   if (context_files?.length) {
     task = `I need you to work on these files: ${context_files.join(', ')}\n\nTask: ${prompt}`;
   }
 
-  console.log('Spawning subagent for:', description);
+  logger.info('Spawning subagent for:', description);
 
   try {
     const report = await subagent.run(task);
     return report;
   } catch (err) {
-    return `Delegation failed: ${err.message}`;
+    throw new Error(`Delegation failed: ${err.message}`);
   }
 };

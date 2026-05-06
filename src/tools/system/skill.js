@@ -27,7 +27,7 @@ export const execute = async ({ action, argument }) => {
     case 'load': {
       const skill = registry.get(argument);
       if (!skill) {
-        const lists = execute({ action: 'list' });
+        const lists = await execute({ action: 'list' });
         return `Skill "${argument}" not found!\n\n${lists}`;
       }
 
@@ -44,8 +44,8 @@ export const execute = async ({ action, argument }) => {
     }
     case 'search': {
       const results = registry.search(argument);
-      if (!results) {
-        const lists = execute({ action: 'list' });
+      if (!results || results.length === 0) {
+        const lists = await execute({ action: 'list' });
         return `No skills found matching "${argument}".\n\n${lists}`;
       }
 

@@ -1,8 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import crypto from 'node:crypto';
 // TODO: native implementation (without spawn)
 import { spawn } from 'node:child_process';
+import { ensureSafePath } from '../../core/utils.js';
 
 async function diff(file1, file2) {
   const stdout = [];
@@ -11,11 +13,12 @@ async function diff(file1, file2) {
   return new Promise((resolve, reject) => {
     const child = spawn('diff', [file1, file2]);
     child.stdout.on('data', chunk => stdout.push(chunk));
-    child.stderr.on('error', chunk => stderr.push(chunk));
-    child.on('error', (err) => reject(Buffer.concat(stderr).toString()));
+    child.stderr.on('data', chunk => stderr.push(chunk));
+    child.on('error', (err) => reject(err));
     child.on('exit', (code) => {
-      if (code) {
-        reject(Buffer.concat(stderr).toString());
+      // diff exit codes: 0=identical, 1=different, 2=trouble
+      if (code > 1) {
+        reject(new Error(`diff failed with code ${code}: ${Buffer.concat(stderr).toString()}`));
         return;
       }
       resolve(Buffer.concat(stdout).toString());
@@ -39,9 +42,9 @@ export const input_schema = {
 
 export const execute = async ({ path: filePath, new_text, old_text, start_line, end_line }) => {
   try {
-    const fullPath = path.resolve(filePath);
-    const content = await fs.readFile(fullPath, 'utf8');
-    const temp = path.join(os.tmpdir(), `temp${Date.now() + Math.floor(Math.random() * 1000)}`);
+    const safePath = ensureSafePath(filePath);
+    const content = await fs.readFile(safePath, 'utf8');
+    const temp = path.join(os.tmpdir(), `.openrouter-edit-${crypto.randomUUID()}`);
 
     if (old_text) {
       const occurrences = content.split(old_text).length - 1;
@@ -61,10 +64,10 @@ export const execute = async ({ path: filePath, new_text, old_text, start_line, 
       throw new Error("Either 'old_text' or both 'start_line' and 'end_line' must be provided.");
     }
 
-    const difference = await diff(fullPath, temp);
-    const newContent = await readFile(temp);
+    const difference = await diff(safePath, temp);
+    const newContent = await fs.readFile(temp);
     await fs.rm(temp);
-    await fs.writeFile(fullPath, newContent);
+    await fs.writeFile(safePath, newContent);
 
     if (difference) {
       return `File ${filePath} updated successfully\n\ndiff:\n${difference}`;
@@ -72,6 +75,6 @@ export const execute = async ({ path: filePath, new_text, old_text, start_line, 
       return `File ${filePath} updated, but no diff found`;
     }
   } catch (error) {
-    return `ERROR: ${error.message}`;
+    throw error;
   }
 };

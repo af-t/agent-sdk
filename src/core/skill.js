@@ -1,11 +1,10 @@
 import logger from './logger.js';
 import fs from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import { getDirname } from './dirname.js';
 import path from 'node:path';
 import os from 'node:os';
 
-// import.meta.dirname is experimental; provide fallback
-const __dirname = import.meta.dirname || path.dirname(fileURLToPath(import.meta.url));
+const __dirname = getDirname(import.meta);
 
 function parseFrontmatter(content) {
   const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
@@ -35,11 +34,13 @@ class SkillRegistry {
     this.skills = new Map();
     this.loaded = false;
     this.extraSearchDirs = options.extraSearchDirs || [];
+    this._forceRefresh = false;
   }
 
   async discover() {
-    if (this.loaded) return;
+    if (this.loaded && !this._forceRefresh) return;
     this.loaded = true;
+    this._forceRefresh = false;
     this.skills.clear();
 
     const searchPaths = [
@@ -69,6 +70,7 @@ class SkillRegistry {
     try {
       await fs.access(dir);
     } catch {
+      /* directory doesn't exist — skip */
       return;
     }
 
@@ -144,6 +146,17 @@ class SkillRegistry {
     results.sort((a, b) => b.score - a.score);
     return results;
   }
+
+  refresh() {
+    this._forceRefresh = true;
+    return this.discover();
+  }
+
+  reset() {
+    this.skills.clear();
+    this.loaded = false;
+    this._forceRefresh = false;
+  }
 }
 
 const registry = new SkillRegistry();
@@ -167,4 +180,6 @@ export default {
   list() { return registry.list(); },
   get(name) { return registry.get(name); },
   search(query) { return registry.search(query); },
+  refresh() { return registry.refresh(); },
+  reset() { registry.reset(); },
 };

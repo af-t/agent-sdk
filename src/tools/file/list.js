@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { getIgnoreFilter, formatSize } from '../../core/utils.js';
+import { getIgnoreFilter, formatSize, ensureSafePath } from '../../core/utils.js';
 
 export const name = 'List';
 export const description = 'List files and directories at a specified path, respecting .gitignore rules. Use this to explore the project structure and discover available files and folders.';
@@ -15,7 +15,7 @@ export const input_schema = {
 
 export const execute = async ({ path: dirPath = '.', depth = 1 }) => {
   try {
-    const absPath = path.resolve(dirPath);
+    const absPath = ensureSafePath(dirPath);
     const filter = await getIgnoreFilter();
     const results = [];
 
@@ -47,7 +47,9 @@ export const execute = async ({ path: dirPath = '.', depth = 1 }) => {
           try {
             const stats = await fs.stat(fullPath);
             suffix = ` (${formatSize(stats.size)})`;
-          } catch {}
+          } catch {
+            suffix = ''; // stat failed — skip size display silently
+          }
         }
 
         results.push(`${relativePath}${type}${suffix}`);
@@ -61,10 +63,6 @@ export const execute = async ({ path: dirPath = '.', depth = 1 }) => {
     await walk(absPath, 0);
     return results.join('\n') || '(Empty directory)';
   } catch (error) {
-    const causeOutside = error.message.match(/outside project root/i);
-    if (causeOutside) {
-      return `list request to "${dirPath}" is not allowed because it targeted outside the workspace`;
-    }
-    return `ERROR: ${error.message}`;
+    throw error;
   }
 };

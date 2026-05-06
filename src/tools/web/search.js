@@ -17,14 +17,14 @@ export const input_schema = {
 };
 
 export const execute = async ({ query, depth = 'basic', maxResults = 5, includeAnswer = false, includeDomains, excludeDomains }) => {
-  const apiKey = process.env.TAVILY_API_KEY || config.TAVILY_API_KEY;
+  const apiKey = config.TAVILY_API_KEY;
   if (!apiKey) {
-    return 'Error: TAVILY_API_KEY is not configured. Set it in .env or environment variables.';
+    throw new Error('TAVILY_API_KEY is not configured. Set it in .env or environment variables.');
   }
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), CONSTANTS.FETCH_TIMEOUT);
+    const timeout = setTimeout(() => controller.abort(), CONSTANTS.FETCH_TIMEOUT_MS);
 
     const body = {
       api_key: apiKey,
@@ -32,9 +32,9 @@ export const execute = async ({ query, depth = 'basic', maxResults = 5, includeA
       search_depth: depth,
       max_results: Math.min(maxResults, 20),
       include_answer: includeAnswer,
-      include_domains: includeDomains || [],
-      exclude_domains: excludeDomains || []
     };
+    if (includeDomains?.length) body.include_domains = includeDomains;
+    if (excludeDomains?.length) body.exclude_domains = excludeDomains;
 
     const res = await fetch('https://api.tavily.com/search', {
       method: 'POST',
@@ -47,7 +47,7 @@ export const execute = async ({ query, depth = 'basic', maxResults = 5, includeA
 
     if (!res.ok) {
       const errText = await res.text().catch(() => 'Unknown error');
-      return `Tavily search failed (${res.status}): ${errText}`;
+      throw new Error(`Tavily search failed (${res.status}): ${errText}`);
     }
 
     const data = await res.json();
@@ -77,8 +77,8 @@ export const execute = async ({ query, depth = 'basic', maxResults = 5, includeA
     return output.trim();
   } catch (error) {
     if (error.name === 'AbortError') {
-      return 'Search request timed out after 15 seconds. Try a more specific query.';
+      throw new Error('Search request timed out after 15 seconds. Try a more specific query.');
     }
-    return `Search failed: ${error.message}`;
+    throw error;
   }
 };

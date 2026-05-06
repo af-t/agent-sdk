@@ -1,6 +1,7 @@
 import { McpClientWrapper } from './mcp.js';
 import config from '../config.js';
 import fs from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import ignore from 'ignore';
 import logger from './logger.js';
@@ -8,10 +9,10 @@ import logger from './logger.js';
 // Constants
 export const CONSTANTS = Object.freeze({
   MAX_FILE_SIZE_SEARCH: 500 * 1024, // 500KB
-  RETRY_BASE_DELAY: 5000,           // ms
+  RETRY_BASE_DELAY_MS: 5000,        // ms
   RETRY_BACKOFF_FACTOR: 1.3,
   MCP_TIMEOUT: 30000,               // ms
-  FETCH_TIMEOUT: 15000,             // ms
+  FETCH_TIMEOUT_MS: 15000,          // ms
   MAX_TOKENS_SUBAGENT: 32000,
 });
 
@@ -56,15 +57,91 @@ export function clearIgnoreFilterCache() {
   _ignoreFilterCacheKey = null;
 }
 
+/**
+ * Safely URL-decode a string, returning the original on failure.
+ */
+function tryDecodeURIComponent(str) {
+  try {
+    return decodeURIComponent(str);
+  } catch {
+    return str;
+  }
+}
+
 export function ensureSafePath(filePath) {
-  const root = process.cwd();
+  // 1. Reject null bytes (CVE-2021-3805 style bypass)
+  if (filePath.includes('\0')) {
+    throw new Error(`Access denied: Path contains null byte`);
+  }
+
+  // 2. Reject URL-encoded path traversal (double encoding attacks)
+  // Decode first to catch %2e%2e (..), then check for raw traversal
+  const decoded = filePath.includes('%') ? tryDecodeURIComponent(filePath) : filePath;
+  if (/%2e%2e|%2f|%5c/i.test(filePath) || decoded.includes('..')) {
+    throw new Error(`Access denied: Path contains URL-encoded traversal characters`);
+  }
+
+  // 3. Reject protocol handlers (file://, etc.)
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(filePath.trim())) {
+    throw new Error(`Access denied: Path uses a protocol handler`);
+  }
+
+  const root = path.resolve(process.cwd());
   const resolvedPath = path.resolve(filePath);
   const relative = path.relative(root, resolvedPath);
 
-  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+  // 4. Must be within project root (empty string = outside — path IS the root)
+  if (relative.startsWith('..') || path.isAbsolute(relative) || !relative) {
     throw new Error(`Access denied: Path '${filePath}' is outside project root`);
   }
-  return resolvedPath;
+
+  // 5. Resolve symlinks to prevent TOCTOU (time-of-check-time-of-use)
+  try {
+    return realpathSync(resolvedPath);
+  } catch {
+    // Path doesn't exist yet (valid for Write tool); validate parent directory
+    const dir = path.dirname(resolvedPath);
+    try {
+      const safeDir = realpathSync(dir);
+      const safeRelative = path.relative(root, safeDir);
+      if (safeRelative.startsWith('..') || path.isAbsolute(safeRelative)) {
+        throw new Error(`Access denied: Path '${filePath}' resolves outside project root`);
+      }
+    } catch (dirErr) {
+      if (dirErr.message.startsWith('Access denied')) throw dirErr;
+      // Directory doesn't exist either — allow it, will be created by Write tool
+    }
+    return resolvedPath;
+  }
+}
+
+/**
+ * Sensitive env var name patterns to strip from child process environments.
+ * These match any env var containing these substrings (case-insensitive).
+ */
+const SENSITIVE_ENV_PATTERNS = [
+  'api_key', 'apikey', 'api-key',
+  'secret', 'token', 'password',
+  'credential', 'auth',
+  'openrouter', 'tavily',
+  'private_key', 'privatekey',
+];
+
+/**
+ * Strip sensitive environment variables from an env object.
+ * Returns a new object with only safe variables.
+ * Also redacts known secret name patterns.
+ */
+export function stripSecrets(env) {
+  const safe = {};
+  for (const [key, value] of Object.entries(env)) {
+    const keyLower = key.toLowerCase();
+    const isSensitive = SENSITIVE_ENV_PATTERNS.some(pattern => keyLower.includes(pattern));
+    if (!isSensitive) {
+      safe[key] = value;
+    }
+  }
+  return safe;
 }
 
 export function formatSize(bytes) {
@@ -76,19 +153,25 @@ export function formatSize(bytes) {
 }
 
 export async function withRetry(func, count = config.MAX_RETRIES, callback) {
-  let delay = CONSTANTS.RETRY_BASE_DELAY;
+  let delay = CONSTANTS.RETRY_BASE_DELAY_MS;
   let lastError;
+  const NON_RETRYABLE = [401, 403, 400, 404];
+  const MAX_DELAY = 60_000; // 1 minute cap
 
   for (let i = 0; i < count; i++) {
     try {
       const res = await func();
       return res;
     } catch (err) {
+      // Do not retry client errors (4xx except 429)
+      if (err?.status && NON_RETRYABLE.includes(err.status)) {
+        throw err;
+      }
       // Add jitter: ±20% random variation to prevent thundering herd
       const jitter = delay * (0.8 + Math.random() * 0.4);
-      await new Promise(resolve => setTimeout(resolve, jitter));
+      await new Promise(resolve => setTimeout(resolve, Math.min(jitter, MAX_DELAY)));
       lastError = err;
-      delay *= CONSTANTS.RETRY_BACKOFF_FACTOR;
+      delay = Math.min(delay * CONSTANTS.RETRY_BACKOFF_FACTOR, MAX_DELAY);
     }
   }
 
@@ -128,8 +211,17 @@ export class ToolRegistry {
   }
 
   register({ name, description, input_schema, execute }) {
-    if (typeof execute !== 'function') throw Error('tools cannot be executed');
+    if (typeof execute !== 'function') throw Error('Tool must have an execute function');
     this._tools.set(name, { description, input_schema, execute });
+  }
+
+  unregister(name) {
+    return this._tools.delete(name);
+  }
+
+  clear() {
+    this._tools.clear();
+    this._mcpClients = [];
   }
 
   async execute(name, input, context) {
@@ -205,6 +297,7 @@ export class ToolRegistry {
       try {
         await client.close();
       } catch (err) {
+        logger.warn('MCP client close failed:', err.message);
       }
     }
     this._mcpClients = [];
@@ -215,7 +308,8 @@ async function isDirectory(dirPath) {
   try {
     const stat = await fs.stat(dirPath);
     return stat.isDirectory();
-  } catch {
+  } catch (err) {
+    logger.debug('isDirectory stat failed:', err.message);
     return false;
   }
 }

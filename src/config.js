@@ -1,8 +1,20 @@
 import 'dotenv/config';
 
-export default Object.freeze({
+function deepFreeze(obj) {
+  if (Object.isFrozen(obj)) return obj;
+  const keys = Object.getOwnPropertyNames(obj);
+  for (const key of keys) {
+    const val = obj[key];
+    if (val && typeof val === 'object') {
+      deepFreeze(val);
+    }
+  }
+  return Object.freeze(obj);
+}
+
+export default deepFreeze({
   API_KEY: process.env.OPENROUTER_API_KEY,
-  ORDERS: process.env.OPENROUTER_ORDER?.split?.(','),
+  ORDER: process.env.OPENROUTER_ORDER?.split?.(','),
   ONLY: process.env.OPENROUTER_ONLY?.split?.(','),
   MODEL: process.env.OPENROUTER_MODEL,
   MAX_TOKENS: process.env.OPENROUTER_MAX_TOKENS,

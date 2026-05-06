@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { EventEmitter } from 'node:events';
-import { CONSTANTS } from './utils.js';
+import { CONSTANTS, stripSecrets } from './utils.js';
+import logger from './logger.js';
 
 export class McpNativeClient extends EventEmitter {
   constructor(config) {
@@ -19,7 +20,7 @@ export class McpNativeClient extends EventEmitter {
 
   async connect() {
     this.process = spawn(this.config.command, this.config.args || [], {
-      env: { ...process.env, ...(this.config.env || {}) },
+      env: { ...stripSecrets(process.env), ...(this.config.env || {}) },
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -69,8 +70,8 @@ export class McpNativeClient extends EventEmitter {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingRequests.delete(id);
-        reject(new Error(`Request ${method} timed out after ${timeout}ms`));
-      }, timeout);
+        reject(new Error(`Request ${method} timed out after ${effectiveTimeout}ms`));
+      }, effectiveTimeout);
 
       this.pendingRequests.set(id, {
         resolve: (val) => { clearTimeout(timer); resolve(val); },
@@ -169,6 +170,7 @@ export class McpNativeClient extends EventEmitter {
     try {
       return JSON.parse(line.trim());
     } catch (e) {
+      logger.debug('MCP: failed to parse message line:', line.slice(0, 200));
       return null;
     }
   }

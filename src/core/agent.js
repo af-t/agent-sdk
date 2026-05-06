@@ -1,5 +1,5 @@
 import { withRetry, ToolRegistry } from './utils.js';
-import { fileURLToPath } from 'node:url';
+import { getDirname } from './dirname.js';
 import { ApiError, ConfigError } from './errors.js';
 import logger from './logger.js';
 import config from '../config.js';
@@ -7,10 +7,14 @@ import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 
-// import.meta.dirname is experimental; provide fallback
-const __dirname = import.meta.dirname || path.dirname(fileURLToPath(import.meta.url));
+const __dirname = getDirname(import.meta);
+
+const REQUEST_TIMEOUT = 120_000; // 2 minutes
+const DEFAULT_MAX_TOOL_LOOPS = 25;
 
 class Agent {
+  #apiKey;
+
   constructor (options = {}) {
     const {
       apiKey,
@@ -19,25 +23,29 @@ class Agent {
       order,
       only,
       maxTokens,
-      systemPrompt
+      systemPrompt,
+      maxToolLoops
     } = options;
 
     if (!apiKey && !config.API_KEY) {
       throw new ConfigError('OPENROUTER_API_KEY is required. Set it in .env or pass it as an option.');
     }
-    this.apiKey = apiKey;
+    this.#apiKey = apiKey || config.API_KEY;
     this.model = model;
     this.provider = { order, only };
     this.messages = [];
     this.tools = tools || new ToolRegistry();
-    this.effort = 'high';
-    this.max_tokens = parseInt(maxTokens || config.MAX_TOKENS || 0) || undefined;
+    this.reasoningEffort = 'high';
+    this.maxTokens = parseInt(maxTokens || config.MAX_TOKENS || 0) || undefined;
     this.usage = { cost: 0, tokens: 0 };
+    // Max tool loop iterations before forcing a break.
+    // Set to 0 for unlimited (used by subagents via Delegate).
+    this.maxToolLoops = maxToolLoops ?? DEFAULT_MAX_TOOL_LOOPS;
     this.systemPrompt = systemPrompt || (() => {
       let base = 'You are an interactive agent that helps users with software engineering tasks.';
       try {
         base = fs.readFileSync(path.join(__dirname, '..', '..', 'RULE.md'), 'utf8');
-      } catch {
+      } catch (err) {
         logger.debug('No RULE.md found, using default instruction.');
       }
 
@@ -56,35 +64,47 @@ class Agent {
     })();
   }
 
+  /** Get API key (read-only) — used by Delegate tool to create sub-agents */
+  get apiKey() {
+    return this.#apiKey;
+  }
+
   async _request(payload) {
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ ...payload, stream: false })
-    });
-
-    let responseBody = await res.text();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
     try {
-      responseBody = JSON.parse(responseBody);
-    } catch {
-      if (!res.ok) {
-        throw new ApiError(`OpenRouter API error (${res.status})`, res.status, responseBody.slice(0, 500));
+      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.#apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ ...payload, stream: false }),
+        signal: controller.signal
+      });
+
+      let responseBody = await res.text();
+      try {
+        responseBody = JSON.parse(responseBody);
+      } catch {
+        if (!res.ok) {
+          throw new ApiError(`OpenRouter API error (${res.status})`, res.status, responseBody.slice(0, 500));
+        }
+        throw new Error(`Failed to parse OpenRouter response as JSON: ${responseBody.slice(0, 500)}`);
       }
-      throw new Error(`Failed to parse OpenRouter response as JSON: ${responseBody.slice(0, 500)}`);
-    }
 
-    if (!res.ok) {
-      throw new ApiError(
-        responseBody?.error?.message || `OpenRouter API error (${res.status})`,
-        res.status,
-        responseBody
-      );
-    }
+      if (!res.ok) {
+        throw new ApiError(
+          responseBody?.error?.message || `OpenRouter API error (${res.status})`,
+          res.status,
+          responseBody
+        );
+      }
 
-    return responseBody;
+      return responseBody;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async _send() {
@@ -120,8 +140,8 @@ class Agent {
       ],
       tools: this.tools.getDefinitions(),
       provider: this.provider,
-      max_tokens: this.max_tokens,
-      reasoning_effort: this.effort
+      max_tokens: this.maxTokens,
+      reasoning_effort: this.reasoningEffort
     };
 
     if (payload.tools.length === 0) delete payload.tools;
@@ -132,7 +152,7 @@ class Agent {
     logger.debug(`Received response from LLM.`);
 
     this.usage.cost += (response.usage?.cost || 0);
-    this.usage.tokens = (response.usage?.total_tokens || 0);
+    this.usage.tokens += (response.usage?.total_tokens || 0);
 
     return response;
   }
@@ -161,18 +181,32 @@ class Agent {
       }
     }
 
+    let loopCount = 0;
+
     while (true) {
       // Check abort signal
       if (signal?.aborted) {
         throw new Error('Agent run aborted');
       }
 
+      if (this.maxToolLoops > 0 && ++loopCount > this.maxToolLoops) {
+        logger.warn(`Agent: max tool loop iterations reached (${this.maxToolLoops}), forcing break.`);
+        break;
+      }
+
       const response = await withRetry(() => this._send(), 5);
       const message = response.choices?.[0]?.message;
-      if (!message) break;
+      if (!message) {
+        logger.warn('Agent: LLM returned no message in response. Breaking loop.');
+        break;
+      }
 
       const { content, reasoning, tool_calls } = message;
-      notify({ content, reasoning, tool_calls });
+      try {
+        await notify({ content, reasoning, tool_calls });
+      } catch (err) {
+        logger.debug('Notify callback error:', err.message);
+      }
 
       this.messages.push({ role: 'assistant', reasoning, content, tool_calls });
 
@@ -184,10 +218,32 @@ class Agent {
         }
 
         const name = tc.function.name;
-        const input = JSON.parse(tc.function.arguments);
+        let input;
+        try {
+          input = JSON.parse(tc.function.arguments);
+        } catch (parseErr) {
+          logger.warn(`Agent: failed to parse tool arguments for "${name}": ${parseErr.message}`);
+          this.messages.push({
+            role: 'tool',
+            content: `Error: invalid JSON arguments — ${parseErr.message}`,
+            tool_call_id: tc.id
+          });
+          continue;
+        }
 
         logger.debug('Agent: Executing tool:', name);
-        const result = await this.tools.execute(name, input, { agent: this });
+        let result;
+        try {
+          result = await this.tools.execute(name, input, { agent: this });
+        } catch (toolErr) {
+          logger.warn(`Tool ${name} failed: ${toolErr.message}`);
+          this.messages.push({
+            role: 'tool',
+            content: `Error: ${toolErr.message}`,
+            tool_call_id: tc.id
+          });
+          continue;
+        }
 
         this.messages.push({
           role: 'tool',
