@@ -1,5 +1,19 @@
-import pty from 'node-pty';
+import { exec } from 'node:child_process';
 import logger from '../../core/logger.js';
+
+// Lazy-loaded PTY module — may be unavailable on platforms without native build support
+let _ptyModule = null;
+
+async function getPty() {
+  if (_ptyModule === null) {
+    try {
+      _ptyModule = await import('node-pty');
+    } catch {
+      _ptyModule = false;
+    }
+  }
+  return _ptyModule;
+}
 
 // Whitelist of safe environment variables to pass to child processes
 const SAFE_ENV_KEYS = ['HOME', 'USER', 'PATH', 'SHELL', 'TERM', 'LANG', 'LC_ALL',
@@ -17,7 +31,7 @@ const BLOCKED_COMMANDS = [
   'echo "*/1 * * * *"',  // cron backdoor attempt
 ];
 
-// Suspicious operations that should be warned about (but not outright blocked)
+// Suspicious operations that should be warned (but not outright blocked)
 const SUSPICIOUS_PATTERNS = [
   /\b(kill|pkill|killall)\b/,
   /\bsudo\b/,
@@ -33,7 +47,6 @@ function isBlocked(command) {
   for (const blocked of BLOCKED_COMMANDS) {
     if (normalized.includes(blocked)) return blocked;
   }
-  // Detect eval/exec/source on sensitive paths
   if (/\b(eval|exec|source)\s+.*(\/etc\/|\.ssh|\.env)/.test(normalized)) {
     return 'eval/exec/source on sensitive path';
   }
@@ -48,54 +61,45 @@ function hasSuspiciousPattern(command) {
   return null;
 }
 
-export const name = 'Bash';
-export const description = 'Execute a shell command. Use this for system operations that do not have a specialized tool, such as running tests, performing builds, or using complex CLI utilities.';
-export const input_schema = {
-  type: 'object',
-  properties: {
-    command: { type: 'string', description: 'Shell command to execute' },
-    cwd: { type: 'string', description: 'Working directory' },
-    env: { type: 'object', description: 'Environment variables' },
-    timeout: { type: 'number', description: 'Timeout in ms (default 300000)' }
-  },
-  required: ['command']
-};
+// ── exec(1) fallback (used when node-pty is unavailable) ─────────────────
 
-export const execute = async ({ command, cwd = process.cwd(), env = process.env, timeout = 300000 }) => {
-  // Check for blocked commands (destruction-level)
-  const blocked = isBlocked(command);
-  if (blocked) {
-    throw new Error(`BLOCKED: Command matches blocked pattern '${blocked}'. This command is not allowed for safety reasons.`);
-  }
+function runWithExec(command, cwd, env, timeout) {
+  return new Promise((resolve, reject) => {
+    const child = exec(command, {
+      cwd,
+      env,
+      timeout,
+      maxBuffer: 10 * 1024 * 1024,
+    }, (error, stdout, stderr) => {
+      const output = stdout + stderr;
+      if (error) {
+        if (error.killed) {
+          reject(new Error(`Execution timed out after ${timeout}ms\n\nPartial Output:\n${output}`));
+        } else {
+          const msg = output
+            ? `Process exited with code ${error.code || 'unknown'}\n\nOutput:\n${output}`
+            : `Process exited with code ${error.code || 'unknown'}: ${error.message}`;
+          reject(new Error(msg));
+        }
+      } else {
+        resolve(output);
+      }
+    });
+  });
+}
 
-  // Warn about suspicious patterns
-  const suspicious = hasSuspiciousPattern(command);
-  if (suspicious) {
-    logger.warn(`Suspicious command pattern detected: ${suspicious}. Proceeding but this may be unsafe.`);
-  }
+// ── PTY mode (primary, uses node-pty) ───────────────────────────────────
 
-  // Sanitize environment: build from SAFE_ENV_KEYS whitelist
-  // Use explicit user-provided env if given, otherwise use safe subset from process.env
-  const safeEnv = {};
-  const sourceEnv = env === process.env ? process.env : env;
-  if (env === process.env) {
-    // Only allow whitelisted vars from process.env
-    for (const key of SAFE_ENV_KEYS) {
-      if (key in sourceEnv) safeEnv[key] = sourceEnv[key];
-    }
-  }
-  // Allow explicit user overrides
-  Object.assign(safeEnv, env !== process.env ? env : {});
-
+function runWithPty(command, cwd, env, timeout) {
   return new Promise((resolve, reject) => {
     let ptyProcess;
     try {
-      ptyProcess = pty.spawn('bash', ['-c', command], {
+      ptyProcess = _ptyModule.spawn('bash', ['-c', command], {
         name: 'xterm-256color',
         cols: 80,
         rows: 30,
         cwd,
-        env: safeEnv
+        env
       });
     } catch (err) {
       reject(err);
@@ -124,4 +128,51 @@ export const execute = async ({ command, cwd = process.cwd(), env = process.env,
       }
     });
   });
+}
+
+export const name = 'Bash';
+export const description = 'Execute a shell command. Use this for system operations that do not have a specialized tool, such as running tests, performing builds, or using complex CLI utilities.';
+export const input_schema = {
+  type: 'object',
+  properties: {
+    command: { type: 'string', description: 'Shell command to execute' },
+    cwd: { type: 'string', description: 'Working directory' },
+    env: { type: 'object', description: 'Environment variables' },
+    timeout: { type: 'number', description: 'Timeout in ms (default 300000)' }
+  },
+  required: ['command']
+};
+
+export const execute = async ({ command, cwd = process.cwd(), env = process.env, timeout = 300000 }) => {
+  // Check for blocked commands
+  const blocked = isBlocked(command);
+  if (blocked) {
+    throw new Error(`BLOCKED: Command matches blocked pattern '${blocked}'. This command is not allowed for safety reasons.`);
+  }
+
+  // Warn about suspicious patterns
+  const suspicious = hasSuspiciousPattern(command);
+  if (suspicious) {
+    logger.warn(`Suspicious command pattern detected: ${suspicious}. Proceeding but this may be unsafe.`);
+  }
+
+  // Sanitize environment
+  const safeEnv = {};
+  const sourceEnv = env === process.env ? process.env : env;
+  if (env === process.env) {
+    for (const key of SAFE_ENV_KEYS) {
+      if (key in sourceEnv) safeEnv[key] = sourceEnv[key];
+    }
+  }
+  Object.assign(safeEnv, env !== process.env ? env : {});
+
+  // Try PTY first, fall back to exec(1) if node-pty unavailable
+  const ptyMod = await getPty();
+  if (ptyMod) {
+    _ptyModule = ptyMod;
+    return runWithPty(command, cwd, safeEnv, timeout);
+  }
+
+  logger.debug('node-pty unavailable, falling back to child_process.exec');
+  return runWithExec(command, cwd, safeEnv, timeout);
 };

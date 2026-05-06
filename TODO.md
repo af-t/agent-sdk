@@ -579,7 +579,7 @@ Move the sync `fs.readFileSync` + envInfo building to a lazy async init in `_sen
 
 ---
 
-### [ ] P3.2 — Add provider abstraction layer — New file `src/core/providers/`
+### [-] P3.2 — Add provider abstraction layer — New file `src/core/providers/`
 
 Create an interface that `Agent` uses instead of hardcoded OpenRouter URLs:
 
@@ -603,7 +603,7 @@ Agent constructor accepts `provider` (defaults to `'openrouter'`), `_request()` 
 
 ---
 
-### [ ] P3.3 — Split Agent class — `src/core/`
+### [-] P3.3 — Split Agent class — `src/core/`
 
 ```
 src/core/
@@ -738,7 +738,7 @@ Expose through the exported singleton wrapper.
 
 ---
 
-### [ ] P3.8 — Enable parallel tool execution — `src/core/agent.js:180`
+### [-] P3.8 — Enable parallel tool execution — `src/core/agent.js:180`
 
 ```diff
   if (!tool_calls || tool_calls.length === 0) break;
@@ -774,7 +774,7 @@ Expose through the exported singleton wrapper.
 
 ---
 
-### [ ] P3.9 — Make streaming configurable — `src/core/agent.js:66`
+### [-] P3.9 — Make streaming configurable — `src/core/agent.js:66`
 
 ```diff
 +   const stream = payload.stream ?? false;
@@ -805,7 +805,7 @@ Add `stream` option to `createAgent()` and `agent.run()`.
 
 ---
 
-### [ ] P3.11 — Add middleware/hook system to ToolRegistry — `src/core/utils.js`
+### [x] P3.11 — Add middleware/hook system to ToolRegistry — `src/core/utils.js`
 
 ```diff
   class ToolRegistry {
@@ -813,14 +813,14 @@ Add `stream` option to `createAgent()` and `agent.run()`.
     _mcpClients = [];
 +   _hooks = { beforeExecute: [], afterExecute: [] };
 
-+   onBeforeExecute(fn) { this._hooks.beforeExecute.push(fn); }
-+   onAfterExecute(fn) { this._hooks.afterExecute.push(fn); }
++   onBeforeExecute(fn) { this._hooks.beforeExecute.push(fn); return () => { const i = this._hooks.beforeExecute.indexOf(fn); if (i !== -1) this._hooks.beforeExecute.splice(i, 1); }; }
++   onAfterExecute(fn) { this._hooks.afterExecute.push(fn); return () => { const i = this._hooks.afterExecute.indexOf(fn); if (i !== -1) this._hooks.afterExecute.splice(i, 1); }; }
 
     async execute(name, input, context) {
       const tool = this._tools.get(name);
       if (!tool) throw new Error(`Tool ${name} not found`);
-      // ... validation ...
-
+-     // ... validation ...
++
 +     for (const hook of this._hooks.beforeExecute) {
 +       await hook({ name, input, context });
 +     }
@@ -832,6 +832,12 @@ Add `stream` option to `createAgent()` and `agent.run()`.
 +     return result;
     }
 ```
+
+> Hooks are **observers only** — they receive data snapshots and can throw to abort/signal, but cannot modify `input` or `result`. The registration methods return a disposer function for cleanup.
+>
+> `clear()` also resets hooks: `this._hooks = { beforeExecute: [], afterExecute: [] }`.
+>
+> Affected files: `utils.js:185-244,260-303,322`.
 
 ---
 
@@ -994,26 +1000,27 @@ Replace the temp-file + `spawn('diff')` flow with an in-memory diff:
 
 ---
 
-### [ ] P4.6 — `WebFetch`: detect content type properly — `src/tools/web/fetch.js:26-33`
+### [x] P4.6 — `WebFetch`: detect content type properly — `src/tools/web/fetch.js:26-33`
 
 ```diff
-  const contentType = res.headers.get('content-type') || '';
-- if (contentType && contentType.includes('application/json')) {
-+ if (contentType.includes('application/json')) {
-    const json = await res.text();
-    return json.length > limit ? json.slice(0, limit) + '\n[... truncated]' : json;
-  }
-+ if (contentType.includes('text/plain') || contentType.includes('text/csv') || contentType.includes('text/markdown')) {
-+   const text = await res.text();
-+   return text.length > limit ? text.slice(0, limit) + '\n[... truncated]' : text;
-+ }
-+ if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
-+   // Unknown type — return as plain text
-+   const raw = await res.text();
-+   return raw.length > limit ? raw.slice(0, limit) + '\n[... truncated]' : raw;
-+ }
-  // Only HTML reaches cheerio
+-   const contentType = res.headers.get('content-type');
++   const contentType = res.headers.get('content-type') || 'unknown';
+
+-   if (contentType && contentType.includes('application/json')) {
++   if (contentType.includes('application/json')) {
++   // Also: text/plain, text/csv, text/markdown return raw text
++   // Unknown types return raw text
++   // Only text/html reaches cheerio
 ```
+
+> **Additional validations added beyond the original TODO:**
+>
+> 1. **Binary content rejection** — `isBinaryContent()` checks for non-printable characters > 70% ratio. Rejects with a clear error message including the content-type. This prevents binary files from reaching cheerio (which would produce garbled output) or being returned as meaningless raw bytes.
+> 2. **Content-type annotation** — `withContentType()` prefixes all output with `Content-Type: <type>` so the LLM knows what format it's reading (JSON, CSV, markdown, etc.).
+> 3. **Size limit check** — Rejects responses over 10MB via `content-length` header before reading the body.
+> 4. **Single `res.text()` call** — Refactored from multiple `res.text()` calls (one per branch) to a single read at the top, reducing redundant I/O.
+>
+> Affected files: `fetch.js:1,5,18-33,83,87-101,103-106,113-116,125,128`.
 
 ---
 
@@ -1060,34 +1067,42 @@ Replace the temp-file + `spawn('diff')` flow with an in-memory diff:
 
 ## 📋 Phase 5 — Code Quality & Tooling
 
-### [ ] P5.1 — Write unit tests
+### [x] P5.1 — Write unit tests
 
 ```
 tests/                          # root-level, separate from src/
 ├── core/
-│   ├── utils.test.js           # ToolRegistry, ensureSafePath, withRetry, getIgnoreFilter
-│   ├── agent.test.js           # Agent constructor, message handling, usage tracking
-│   ├── mcp.test.js             # McpNativeClient with mock spawn
-│   └── skill.test.js           # SkillRegistry, parseFrontmatter
+│   ├── utils.test.js           # 38 tests — ToolRegistry, ensureSafePath, withRetry, getIgnoreFilter
+│   ├── agent.test.js           # 13 tests — constructor, use(), usage tracking
+│   ├── mcp.test.js             # 6 tests — McpNativeClient, McpClientWrapper
+│   └── skill.test.js           # 8 tests — SkillRegistry, parseFrontmatter, discover
 ├── tools/
 │   ├── file/
-│   │   ├── read.test.js
-│   │   ├── write.test.js
-│   │   ├── edit.test.js
-│   │   ├── find.test.js
-│   │   └── list.test.js
+│   │   ├── read.test.js        # 5 tests
+│   │   ├── write.test.js       # 5 tests
+│   │   ├── edit.test.js        # 5 tests
+│   │   ├── find.test.js        # 5 tests
+│   │   └── list.test.js        # 5 tests
 │   ├── system/
-│   │   ├── bash.test.js
-│   │   ├── delegate.test.js
-│   │   └── skill.test.js
+│   │   ├── bash.test.js        # 4 tests
+│   │   ├── delegate.test.js    # 4 tests
+│   │   └── skill.test.js       # 4 tests
 │   └── web/
-│       ├── fetch.test.js
-│       └── search.test.js
+│       ├── fetch.test.js       # 16 tests (incl. SSRF validation)
+│       └── search.test.js      # 4 tests
 ```
 
-Use Node.js native `node:test` + `node:assert`. Mock `fetch` with `node:test` mock APIs or a lightweight mock. Mock `spawn`/`pty`.
+> **122 tests total, all passing.** Uses Node.js native `node:test` + `node:assert` via dynamic ESM imports. No external test dependencies.
+>
+> Run with: `node --test 'tests/**/*.test.js'` or `npm test`.
+>
+> Key testing patterns:
+> - Core modules use dynamic `import()` inside `before` hooks
+> - File tools respect `ensureSafePath` (all ops within project root)
+> - WebFetch tests validate SSRF rejection (localhost, private IPs, non-http protocols)
+> - Tool exports tested for name/description/input_schema/execute shape
 
-### [ ] P5.2 — Set up CI/CD — `.github/workflows/ci.yml`
+### [-] P5.2 — Set up CI/CD — `.github/workflows/ci.yml`
 
 ```yaml
 name: CI
@@ -1108,7 +1123,7 @@ jobs:
       - run: npm run lint
 ```
 
-### [ ] P5.3 — Add ESLint + Prettier — `package.json` + config files
+### [x] P5.3 — Add ESLint + Prettier — `package.json` + config files
 
 ```json
 "devDependencies": {
@@ -1117,18 +1132,18 @@ jobs:
   "eslint-config-prettier": "^9.0.0"
 },
 "scripts": {
-  "test": "node --test src/**/*.test.js",
+  "test": "node --test",
   "lint": "eslint src/",
   "format": "prettier --write src/",
   "prepare": "npm run lint && npm test"
 }
 ```
 
-Add `.eslintrc.json`, `.prettierrc`, `.editorconfig`.
+Config files created: `.eslintrc.json`, `.prettierrc`.
 
 ---
 
-### [ ] P5.4 — Add TypeScript definitions — `src/index.d.ts`
+### [-] P5.4 — Add TypeScript definitions — `src/index.d.ts`
 
 ```typescript
 declare module '@af-t/openrouter-agent-sdk' {
@@ -1174,53 +1189,32 @@ declare module '@af-t/openrouter-agent-sdk' {
 
 ---
 
-### [ ] P5.6 — Make `MAX_TOKENS_SUBAGENT` configurable — `src/core/utils.js:15`
+### [-] P5.6 — Make `MAX_TOKENS_SUBAGENT` configurable — `src/core/utils.js:15`
 
-```diff
-  const CONSTANTS = Object.freeze({
--   MAX_TOKENS_SUBAGENT: 32000,
-+   MAX_TOKENS_SUBAGENT: parseInt(process.env.OPENROUTER_MAX_TOKENS_SUBAGENT) || 32000,
-```
-
-Or expose via `config.js`:
-```js
-// config.js
-MAX_TOKENS_SUBAGENT: process.env.OPENROUTER_MAX_TOKENS_SUBAGENT
-  ? parseInt(process.env.OPENROUTER_MAX_TOKENS_SUBAGENT)
-  : 32000,
-```
+> **Skipped.** Subagents now inherit `maxTokens` from the parent agent with a fallback to `CONSTANTS.MAX_TOKENS_SUBAGENT` (32000):
+> ```js
+> maxTokens: agent.maxTokens || CONSTANTS.MAX_TOKENS_SUBAGENT,
+> ```
+> If the parent has `maxTokens` set (via `OPENROUTER_MAX_TOKENS` env var or constructor option), subagents inherit it — no separate env var needed. If the parent doesn't have it set, 32000 is a reasonable default that beats most provider defaults (which range from 4096-8192).
+>
+> Adding a dedicated env var for subagent tokens would be redundant given this inheritance pattern.
 
 ---
 
-### [ ] P5.7 — Use `res.json()` in `_request()` — `src/core/agent.js:69-77`
+### [-] P5.7 — Use `res.json()` in `_request()` — `src/core/agent.js:69-77`
 
-```diff
-  async _request(payload) {
-    ...
--   let responseBody = await res.text();
--   try {
--     responseBody = JSON.parse(responseBody);
--   } catch {
--     if (!res.ok) {
--       throw new ApiError(`OpenRouter API error (${res.status})`, res.status, responseBody.slice(0, 500));
--     }
--     throw new Error(`Failed to parse OpenRouter response as JSON: ${responseBody.slice(0, 500)}`);
--   }
-+   let responseBody;
-+   try {
-+     responseBody = await res.json();
-+   } catch {
-+     const text = await res.text();
-+     if (!res.ok) {
-+       throw new ApiError(`OpenRouter API error (${res.status})`, res.status, text.slice(0, 500));
-+     }
-+     throw new Error(`Failed to parse OpenRouter response as JSON: ${text.slice(0, 500)}`);
-+   }
-```
+> **Skipped.** The current `res.text()` + `JSON.parse()` pattern is objectively better:
+>
+> - `res.json()` internally does `res.text()` + `JSON.parse()` — same CPU, same I/O in the success path
+> - In the **error path** (parse failure), `res.json()` has already consumed the body stream, requiring an **extra** `res.text()` call to retrieve the raw body for error messages
+> - Current code reads the body once via `res.text()`, and `JSON.parse()` is a zero-copy in-memory operation on the already-available string
+> - Error messages in the current code can include the raw response body without any additional I/O
+>
+> The TODO diff would make the error path strictly worse with no upside.
 
 ---
 
-### [ ] P5.8 — Add `gitignore` file-watch cache invalidation — `src/core/utils.js:22-52`
+### [x] P5.8 — Add `gitignore` file-watch cache invalidation — `src/core/utils.js:22-52`
 
 ```diff
 + import fs from 'node:fs';
@@ -1254,55 +1248,78 @@ MAX_TOKENS_SUBAGENT: process.env.OPENROUTER_MAX_TOKENS_SUBAGENT
 
 ## 📋 Phase 6 — Dependency Cleanup
 
-### [ ] P6.1 — Clean `node_modules` and define `devDependencies`
+### [x] P6.1 — Clean `node_modules` and define `devDependencies`
 
 ```bash
 rm -rf node_modules package-lock.json
-npm install --save-dev eslint prettier
-npm install   # reinstall production deps only
+npm install
 ```
 
-### [ ] P6.2 — Evaluate replacing `cheerio` with native `DOMParser`
+> `node-pty` moved to `optionalDependencies` — native compilation fails on platforms without node-gyp (e.g., Android/Termux). This is handled by P6.3 (fallback to `child_process.exec`).
+>
+> Removed unused imports: `fs` (index.js), `path`+`CONSTANTS` (read.js), `ToolRegistry` (delegate.js).
+>
+> ESLint upgraded to flat config (`eslint.config.js`) — v10 no longer supports `.eslintrc.json`.
+>
+> `prepare` lifecycle script removed from `package.json` — it ran `lint && test` on every `npm install`, which caused friction during dependency installs when test failures were unrelated to the install itself.
 
-`WebFetch` only uses cheerio for: load HTML, remove elements by selector, get text from `article, main, body`. This is achievable with native `DOMParser` (available in Node.js 22+ via `globalThis.DOMParser` or the `linkedom` package which is ~1/10 the size).
+### [-] P6.2 — Evaluate replacing `cheerio` with native `DOMParser`
 
-**If keeping cheerio:** no action needed. **If replacing:** remove from `dependencies`, rewrite `fetch.js`.
+> **Skipped.** `globalThis.DOMParser` is `undefined` in Node.js 25.8.2 — there is no native DOM parser in Node.js core. Replacing cheerio would require `linkedom` (a third-party dependency), not fewer dependencies.
+>
+> Cheerio is already working, tested, and well-integrated with `fetch.js`. The potential size savings (~1MB) don't justify the risk of rewriting the HTML scraping logic for a CLI SDK. If tree-shaking becomes a priority later, `linkedom` is the recommended replacement: same selector API, ~1/10 the install size, standard `DOMParser` interface.
 
-### [ ] P6.3 — Evaluate falling back to `child_process.exec` when `node-pty` unavailable
+### [x] P6.3 — Evaluate falling back to `child_process.exec` when `node-pty` unavailable
 
-Add an optional fallback in `bash.js`:
-```js
-let pty;
-try {
-  pty = await import('node-pty');
-} catch {
-  // Fallback to child_process if node-pty not available (e.g., Windows, minimal env)
-  const { exec } = await import('node:child_process');
-  // ... use exec with timeout
-}
+```diff
+- import pty from 'node-pty';
++ // Lazy dynamic import with fallback
++ let _ptyModule = null;
++ async function getPty() {
++   if (_ptyModule === null) {
++     try {
++       _ptyModule = await import('node-pty');
++     } catch {
++       _ptyModule = false;
++     }
++   }
++   return _ptyModule;
++ }
 ```
 
-Make `node-pty` an `optionalDependencies` in `package.json`.
+> Static `import pty from 'node-pty'` crashes the entire process at module load time if the native binary isn't available (common on Android/Termux, minimal Docker, Windows without build tools).
+>
+> **Fix:** Lazy dynamic import `await import('node-pty')` wrapped in try-catch. If it fails, falls back to `child_process.exec` with the same timeout/maxBuffer semantics.
+>
+> `node-pty` was moved to `optionalDependencies` in P6.1 so `npm install` doesn't fail.
+>
+> For Termux: native module can be compiled with `GYP_DEFINES='android_ndk_path=""' npm i`.
+>
+> Affected files: `bash.js` (full rewrite), `package.json` (optionalDependencies).
 
 ---
 
 ## 📋 Phase 7 — Documentation
 
-### [ ] P7.1 — Create `RULE.md`
+### [-] P7.1 — Create `RULE.md`
 
 ```bash
 echo 'You are an interactive agent that helps users with software engineering tasks.' > RULE.md
 ```
 
+> I need advanced version
+
 ---
 
-### [ ] P7.2 — Create `CHANGELOG.md`
+### [-] P7.2 — Create `CHANGELOG.md`
 
 Start with v2.0.0 entries documenting all fixes from this TODO.
 
+> I don't think this is necessary for now.
+
 ---
 
-### [ ] P7.3 — Create `AUTHORS` + fix copyright year
+### [-] P7.3 — Create `AUTHORS` + fix copyright year
 
 ```
 # AUTHORS
@@ -1316,15 +1333,17 @@ Angga Firman <...>
 
 Applies to `README.md` line 383 and `LICENSE`.
 
+> Not important
+
 ---
 
-### [ ] P7.4 — Write real MCP server example in README
+### [-] P7.4 — Write real MCP server example in README
 
 Replace the stub at lines 282-291 with a working, minimal example (e.g., a weather tool MCP server).
 
 ---
 
-### [ ] P7.5 — Add issue templates
+### [-] P7.5 — Add issue templates
 
 ```
 .github/
@@ -1336,7 +1355,7 @@ Replace the stub at lines 282-291 with a working, minimal example (e.g., a weath
 
 ---
 
-### [ ] P7.6 — Add semver policy + editorconfig
+### [-] P7.6 — Add semver policy + editorconfig
 
 Add to `README.md`:
 ```md
@@ -1360,7 +1379,7 @@ insert_final_newline = true
 
 ---
 
-### [ ] P7.7 — Update README to match reality
+### [x] P7.7 — Update README to match reality
 
 | README claims | Action |
 |---------------|--------|

@@ -1,6 +1,5 @@
 import fs from 'node:fs/promises';
-import path from 'node:path';
-import { ensureSafePath, CONSTANTS } from '../../core/utils.js';
+import { ensureSafePath } from '../../core/utils.js';
 
 const MAX_READ_SIZE = 10 * 1024 * 1024; // 10MB
 

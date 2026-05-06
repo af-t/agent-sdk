@@ -169,7 +169,7 @@ export class McpNativeClient extends EventEmitter {
   _parseMessage(line) {
     try {
       return JSON.parse(line.trim());
-    } catch (e) {
+    } catch {
       logger.debug('MCP: failed to parse message line:', line.slice(0, 200));
       return null;
     }

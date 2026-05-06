@@ -1,7 +1,7 @@
 import { McpClientWrapper } from './mcp.js';
 import config from '../config.js';
 import fs from 'node:fs/promises';
-import { realpathSync } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import ignore from 'ignore';
 import logger from './logger.js';
@@ -13,19 +13,26 @@ export const CONSTANTS = Object.freeze({
   RETRY_BACKOFF_FACTOR: 1.3,
   MCP_TIMEOUT: 30000,               // ms
   FETCH_TIMEOUT_MS: 15000,          // ms
+  FETCH_MAX_SIZE: 10 * 1024 * 1024, // 10MB — response body limit for WebFetch
   MAX_TOKENS_SUBAGENT: 32000,
 });
 
 // Cached gitignore filter
 let _ignoreFilterCache = null;
 let _ignoreFilterCacheKey = null;
+let _ignoreFilterMtime = 0;
 
 export async function getIgnoreFilter() {
   const cwd = process.cwd();
-  // Invalidate cache if cwd changed
-  if (_ignoreFilterCache && _ignoreFilterCacheKey === cwd) {
+  const gitignorePath = path.join(cwd, '.gitignore');
+  let mtime = 0;
+  try { mtime = statSync(gitignorePath).mtimeMs; } catch {}
+
+  // Invalidate cache if cwd changed or .gitignore was modified
+  if (_ignoreFilterCache && _ignoreFilterCacheKey === cwd && _ignoreFilterMtime === mtime) {
     return _ignoreFilterCache;
   }
+  _ignoreFilterMtime = mtime;
 
   const ig = ignore();
   try {
@@ -55,6 +62,7 @@ export async function getIgnoreFilter() {
 export function clearIgnoreFilterCache() {
   _ignoreFilterCache = null;
   _ignoreFilterCacheKey = null;
+  _ignoreFilterMtime = 0;
 }
 
 /**
@@ -182,6 +190,34 @@ export async function withRetry(func, count = config.MAX_RETRIES, callback) {
 export class ToolRegistry {
   _tools = new Map();
   _mcpClients = [];
+  _hooks = { beforeExecute: [], afterExecute: [] };
+
+  /**
+   * Register a hook that runs before every tool execution.
+   * Receives { name, input, context }. Throw to abort the tool call.
+   * Returns a disposer function to unregister the hook.
+   */
+  onBeforeExecute(fn) {
+    this._hooks.beforeExecute.push(fn);
+    return () => {
+      const idx = this._hooks.beforeExecute.indexOf(fn);
+      if (idx !== -1) this._hooks.beforeExecute.splice(idx, 1);
+    };
+  }
+
+  /**
+   * Register a hook that runs after every successful tool execution.
+   * Receives { name, input, context, result }. Throw to signal a problem
+   * (the tool result is discarded and the error propagates).
+   * Returns a disposer function to unregister the hook.
+   */
+  onAfterExecute(fn) {
+    this._hooks.afterExecute.push(fn);
+    return () => {
+      const idx = this._hooks.afterExecute.indexOf(fn);
+      if (idx !== -1) this._hooks.afterExecute.splice(idx, 1);
+    };
+  }
 
   getDefinitions() {
     const res = [];
@@ -222,11 +258,17 @@ export class ToolRegistry {
   clear() {
     this._tools.clear();
     this._mcpClients = [];
+    this._hooks = { beforeExecute: [], afterExecute: [] };
   }
 
   async execute(name, input, context) {
     const tool = this._tools.get(name);
     if (!tool) throw new Error(`Tool ${name} not found`);
+
+    // Run before-execute hooks (can throw to abort)
+    for (const hook of this._hooks.beforeExecute) {
+      await hook({ name, input, context });
+    }
 
     // Validate input against schema
     if (tool.input_schema) {
@@ -262,7 +304,14 @@ export class ToolRegistry {
       }
     }
 
-    return await tool.execute(input, context);
+    const result = await tool.execute(input, context);
+
+    // Run after-execute hooks (can throw to signal problems)
+    for (const hook of this._hooks.afterExecute) {
+      await hook({ name, input, context, result });
+    }
+
+    return result;
   }
 
   async connectMcpServer({ name, command, args, env }) {

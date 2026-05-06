@@ -27,7 +27,7 @@ Minimal SDK for building AI agents connected to the [OpenRouter API](https://ope
 - **MCP (Model Context Protocol) Support** — Connect your agent to external tools via stdio-based MCP servers.
 - **Skill Discovery System** — Discover and load skills from SKILL.md files across builtin, project, and user directories.
 - **Built-in Tools** — File operations (Read, Write, Edit, Find, List), shell command execution (Bash), web search (Tavily), web fetch, and subagent delegation.
-- **Safety & Validation** — Tool inputs are validated against their schema (type checks, required fields, enums). Path traversal protection. Dangerous shell command detection.
+- **Safety & Validation** — Tool inputs are validated against their schema (type checks, required fields, enums). Path traversal protection on Read, Write, Edit, List, and Find tools. Dangerous shell command detection.
 - **Retry with Exponential Backoff** — Auto-retry with jitter to handle rate limits and transient errors.
 - **Abort Signal Support** — Cancel agent execution at any point.
 - **Ephemeral Caching** — Automatic `cache_control` on system prompt and the last user message.
@@ -134,6 +134,7 @@ const result = await agent.run(
   'Create a README.md for this project.',
   (update) => {
     if (update.content) console.log('Content:', update.content);
+    if (update.reasoning) console.log('Reasoning:', update.reasoning);
     if (update.tool_calls) console.log('Tool calls:', update.tool_calls);
   }
 );
@@ -261,7 +262,7 @@ await agent.tools.connectMcpServer({
 | `Edit`      | File     | Edit a file with find-and-replace                  |
 | `Find`      | File     | Search for files by name or content                |
 | `List`      | File     | List directory contents (ls alternative)           |
-| `Bash`      | System   | Execute shell commands (via node-pty)              |
+| `Bash`      | System   | Execute shell commands (pty with fallback to child_process) |
 | `Delegate`  | System   | Delegate tasks to a sub-agent                      |
 | `Skill`     | System   | Manage and load skills                             |
 | `WebSearch` | Web      | Web search via Tavily API                          |
@@ -277,7 +278,7 @@ This SDK supports the [Model Context Protocol (MCP)](https://modelcontextprotoco
 3. Tools from the MCP server are auto-registered with `<name>_<toolName>` prefix
 4. The agent can immediately use those tools
 
-**Minimal MCP server example:**
+**Minimal MCP server example (simplified illustration):**
 
 ```javascript
 // mcp-weather.js
@@ -290,6 +291,8 @@ rl.on('line', (line) => {
   // Send response to stdout
 });
 ```
+
+> For a working MCP server implementation, see `src/core/mcp.js`. A full production-ready example (e.g., weather tool) is planned for a future release.
 
 See `src/core/mcp.js` for the full implementation.
 

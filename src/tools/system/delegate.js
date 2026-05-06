@@ -1,5 +1,5 @@
 import Agent from '../../core/agent.js';
-import { CONSTANTS, ToolRegistry } from '../../core/utils.js';
+import { CONSTANTS } from '../../core/utils.js';
 import logger from '../../core/logger.js';
 
 export const name = 'Delegate';
@@ -28,7 +28,7 @@ export const execute = async ({ description, prompt, persona, context_files }, {
     provider: agent.provider,
     tools: agent.tools,  // inherit all tools including Delegate (depth check prevents unbounded recursion)
     systemPrompt: persona,
-    maxTokens: CONSTANTS.MAX_TOKENS_SUBAGENT,
+    maxTokens: agent.maxTokens || CONSTANTS.MAX_TOKENS_SUBAGENT,
     maxToolLoops: 1000  // subagents need more iterations than the default 25
   });
   subagent._delegateDepth = depth;

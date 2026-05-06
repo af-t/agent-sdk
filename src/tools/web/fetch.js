@@ -16,6 +16,22 @@ const BLOCKED_IP_RANGES = [
 ];
 
 /**
+ * Check if text content appears binary (non-printable chars > 70%).
+ */
+function isBinaryContent(text) {
+  const nonPrintable = (text.match(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g) || []).length;
+  return nonPrintable / text.length > 0.7;
+}
+
+/**
+ * Return content with a content-type annotation prefix.
+ */
+function withContentType(contentType, body) {
+  const label = `Content-Type: ${contentType}`;
+  return `${label}\n\n${body}`;
+}
+
+/**
  * Check if a URL targets an internal/private resource (SSRF prevention).
  * Blocks private IPs, localhost, and non-HTTP(S) protocols.
  */
@@ -77,20 +93,40 @@ export const execute = async ({ url, useRaw = false, limit = 20000 }) => {
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timeout);
 
-    const contentType = res.headers.get('content-type');
-
-    if (contentType && contentType.includes('application/json')) {
-      const json = await res.text();
-      return json.length > limit ? json.slice(0, limit) + '\n[... truncated]' : json;
+    // Reject oversized responses
+    const contentLength = res.headers.get('content-length');
+    if (contentLength && parseInt(contentLength) > CONSTANTS.FETCH_MAX_SIZE) {
+      throw new Error(`Response too large (${contentLength} bytes). Maximum allowed is ${CONSTANTS.FETCH_MAX_SIZE} bytes (10MB).`);
     }
 
-    const html = await res.text();
+    const contentType = res.headers.get('content-type') || 'unknown';
+    const raw = await res.text();
+
+    // Reject binary content (non-printable chars > 70%)
+    if (isBinaryContent(raw)) {
+      throw new Error(`Binary content detected (content-type: ${contentType}). WebFetch cannot process binary files.`);
+    }
+
+    if (contentType.includes('application/json')) {
+      return withContentType(contentType, raw.length > limit ? raw.slice(0, limit) + '\n[... truncated]' : raw);
+    }
+
+    if (contentType.includes('text/plain') || contentType.includes('text/csv') || contentType.includes('text/markdown')) {
+      return withContentType(contentType, raw.length > limit ? raw.slice(0, limit) + '\n[... truncated]' : raw);
+    }
+
+    if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
+      // Unknown type — return as plain text
+      return withContentType(contentType, raw.length > limit ? raw.slice(0, limit) + '\n[... truncated]' : raw);
+    }
+
+    // Only HTML reaches cheerio
     if (useRaw) {
-      return html.length > limit ? html.slice(0, limit) + '\n[... truncated]' : html;
+      return withContentType(contentType, raw.length > limit ? raw.slice(0, limit) + '\n[... truncated]' : raw);
     }
 
     // Smart Scraper
-    const $ = cheerio.load(html);
+    const $ = cheerio.load(raw);
     $('script, style, nav, footer, header, noscript, aside, iframe, form, svg, canvas, [aria-hidden="true"], [hidden], .hidden').remove();
 
     let cleanText = $('article, main, body').text();

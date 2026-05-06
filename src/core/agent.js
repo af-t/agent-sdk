@@ -45,7 +45,7 @@ class Agent {
       let base = 'You are an interactive agent that helps users with software engineering tasks.';
       try {
         base = fs.readFileSync(path.join(__dirname, '..', '..', 'RULE.md'), 'utf8');
-      } catch (err) {
+      } catch {
         logger.debug('No RULE.md found, using default instruction.');
       }
 
@@ -108,8 +108,6 @@ class Agent {
   }
 
   async _send() {
-    const lastMsg = this.messages[this.messages.length - 1];
-
     // Build messages for payload with cache_control on a defensive copy
     const messagesForPayload = this.messages.map((msg, idx) => {
       // Only add cache_control to the last user message's last content part (on a copy)

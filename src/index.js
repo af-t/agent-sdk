@@ -1,5 +1,4 @@
 import Agent from './core/agent.js';
-import fs from 'node:fs';
 import { getDirname } from './core/dirname.js';
 import config from './config.js';
 import path from 'node:path';
