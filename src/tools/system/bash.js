@@ -1,4 +1,4 @@
-import { exec } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import logger from '../../core/logger.js';
 
 // Lazy-loaded PTY module — may be unavailable on platforms without native build support
@@ -61,29 +61,39 @@ function hasSuspiciousPattern(command) {
   return null;
 }
 
-// ── exec(1) fallback (used when node-pty is unavailable) ─────────────────
+// ── spawn fallback (used when node-pty is unavailable) ──────────────────
 
-function runWithExec(command, cwd, env, timeout) {
+function runWithSpawn(command, cwd, env, timeout) {
   return new Promise((resolve, reject) => {
-    const child = exec(command, {
-      cwd,
-      env,
-      timeout,
-      maxBuffer: 10 * 1024 * 1024,
-    }, (error, stdout, stderr) => {
+    const child = spawn('bash', ['-c', command], { cwd, env, timeout });
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (data) => { stdout += data; });
+    child.stderr.on('data', (data) => { stderr += data; });
+
+    const timer = setTimeout(() => {
+      child.kill();
       const output = stdout + stderr;
-      if (error) {
-        if (error.killed) {
-          reject(new Error(`Execution timed out after ${timeout}ms\n\nPartial Output:\n${output}`));
-        } else {
-          const msg = output
-            ? `Process exited with code ${error.code || 'unknown'}\n\nOutput:\n${output}`
-            : `Process exited with code ${error.code || 'unknown'}: ${error.message}`;
-          reject(new Error(msg));
-        }
+      reject(new Error(`Execution timed out after ${timeout}ms\n\nPartial Output:\n${output}`));
+    }, timeout);
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      const output = stdout + stderr;
+      if (code !== 0) {
+        const msg = output
+          ? `Process exited with code ${code}\n\nOutput:\n${output}`
+          : `Process exited with code ${code}`;
+        reject(new Error(msg));
       } else {
         resolve(output);
       }
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
     });
   });
 }
@@ -166,13 +176,13 @@ export const execute = async ({ command, cwd = process.cwd(), env = process.env,
   }
   Object.assign(safeEnv, env !== process.env ? env : {});
 
-  // Try PTY first, fall back to exec(1) if node-pty unavailable
+  // Try PTY first, fall back to spawn if node-pty unavailable
   const ptyMod = await getPty();
   if (ptyMod) {
     _ptyModule = ptyMod;
     return runWithPty(command, cwd, safeEnv, timeout);
   }
 
-  logger.debug('node-pty unavailable, falling back to child_process.exec');
-  return runWithExec(command, cwd, safeEnv, timeout);
+  logger.debug('node-pty unavailable, falling back to spawn');
+  return runWithSpawn(command, cwd, safeEnv, timeout);
 };
