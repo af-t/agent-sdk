@@ -39,6 +39,18 @@ describe('SkillRegistry (default singleton)', () => {
     assert.ok(true);
   });
 
+  it('configure accepts scanAgentDirs: false', () => {
+    const singleton = skillModule.default;
+    singleton.configure({ scanAgentDirs: false });
+    assert.ok(true);
+  });
+
+  it('configure accepts scanAgentDirs: true', () => {
+    const singleton = skillModule.default;
+    singleton.configure({ scanAgentDirs: true });
+    assert.ok(true);
+  });
+
   it('get() returns null for unknown skill', () => {
     const singleton = skillModule.default;
     singleton.reset();

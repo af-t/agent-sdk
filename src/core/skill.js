@@ -33,6 +33,7 @@ class SkillRegistry {
   constructor(options = {}) {
     this.skills = new Map();
     this.loaded = false;
+    this.scanAgentDirs = options.scanAgentDirs !== undefined ? options.scanAgentDirs : true;
     this.extraSearchDirs = options.extraSearchDirs || [];
     this._forceRefresh = false;
   }
@@ -48,10 +49,12 @@ class SkillRegistry {
     ];
 
     // Default directories for common AI tool config folders (configurable)
-    const defaultAgentDirs = ['claude', 'hermes', 'gemini', 'kilo', 'pi'];
-    for (const x of defaultAgentDirs) {
-      searchPaths.push({ dir: path.join(process.cwd(), `.${x}`, 'skills'), scope: 'project' });
-      searchPaths.push({ dir: path.join(os.homedir(), `.${x}`, 'skills'), scope: 'user' });
+    if (this.scanAgentDirs) {
+      const defaultAgentDirs = ['claude', 'hermes', 'gemini', 'kilo', 'pi'];
+      for (const x of defaultAgentDirs) {
+        searchPaths.push({ dir: path.join(process.cwd(), `.${x}`, 'skills'), scope: 'project' });
+        searchPaths.push({ dir: path.join(os.homedir(), `.${x}`, 'skills'), scope: 'user' });
+      }
     }
 
     // Extra user-configured search directories
@@ -167,6 +170,9 @@ export default {
   configure(options = {}) {
     if (options.extraSearchDirs) {
       registry.extraSearchDirs = options.extraSearchDirs;
+    }
+    if (options.scanAgentDirs !== undefined) {
+      registry.scanAgentDirs = options.scanAgentDirs;
     }
   },
   async _ensureDiscovered() {

@@ -50,6 +50,16 @@ describe('Agent', () => {
       assert.deepEqual(agent.provider.only, ['openai']);
     });
 
+    it('accepts reasoningEffort option', () => {
+      const agent = new Agent({ apiKey: 'sk-key', reasoningEffort: 'low' });
+      assert.equal(agent.reasoningEffort, 'low');
+    });
+
+    it('default reasoningEffort is high', () => {
+      const agent = new Agent({ apiKey: 'sk-key' });
+      assert.equal(agent.reasoningEffort, 'high');
+    });
+
     it('accepts maxToolLoops option', () => {
       const agent = new Agent({ apiKey: 'sk-key', maxToolLoops: 5 });
       assert.equal(agent.maxToolLoops, 5);
@@ -117,6 +127,17 @@ describe('Agent', () => {
     it('returns the apiKey (read-only accessor)', () => {
       const agent = new Agent({ apiKey: 'sk-secret-123' });
       assert.equal(agent.apiKey, 'sk-secret-123');
+    });
+  });
+
+  describe('reset()', () => {
+    it('clears messages and resets usage to zero', () => {
+      const agent = new Agent({ apiKey: 'sk-key' });
+      agent.messages = [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }];
+      agent.usage = { cost: 1.5, tokens: 500 };
+      agent.reset();
+      assert.deepEqual(agent.messages, []);
+      assert.deepEqual(agent.usage, { cost: 0, tokens: 0 });
     });
   });
 });

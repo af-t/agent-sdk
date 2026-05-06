@@ -3,6 +3,7 @@ import { getDirname } from './dirname.js';
 import { ApiError, ConfigError } from './errors.js';
 import logger from './logger.js';
 import config from '../config.js';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -24,7 +25,8 @@ class Agent {
       only,
       maxTokens,
       systemPrompt,
-      maxToolLoops
+      maxToolLoops,
+      reasoningEffort
     } = options;
 
     if (!apiKey && !config.API_KEY) {
@@ -35,7 +37,7 @@ class Agent {
     this.provider = { order, only };
     this.messages = [];
     this.tools = tools || new ToolRegistry();
-    this.reasoningEffort = 'high';
+    this.reasoningEffort = reasoningEffort || 'high';
     this.maxTokens = parseInt(maxTokens || config.MAX_TOKENS || 0) || undefined;
     this.usage = { cost: 0, tokens: 0 };
     // Max tool loop iterations before forcing a break.
@@ -165,6 +167,11 @@ class Agent {
     this.tools.register(tools);
   }
 
+  reset() {
+    this.messages = [];
+    this.usage = { cost: 0, tokens: 0 };
+  }
+
   async run(prompt, notify = () => null, options = {}) {
     const { signal } = options;
 
@@ -224,7 +231,7 @@ class Agent {
           this.messages.push({
             role: 'tool',
             content: `Error: invalid JSON arguments — ${parseErr.message}`,
-            tool_call_id: tc.id
+            tool_call_id: tc.id || `call_${crypto.randomUUID()}`
           });
           continue;
         }
@@ -238,7 +245,7 @@ class Agent {
           this.messages.push({
             role: 'tool',
             content: `Error: ${toolErr.message}`,
-            tool_call_id: tc.id
+            tool_call_id: tc.id || `call_${crypto.randomUUID()}`
           });
           continue;
         }
@@ -246,7 +253,7 @@ class Agent {
         this.messages.push({
           role: 'tool',
           content: (typeof result === 'string') ? result : JSON.stringify(result),
-          tool_call_id: tc.id
+          tool_call_id: tc.id || `call_${crypto.randomUUID()}`
         });
       }
     }
