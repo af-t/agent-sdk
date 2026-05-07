@@ -5,15 +5,12 @@ describe('Agent', () => {
   let Agent;
   let ToolRegistry;
 
-  // Set up env before importing the module so config picks it up
-  const ORIG_API_KEY = process.env.OPENROUTER_API_KEY;
-
   before(async () => {
     // We'll import with key present since env always has it
     const agentMod = await import('../../src/core/agent.js');
     Agent = agentMod.default;
-    const utilsMod = await import('../../src/core/utils.js');
-    ToolRegistry = utilsMod.ToolRegistry;
+    const registryMod = await import('../../src/registry/tool.js');
+    ToolRegistry = registryMod.ToolRegistry;
   });
 
   describe('constructor', () => {
@@ -30,7 +27,7 @@ describe('Agent', () => {
       assert.equal(agent.usage.cost, 0);
       assert.equal(agent.usage.tokens, 0);
       assert.equal(agent.reasoningEffort, 'high');
-      assert.equal(agent.maxToolLoops, 25);
+      assert.equal(agent.maxTurns, 25);
       assert.ok(Array.isArray(agent.messages));
       assert.equal(agent.messages.length, 0);
     });
@@ -60,14 +57,14 @@ describe('Agent', () => {
       assert.equal(agent.reasoningEffort, 'high');
     });
 
-    it('accepts maxToolLoops option', () => {
-      const agent = new Agent({ apiKey: 'sk-key', maxToolLoops: 5 });
-      assert.equal(agent.maxToolLoops, 5);
+    it('accepts maxTurns option', () => {
+      const agent = new Agent({ apiKey: 'sk-key', maxTurns: 5 });
+      assert.equal(agent.maxTurns, 5);
     });
 
-    it('sets maxToolLoops to 0 for unlimited (subagent case)', () => {
-      const agent = new Agent({ apiKey: 'sk-key', maxToolLoops: 0 });
-      assert.equal(agent.maxToolLoops, 0);
+    it('sets maxTurns to 0 for unlimited (subagent case)', () => {
+      const agent = new Agent({ apiKey: 'sk-key', maxTurns: 0 });
+      assert.equal(agent.maxTurns, 0);
     });
 
     it('accepts systemPrompt option', () => {

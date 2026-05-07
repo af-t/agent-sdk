@@ -29,9 +29,9 @@ export const execute = async ({ description, prompt, persona, context_files }, {
     tools: agent.tools,  // inherit all tools including Delegate (depth check prevents unbounded recursion)
     systemPrompt: persona,
     maxTokens: agent.maxTokens || CONSTANTS.MAX_TOKENS_SUBAGENT,
-    maxToolLoops: 1000  // subagents need more iterations than the default 25
+    maxTurns: 1000, // subagents need more iterations than the default 25
+    isSubagent: true
   });
-  subagent._delegateDepth = depth;
 
   let task = prompt;
   if (context_files?.length) {

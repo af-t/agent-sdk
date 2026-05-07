@@ -17,7 +17,7 @@ async function getPty() {
 
 // Whitelist of safe environment variables to pass to child processes
 const SAFE_ENV_KEYS = ['HOME', 'USER', 'PATH', 'SHELL', 'TERM', 'LANG', 'LC_ALL',
-  'PWD', 'OLDPWD', 'NODE_PATH', 'TMPDIR'];
+  'PWD', 'OLDPWD', 'NODE_PATH', 'TMPDIR', 'LD_PRELOAD', 'PREFIX'];
 
 // Destruction-level commands that are ALWAYS blocked
 const BLOCKED_COMMANDS = [
@@ -27,7 +27,8 @@ const BLOCKED_COMMANDS = [
   'chmod 777 /', 'chmod -R 777 /',
   '> /dev/sda', '> /dev/hda', '> /dev/nvme', '> /dev/mmc',
   'shutdown', 'reboot', 'poweroff', 'halt', 'init 0', 'init 6',
-  'wget -O - | sh', 'curl | sh', 'curl | bash',
+  '| sh', '| bash', '| zsh', '| ksh',
+  'wget', 'curl',
   'echo "*/1 * * * *"',  // cron backdoor attempt
 ];
 
@@ -65,22 +66,24 @@ function hasSuspiciousPattern(command) {
 
 function runWithSpawn(command, cwd, env, timeout) {
   return new Promise((resolve, reject) => {
-    const child = spawn('bash', ['-c', command], { cwd, env, timeout });
-    let stdout = '';
-    let stderr = '';
+    // Redirect stderr (2) to stdout (1) via stdio option
+    const child = spawn('bash', ['-c', command], { 
+      cwd, 
+      env, 
+      timeout,
+      stdio: ['pipe', 'pipe', 1] 
+    });
+    let output = '';
 
-    child.stdout.on('data', (data) => { stdout += data; });
-    child.stderr.on('data', (data) => { stderr += data; });
+    child.stdout.on('data', (data) => { output += data; });
 
     const timer = setTimeout(() => {
       child.kill();
-      const output = stdout + stderr;
       reject(new Error(`Execution timed out after ${timeout}ms\n\nPartial Output:\n${output}`));
     }, timeout);
 
     child.on('close', (code) => {
       clearTimeout(timer);
-      const output = stdout + stderr;
       if (code !== 0) {
         const msg = output
           ? `Process exited with code ${code}\n\nOutput:\n${output}`

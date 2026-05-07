@@ -1,5 +1,6 @@
 import * as cheerio from 'cheerio';
 import { CONSTANTS } from '../../core/utils.js';
+import dns from 'node:dns/promises';
 
 // Private/reserved IP ranges to block for SSRF prevention
 const BLOCKED_IP_RANGES = [
@@ -15,27 +16,25 @@ const BLOCKED_IP_RANGES = [
   /^fd00:/,          // IPv6 unique local
 ];
 
-/**
- * Check if text content appears binary (non-printable chars > 70%).
- */
+// Binary if non-printable chars > 70%
 function isBinaryContent(text) {
   const nonPrintable = (text.match(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g) || []).length;
   return nonPrintable / text.length > 0.7;
 }
 
-/**
- * Return content with a content-type annotation prefix.
- */
+// Prepend Content-Type annotation
 function withContentType(contentType, body) {
   const label = `Content-Type: ${contentType}`;
   return `${label}\n\n${body}`;
 }
 
-/**
- * Check if a URL targets an internal/private resource (SSRF prevention).
- * Blocks private IPs, localhost, and non-HTTP(S) protocols.
- */
-function checkSSRF(urlStr) {
+// Check if IP is in blocked range
+function isBlockedIp(ip) {
+  return BLOCKED_IP_RANGES.some(range => range.test(ip));
+}
+
+// SSRF check — blocks private IPs, localhost, DNS rebinding, non-HTTP(S)
+async function checkSSRF(urlStr) {
   try {
     const url = new URL(urlStr);
     const hostname = url.hostname;
@@ -47,20 +46,67 @@ function checkSSRF(urlStr) {
       throw new Error('Access denied: localhost/internal host is not allowed');
     }
 
-    // Block private/reserved IP ranges
-    const isIPv4 = /^\d+\.\d+\.\d+\.\d+$/.test(hostname);
-    if (isIPv4) {
-      for (const range of BLOCKED_IP_RANGES) {
-        if (range.test(hostname)) {
-          throw new Error('Access denied: private/reserved IP range is not allowed (SSRF protection)');
-        }
-      }
-    }
-
     // Block non-http(s) protocols (file://, ftp://, etc.)
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
       throw new Error(`Access denied: protocol '${url.protocol}' is not allowed. Only http:// and https:// are supported.`);
     }
+
+    // Check if hostname is a literal IPv4 address
+    const isIPv4 = /^\d+\.\d+\.\d+\.\d+$/.test(hostname);
+    if (isIPv4) {
+      if (isBlockedIp(hostname)) {
+        throw new Error('Access denied: private/reserved IP range is not allowed (SSRF protection)');
+      }
+      // Hostname is a public IPv4 — no DNS resolution needed
+      return;
+    }
+
+    // Check if hostname is a literal IPv6 address
+    const isIPv6 = /^\[?[0-9a-fA-F:]+(?:\.[0-9.]+)?\]?$/.test(hostname);
+    if (isIPv6) {
+      const normalized = hostname.replace(/^\[|\]$/g, '');
+      if (isBlockedIp(normalized)) {
+        throw new Error('Access denied: private/reserved IP range is not allowed (SSRF protection)');
+      }
+      return;
+    }
+
+    // DNS rebinding defense: resolve the hostname and check resolved IPs
+    // Handle DNS resolution errors gracefully — if DNS fails completely,
+    // we cannot determine safety; reject to be safe
+    let resolvedSomething = false;
+    try {
+      const addresses = await dns.resolve4(hostname);
+      resolvedSomething = true;
+      for (const ip of addresses) {
+        if (isBlockedIp(ip)) {
+          throw new Error('Access denied: hostname resolves to private/reserved IP range (SSRF protection)');
+        }
+      }
+    } catch (err) {
+      if (err.message.startsWith('Access denied')) throw err;
+      // ENOTFOUND for IPv4 is acceptable — try IPv6 next
+    }
+
+    try {
+      const addressesv6 = await dns.resolve6(hostname);
+      resolvedSomething = true;
+      for (const ip of addressesv6) {
+        if (isBlockedIp(ip)) {
+          throw new Error('Access denied: hostname resolves to private/reserved IP range (SSRF protection)');
+        }
+      }
+    } catch (err) {
+      if (err.message.startsWith('Access denied')) throw err;
+      // ENOTFOUND for IPv6 is also acceptable
+    }
+
+    if (!resolvedSomething) {
+      // If we couldn't resolve the hostname at all, it's safer to block
+      // unless it was already a literal IP (handled above).
+      throw new Error(`Access denied: unable to resolve hostname '${hostname}'`);
+    }
+
   } catch (err) {
     if (err.message.startsWith('Access denied')) throw err;
     throw new Error(`Invalid URL: ${err.message}`);
@@ -85,13 +131,28 @@ export const execute = async ({ url, useRaw = false, limit = 20000 }) => {
     new URL(url);
 
     // SSRF protection: block internal/private resources
-    checkSSRF(url);
+    await checkSSRF(url);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), CONSTANTS.FETCH_TIMEOUT_MS);
 
-    const res = await fetch(url, { signal: controller.signal });
+    // Redirect hardening: manual mode to re-check each step
+    const res = await fetch(url, {
+      signal: controller.signal,
+      redirect: 'manual'
+    });
     clearTimeout(timeout);
+
+    // Handle manual redirects to prevent SSRF bypass via redirects
+    if (res.status >= 300 && res.status < 400) {
+      const redirectUrl = res.headers.get('location');
+      if (redirectUrl) {
+        // Recursive check of the redirect URL
+        await checkSSRF(redirectUrl);
+        // Recursively call execute for the redirect URL
+        return execute({ url: redirectUrl, useRaw, limit });
+      }
+    }
 
     // Reject oversized responses
     const contentLength = res.headers.get('content-length');
@@ -142,3 +203,5 @@ export const execute = async ({ url, useRaw = false, limit = 20000 }) => {
     throw error;
   }
 };
+
+export { checkSSRF, isBlockedIp };

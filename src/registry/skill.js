@@ -1,6 +1,6 @@
-import logger from './logger.js';
+import logger from '../core/logger.js';
 import fs from 'node:fs/promises';
-import { getDirname } from './dirname.js';
+import { getDirname } from '../core/utils.js';
 import path from 'node:path';
 import os from 'node:os';
 
@@ -29,7 +29,7 @@ function parseFrontmatter(content) {
   return { metadata, body };
 }
 
-class SkillRegistry {
+export class SkillRegistry {
   constructor(options = {}) {
     this.skills = new Map();
     this.loaded = false;
@@ -132,7 +132,6 @@ class SkillRegistry {
         score += 50;
       }
 
-      const descWords = descLower.split(/\s+/);
       const qWords = q.split(/\s+/);
       for (const qw of qWords) {
         if (descLower.includes(qw)) score += 10;
@@ -162,8 +161,8 @@ class SkillRegistry {
   }
 }
 
+// Singleton instance
 const registry = new SkillRegistry();
-// Lazy initialization — first access triggers discovery
 let _discoveryPromise = null;
 
 export default {

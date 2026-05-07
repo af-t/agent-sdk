@@ -104,7 +104,7 @@ cp .env.example .env
 | Variable                | Required | Description                                              |
 |-------------------------|----------|----------------------------------------------------------|
 | `OPENROUTER_API_KEY`    | Yes      | Your OpenRouter API key                                  |
-| `OPENROUTER_MODEL`      | No       | Default model (e.g. `google/gemini-2.5-flash-preview`)   |
+| `OPENROUTER_MODEL`      | No       | Default model (e.g. `inclusionai/ling-2.6-1t:free`) |
 | `OPENROUTER_MAX_TOKENS` | No       | Maximum output tokens                                    |
 | `OPENROUTER_ORDER`      | No       | Comma-separated provider priority order                  |
 | `OPENROUTER_ONLY`       | No       | Restrict to specific providers only                      |
@@ -225,7 +225,7 @@ Be concise and provide runnable code examples.
 
 ```javascript
 import Agent from 'openrouter/src/core/agent.js';
-import { ToolRegistry } from 'openrouter/src/core/utils.js';
+import { ToolRegistry } from 'openrouter/src/registry/tool.js';
 
 const tools = new ToolRegistry();
 tools.register(myCustomTool);
@@ -316,10 +316,12 @@ openrouter/
 │   ├── config.js          # Configuration from environment variables
 │   ├── core/
 │   │   ├── agent.js       # Agent class — LLM interaction + tool loop
-│   │   ├── utils.js       # ToolRegistry, withRetry, loadTools, helpers
+│   │   ├── utils.js       # withRetry, loadTools, ensureSafePath, helpers
 │   │   ├── logger.js      # Colored console logger (debug/info/warn/error)
 │   │   ├── errors.js      # Custom error classes (ApiError, ToolError, ConfigError)
 │   │   ├── mcp.js         # MCP client (native stdio-based JSON-RPC)
+│   ├── registry/
+│   │   ├── tool.js        # ToolRegistry — register, execute, hooks, MCP
 │   │   └── skill.js       # SkillRegistry — discover & load SKILL.md
 │   └── tools/
 │       ├── file/          # Read, Write, Edit, Find, List
@@ -357,6 +359,8 @@ Factory function to create an Agent instance.
 | Property       | Type         | Description                          |
 |----------------|--------------|--------------------------------------|
 | `messages`     | array        | Conversation history                 |
+| `maxTurns`     | number       | Max LLM request cycles               |
+| `isSubagent`   | boolean      | Whether the agent is a sub-agent     |
 | `tools`        | ToolRegistry | Registry of registered tools         |
 | `usage`        | object       | `{ cost: number, tokens: number }`   |
 | `systemPrompt` | string       | System prompt (can be overridden)    |

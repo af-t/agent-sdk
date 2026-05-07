@@ -5,7 +5,7 @@ describe('SkillRegistry (default singleton)', () => {
   let skillModule;
 
   before(async () => {
-    skillModule = await import('../../src/core/skill.js');
+    skillModule = await import('../../src/registry/skill.js');
   });
 
   it('exports a default object with expected methods', () => {

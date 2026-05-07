@@ -1,8 +1,9 @@
 import Agent from './core/agent.js';
-import { getDirname } from './core/dirname.js';
+import { getDirname } from './core/utils.js';
 import config from './config.js';
 import path from 'node:path';
-import { ToolRegistry, loadTools } from './core/utils.js';
+import { ToolRegistry } from './registry/tool.js';
+import { loadTools } from './core/utils.js';
 
 const __dirname = getDirname(import.meta);
 

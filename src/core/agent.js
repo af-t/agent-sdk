@@ -1,5 +1,6 @@
-import { withRetry, ToolRegistry } from './utils.js';
-import { getDirname } from './dirname.js';
+import { withRetry } from './utils.js';
+import { ToolRegistry } from '../registry/tool.js';
+import { getDirname } from './utils.js';
 import { ApiError, ConfigError } from './errors.js';
 import logger from './logger.js';
 import config from '../config.js';
@@ -11,7 +12,7 @@ import path from 'node:path';
 const __dirname = getDirname(import.meta);
 
 const REQUEST_TIMEOUT = 120_000; // 2 minutes
-const DEFAULT_MAX_TOOL_LOOPS = 25;
+const DEFAULT_MAX_TURNS = 25;
 
 class Agent {
   #apiKey;
@@ -25,7 +26,7 @@ class Agent {
       only,
       maxTokens,
       systemPrompt,
-      maxToolLoops,
+      maxTurns,
       reasoningEffort
     } = options;
 
@@ -40,9 +41,9 @@ class Agent {
     this.reasoningEffort = reasoningEffort || 'high';
     this.maxTokens = parseInt(maxTokens || config.MAX_TOKENS || 0) || undefined;
     this.usage = { cost: 0, tokens: 0 };
-    // Max tool loop iterations before forcing a break.
+    // Max request turns before forcing a break.
     // Set to 0 for unlimited (used by subagents via Delegate).
-    this.maxToolLoops = maxToolLoops ?? DEFAULT_MAX_TOOL_LOOPS;
+    this.maxTurns = maxTurns ?? (parseInt(config.MAX_TURNS || 0) || DEFAULT_MAX_TURNS);
     this.systemPrompt = systemPrompt || (() => {
       let base = 'You are an interactive agent that helps users with software engineering tasks.';
       try {
@@ -66,7 +67,7 @@ class Agent {
     })();
   }
 
-  /** Get API key (read-only) — used by Delegate tool to create sub-agents */
+  // Read-only API key — used by Delegate tool for sub-agents
   get apiKey() {
     return this.#apiKey;
   }
@@ -194,9 +195,25 @@ class Agent {
         throw new Error('Agent run aborted');
       }
 
-      if (this.maxToolLoops > 0 && ++loopCount > this.maxToolLoops) {
-        logger.warn(`Agent: max tool loop iterations reached (${this.maxToolLoops}), forcing break.`);
+      if (this.maxTurns > 0 && loopCount >= this.maxTurns) {
+        logger.warn(`Agent: max request turns reached (${this.maxTurns}), forcing break.`);
+        if (this.isSubagent) {
+          const lastMsg = this.messages[this.messages.length - 1];
+          if (lastMsg?.role === 'tool') {
+            return `[LIMIT_REACHED] The agent reached its maximum turn limit (${this.maxTurns}). \nLast tool result: ${lastMsg.content}`;
+          }
+        }
         break;
+      }
+      loopCount++;
+
+      // Soft limit: on the very last allowed turn, if we are coming from a tool execution,
+      // inject a warning to encourage a final summary (Subagents only).
+      if (this.isSubagent && this.maxTurns > 0 && loopCount === this.maxTurns) {
+        const lastMsg = this.messages[this.messages.length - 1];
+        if (lastMsg?.role === 'tool') {
+          lastMsg.content += '\n\n[SYSTEM] You have reached the maximum allowed request turns. Please provide a final summary of your work now and stop calling tools.';
+        }
       }
 
       const response = await withRetry(() => this._send(), 5);
@@ -217,11 +234,6 @@ class Agent {
 
       if (!tool_calls || tool_calls.length === 0) break;
       for (const tc of tool_calls) {
-        // Check abort signal before each tool execution
-        if (signal?.aborted) {
-          throw new Error('Agent run aborted');
-        }
-
         const name = tc.function.name;
         let input;
         try {
@@ -241,7 +253,9 @@ class Agent {
         try {
           result = await this.tools.execute(name, input, { agent: this });
         } catch (toolErr) {
-          logger.warn(`Tool ${name} failed: ${toolErr.message}`);
+          // Log only the first line of the error message to avoid leaking large command output
+          const summary = (toolErr.message || '').split('\n')[0];
+          logger.warn(`Tool ${name} failed: ${summary}`);
           this.messages.push({
             role: 'tool',
             content: `Error: ${toolErr.message}`,
@@ -255,6 +269,10 @@ class Agent {
           content: (typeof result === 'string') ? result : JSON.stringify(result),
           tool_call_id: tc.id || `call_${crypto.randomUUID()}`
         });
+
+        if (signal?.aborted) {
+          throw new Error('Agent run aborted');
+        }
       }
     }
 

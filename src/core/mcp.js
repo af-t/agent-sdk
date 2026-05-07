@@ -21,11 +21,7 @@ export class McpNativeClient extends EventEmitter {
   async connect() {
     this.process = spawn(this.config.command, this.config.args || [], {
       env: { ...stripSecrets(process.env), ...(this.config.env || {}) },
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    this.process.stderr.on('data', (data) => {
-      process.stderr.write(`[MCP Server]: ${data.toString()}`);
+      stdio: ['pipe', 'pipe', 1]
     });
 
     this.rl = createInterface({

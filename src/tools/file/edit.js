@@ -7,21 +7,20 @@ import { spawn } from 'node:child_process';
 import { ensureSafePath } from '../../core/utils.js';
 
 async function diff(file1, file2) {
-  const stdout = [];
-  const stderr = [];
+  const output = [];
 
   return new Promise((resolve, reject) => {
-    const child = spawn('diff', [file1, file2]);
-    child.stdout.on('data', chunk => stdout.push(chunk));
-    child.stderr.on('data', chunk => stderr.push(chunk));
+    // stdio: [stdin, stdout, stderr] -> redirect 2 to 1 (stdout)
+    const child = spawn('diff', [file1, file2], { stdio: ['pipe', 'pipe', 1] });
+    child.stdout.on('data', chunk => output.push(chunk));
     child.on('error', (err) => reject(err));
     child.on('exit', (code) => {
       // diff exit codes: 0=identical, 1=different, 2=trouble
       if (code > 1) {
-        reject(new Error(`diff failed with code ${code}: ${Buffer.concat(stderr).toString()}`));
+        reject(new Error(`diff failed with code ${code}: ${Buffer.concat(output).toString()}`));
         return;
       }
-      resolve(Buffer.concat(stdout).toString());
+      resolve(Buffer.concat(output).toString());
     });
   });
 }

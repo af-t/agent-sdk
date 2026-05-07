@@ -26,10 +26,7 @@ const SECRET_PATTERNS = [
   /((?:API_KEY|SECRET|TOKEN|PASSWORD)[^=]*=\s*['"]?)[^'"\s]+/gi,
 ];
 
-/**
- * Redact known secret patterns from a string.
- * Returns the redacted string. Non-strings are passed through.
- */
+// Redact known secret patterns; non-strings pass through
 function redact(msg) {
   if (typeof msg !== 'string') return msg;
   let s = msg;
