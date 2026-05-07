@@ -4,16 +4,16 @@ import dns from 'node:dns/promises';
 
 // Private/reserved IP ranges to block for SSRF prevention
 const BLOCKED_IP_RANGES = [
-  /^127\./,          // IPv4 loopback
-  /^10\./,           // RFC 1918 - Class A private
-  /^172\.(1[6-9]|2\d|3[01])\./,  // RFC 1918 - Class B private
-  /^192\.168\./,     // RFC 1918 - Class C private
-  /^0\./,            // Invalid
-  /^169\.254\./,     // Link-local
-  /^::1$/,           // IPv6 loopback
-  /^fc00:/,          // IPv6 unique local
-  /^fe80:/,          // IPv6 link-local
-  /^fd00:/,          // IPv6 unique local
+  /^127\./, // IPv4 loopback
+  /^10\./, // RFC 1918 - Class A private
+  /^172\.(1[6-9]|2\d|3[01])\./, // RFC 1918 - Class B private
+  /^192\.168\./, // RFC 1918 - Class C private
+  /^0\./, // Invalid
+  /^169\.254\./, // Link-local
+  /^::1$/, // IPv6 loopback
+  /^fc00:/, // IPv6 unique local
+  /^fe80:/, // IPv6 link-local
+  /^fd00:/, // IPv6 unique local
 ];
 
 // Binary if non-printable chars > 70%
@@ -30,7 +30,7 @@ function withContentType(contentType, body) {
 
 // Check if IP is in blocked range
 function isBlockedIp(ip) {
-  return BLOCKED_IP_RANGES.some(range => range.test(ip));
+  return BLOCKED_IP_RANGES.some((range) => range.test(ip));
 }
 
 // SSRF check — blocks private IPs, localhost, DNS rebinding, non-HTTP(S)
@@ -40,15 +40,22 @@ async function checkSSRF(urlStr) {
     const hostname = url.hostname;
 
     // Block by hostname
-    if (hostname === 'localhost' || hostname === 'localhost.localdomain' ||
-        hostname === '127.0.0.1' || hostname === '0.0.0.0' ||
-        hostname === '[::1]' || hostname === '::1') {
+    if (
+      hostname === 'localhost' ||
+      hostname === 'localhost.localdomain' ||
+      hostname === '127.0.0.1' ||
+      hostname === '0.0.0.0' ||
+      hostname === '[::1]' ||
+      hostname === '::1'
+    ) {
       throw new Error('Access denied: localhost/internal host is not allowed');
     }
 
     // Block non-http(s) protocols (file://, ftp://, etc.)
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-      throw new Error(`Access denied: protocol '${url.protocol}' is not allowed. Only http:// and https:// are supported.`);
+      throw new Error(
+        `Access denied: protocol '${url.protocol}' is not allowed. Only http:// and https:// are supported.`,
+      );
     }
 
     // Check if hostname is a literal IPv4 address
@@ -106,7 +113,6 @@ async function checkSSRF(urlStr) {
       // unless it was already a literal IP (handled above).
       throw new Error(`Access denied: unable to resolve hostname '${hostname}'`);
     }
-
   } catch (err) {
     if (err.message.startsWith('Access denied')) throw err;
     throw new Error(`Invalid URL: ${err.message}`);
@@ -114,15 +120,16 @@ async function checkSSRF(urlStr) {
 }
 
 export const name = 'WebFetch';
-export const description = 'Fetch and analyze content from a URL. Use this to retrieve documentation, research technical topics, or read raw code from the web. It automatically cleans HTML for readability.';
+export const description =
+  'Fetch and analyze content from a URL. Use this to retrieve documentation, research technical topics, or read raw code from the web. It automatically cleans HTML for readability.';
 export const input_schema = {
   type: 'object',
   properties: {
     url: { type: 'string', description: 'Target URL' },
     useRaw: { type: 'boolean', description: 'Return raw HTML if true' },
-    limit: { type: 'number', description: 'Max characters to return (default 20000)' }
+    limit: { type: 'number', description: 'Max characters to return (default 20000)' },
   },
-  required: ['url']
+  required: ['url'],
 };
 
 export const execute = async ({ url, useRaw = false, limit = 20000 }) => {
@@ -139,7 +146,7 @@ export const execute = async ({ url, useRaw = false, limit = 20000 }) => {
     // Redirect hardening: manual mode to re-check each step
     const res = await fetch(url, {
       signal: controller.signal,
-      redirect: 'manual'
+      redirect: 'manual',
     });
     clearTimeout(timeout);
 
@@ -157,7 +164,9 @@ export const execute = async ({ url, useRaw = false, limit = 20000 }) => {
     // Reject oversized responses
     const contentLength = res.headers.get('content-length');
     if (contentLength && parseInt(contentLength) > CONSTANTS.FETCH_MAX_SIZE) {
-      throw new Error(`Response too large (${contentLength} bytes). Maximum allowed is ${CONSTANTS.FETCH_MAX_SIZE} bytes (10MB).`);
+      throw new Error(
+        `Response too large (${contentLength} bytes). Maximum allowed is ${CONSTANTS.FETCH_MAX_SIZE} bytes (10MB).`,
+      );
     }
 
     const contentType = res.headers.get('content-type') || 'unknown';
@@ -172,7 +181,11 @@ export const execute = async ({ url, useRaw = false, limit = 20000 }) => {
       return withContentType(contentType, raw.length > limit ? raw.slice(0, limit) + '\n[... truncated]' : raw);
     }
 
-    if (contentType.includes('text/plain') || contentType.includes('text/csv') || contentType.includes('text/markdown')) {
+    if (
+      contentType.includes('text/plain') ||
+      contentType.includes('text/csv') ||
+      contentType.includes('text/markdown')
+    ) {
       return withContentType(contentType, raw.length > limit ? raw.slice(0, limit) + '\n[... truncated]' : raw);
     }
 
@@ -188,7 +201,9 @@ export const execute = async ({ url, useRaw = false, limit = 20000 }) => {
 
     // Smart Scraper
     const $ = cheerio.load(raw);
-    $('script, style, nav, footer, header, noscript, aside, iframe, form, svg, canvas, [aria-hidden="true"], [hidden], .hidden').remove();
+    $(
+      'script, style, nav, footer, header, noscript, aside, iframe, form, svg, canvas, [aria-hidden="true"], [hidden], .hidden',
+    ).remove();
 
     let cleanText = $('article, main, body').text();
     if (!cleanText || cleanText.trim().length < 100) {
@@ -196,7 +211,10 @@ export const execute = async ({ url, useRaw = false, limit = 20000 }) => {
     }
 
     // Preserve paragraph structure: collapse horizontal whitespace but keep newlines
-    cleanText = cleanText.replace(/[ \t\xa0]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    cleanText = cleanText
+      .replace(/[ \t\xa0]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
 
     return cleanText.length > limit ? cleanText.slice(0, limit) + '\n[... truncated]' : cleanText;
   } catch (error) {

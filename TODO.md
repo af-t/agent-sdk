@@ -28,9 +28,9 @@
 
 ## ✅ Fixed: MCP Mock Server Tests Always Skipped
 
-| Detail | Info |
-|--------|------|
-| **File** | `tests/core/mcp.test.js` |
+| Detail     | Info                                                  |
+| ---------- | ----------------------------------------------------- |
+| **File**   | `tests/core/mcp.test.js`                              |
 | **Status** | ![Fixed](https://img.shields.io/badge/-FIXED-success) |
 
 ### 🔍 Fix Details
@@ -44,33 +44,33 @@ The test runner was skipping tests because the condition was evaluated at regist
 
 ## 🔒 Hardened: `ensureSafePath` Robustness
 
-| Detail | Info |
-|--------|------|
-| **File** | `src/core/utils.js` |
+| Detail     | Info                                                     |
+| ---------- | -------------------------------------------------------- |
+| **File**   | `src/core/utils.js`                                      |
 | **Status** | ![Complete](https://img.shields.io/badge/-COMPLETE-blue) |
 
 ### 🛡️ Improvements
 
-| Improvement | Description |
-|-------------|-------------|
-| 🔄 **Recursive Decoding** | Handled double-encoded traversals (e.g., `%252e%252e`) |
+| Improvement               | Description                                                          |
+| ------------------------- | -------------------------------------------------------------------- |
+| 🔄 **Recursive Decoding** | Handled double-encoded traversals (e.g., `%252e%252e`)               |
 | 🔗 **Symlink Validation** | Added strict validation for symlink targets (including broken links) |
-| 📂 **Root Access** | Fixed the bug that blocked access to the project root (`.`) |
+| 📂 **Root Access**        | Fixed the bug that blocked access to the project root (`.`)          |
 
 ---
 
 ## ⚡ Improved: Agent Tool Loop Limits
 
-| Detail | Info |
-|--------|------|
-| **File** | `src/core/agent.js` |
+| Detail     | Info                                                     |
+| ---------- | -------------------------------------------------------- |
+| **File**   | `src/core/agent.js`                                      |
 | **Status** | ![Complete](https://img.shields.io/badge/-COMPLETE-blue) |
 
 ### 🎯 UX Enhancements
 
-| Feature | Description |
-|---------|-------------|
-| 🎀 **Soft Limit** | Injects a system warning on the last turn to encourage a final summary |
+| Feature                      | Description                                                              |
+| ---------------------------- | ------------------------------------------------------------------------ |
+| 🎀 **Soft Limit**            | Injects a system warning on the last turn to encourage a final summary   |
 | 🚧 **Structured Hard Break** | Returns `[LIMIT_REACHED]` tag instead of raw garbage when forced to stop |
 
 ---
@@ -79,24 +79,24 @@ The test runner was skipping tests because the condition was evaluated at regist
 
 <div align="center">
 
-| Suite | Tests | ✅ Pass | ❌ Fail | ⏭️ Skip | Progress |
-|-------|:-----:|:-------:|:-------:|:--------:|:--------:|
-| **Agent** | 19 | 19 | 0 | 0 | ![100%](https://progress-bar.dev/100/?title=done&width=100) |
-| **ToolRegistry** | 20 | 20 | 0 | 0 | ![100%](https://progress-bar.dev/100/?title=done&width=100) |
-| **Bash tool** | 26 | 26 | 0 | 0 | ![100%](https://progress-bar.dev/100/?title=done&width=100) |
-| **WebFetch tool** | 26 | 26 | 0 | 0 | ![100%](https://progress-bar.dev/100/?title=done&width=100) |
-| **WebSearch tool** | 4 | 4 | 0 | 0 | ![100%](https://progress-bar.dev/100/?title=done&width=100) |
-| **File tools** (edit/find/list/read/write) | 26 | 26 | 0 | 0 | ![100%](https://progress-bar.dev/100/?title=done&width=100) |
-| **ensureSafePath** | 14 | 14 | 0 | 0 | ![100%](https://progress-bar.dev/100/?title=done&width=100) |
-| **withRetry** | 12 | 12 | 0 | 0 | ![100%](https://progress-bar.dev/100/?title=done&width=100) |
-| **SkillRegistry** | 15 | 15 | 0 | 0 | ![100%](https://progress-bar.dev/100/?title=done&width=100) |
-| **MCP Client & Mock** | 12 | 12 | 0 | 0 | ![100%](https://progress-bar.dev/100/?title=done&width=100) |
-| **Others** (Delegate, utils, env) | 21 | 21 | 0 | 0 | ![100%](https://progress-bar.dev/100/?title=done&width=100) |
-| **Total** | **195** | **195** | **0** | **0** | ![100%](https://progress-bar.dev/100/?title=ALL+PASS&width=150&color=brightgreen) |
+| Suite                                      |  Tests  | ✅ Pass | ❌ Fail | ⏭️ Skip |                                     Progress                                      |
+| ------------------------------------------ | :-----: | :-----: | :-----: | :-----: | :-------------------------------------------------------------------------------: |
+| **Agent**                                  |   19    |   19    |    0    |    0    |            ![100%](https://progress-bar.dev/100/?title=done&width=100)            |
+| **ToolRegistry**                           |   20    |   20    |    0    |    0    |            ![100%](https://progress-bar.dev/100/?title=done&width=100)            |
+| **Bash tool**                              |   26    |   26    |    0    |    0    |            ![100%](https://progress-bar.dev/100/?title=done&width=100)            |
+| **WebFetch tool**                          |   26    |   26    |    0    |    0    |            ![100%](https://progress-bar.dev/100/?title=done&width=100)            |
+| **WebSearch tool**                         |    4    |    4    |    0    |    0    |            ![100%](https://progress-bar.dev/100/?title=done&width=100)            |
+| **File tools** (edit/find/list/read/write) |   26    |   26    |    0    |    0    |            ![100%](https://progress-bar.dev/100/?title=done&width=100)            |
+| **ensureSafePath**                         |   14    |   14    |    0    |    0    |            ![100%](https://progress-bar.dev/100/?title=done&width=100)            |
+| **withRetry**                              |   12    |   12    |    0    |    0    |            ![100%](https://progress-bar.dev/100/?title=done&width=100)            |
+| **SkillRegistry**                          |   15    |   15    |    0    |    0    |            ![100%](https://progress-bar.dev/100/?title=done&width=100)            |
+| **MCP Client & Mock**                      |   12    |   12    |    0    |    0    |            ![100%](https://progress-bar.dev/100/?title=done&width=100)            |
+| **Others** (Delegate, utils, env)          |   21    |   21    |    0    |    0    |            ![100%](https://progress-bar.dev/100/?title=done&width=100)            |
+| **Total**                                  | **195** | **195** |  **0**  |  **0**  | ![100%](https://progress-bar.dev/100/?title=ALL+PASS&width=150&color=brightgreen) |
 
 </div>
 
-> ℹ️ *Note: Total count adjusted based on current test execution output*
+> ℹ️ _Note: Total count adjusted based on current test execution output_
 
 ---
 
@@ -125,15 +125,18 @@ The test runner was skipping tests because the condition was evaluated at regist
 ### 🎨 Phase 3: UI Components (Styling Focus)
 
 #### 🏗️ Layout
+
 - [ ] **📐 Sidebar/Header** — For Model Info & Cost
 - [ ] **💬 Main Chat Area** — With auto-scroll
 - [ ] **📊 Dynamic Bottom Bar** — For tool status
 
 #### 🖱️ Interactivity
+
 - [ ] **✏️ Multiline Input Field** — With history support
 - [ ] **⏹️ Cancel Button** — Using `AbortController` integration
 
 #### 🎭 Theming
+
 - [ ] **📝 Markdown Rendering** — Using `ink-markdown`
 - [ ] **🎨 Syntax Highlighting** — For code blocks
 - [ ] **🔴 Redaction Visualizer** — Showing `***REDACTED***` in real-time
@@ -152,6 +155,6 @@ The test runner was skipping tests because the condition was evaluated at regist
 
 ---
 
-*📌 **Legend:*** ![Done](https://img.shields.io/badge/-✓_Done-brightgreen) • ![In Progress](https://img.shields.io/badge/-⬚_Pending-lightgrey) • ![Complete](https://img.shields.io/badge/-Complete-blue)
+\*📌 **Legend:\*** ![Done](https://img.shields.io/badge/-✓_Done-brightgreen) • ![In Progress](https://img.shields.io/badge/-⬚_Pending-lightgrey) • ![Complete](https://img.shields.io/badge/-Complete-blue)
 
 </div>

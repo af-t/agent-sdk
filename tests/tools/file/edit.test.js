@@ -18,7 +18,7 @@ describe('edit.js execute', () => {
         'Line four: lorem ipsum',
         'Line five: dolor sit amet',
       ].join('\n'),
-      'utf8'
+      'utf8',
     );
   });
 
@@ -37,7 +37,7 @@ describe('edit.js execute', () => {
         'Line four: lorem ipsum',
         'Line five: dolor sit amet',
       ].join('\n'),
-      'utf8'
+      'utf8',
     );
     const mod = await import('../../../src/tools/file/edit.js');
     const result = await mod.execute({
@@ -61,7 +61,7 @@ describe('edit.js execute', () => {
         'Line four: lorem ipsum',
         'Line five: dolor sit amet',
       ].join('\n'),
-      'utf8'
+      'utf8',
     );
     const mod = await import('../../../src/tools/file/edit.js');
     await mod.execute({
@@ -80,45 +80,40 @@ describe('edit.js execute', () => {
   it('throws when old_text is not found', async () => {
     const mod = await import('../../../src/tools/file/edit.js');
     await assert.rejects(
-      () => mod.execute({
-        path: TEST_FILE,
-        old_text: 'NONEXISTENT TEXT HERE',
-        new_text: 'irrelevant',
-      }),
-      /'old_text' not found/
+      () =>
+        mod.execute({
+          path: TEST_FILE,
+          old_text: 'NONEXISTENT TEXT HERE',
+          new_text: 'irrelevant',
+        }),
+      /'old_text' not found/,
     );
   });
 
   it('throws when old_text appears multiple times', async () => {
-    await fs.writeFile(
-      TEST_FILE,
-      'duplicate\nduplicate\nother',
-      'utf8'
-    );
+    await fs.writeFile(TEST_FILE, 'duplicate\nduplicate\nother', 'utf8');
     const mod = await import('../../../src/tools/file/edit.js');
     await assert.rejects(
-      () => mod.execute({
-        path: TEST_FILE,
-        old_text: 'duplicate',
-        new_text: 'single',
-      }),
-      /'old_text' found multiple times/
+      () =>
+        mod.execute({
+          path: TEST_FILE,
+          old_text: 'duplicate',
+          new_text: 'single',
+        }),
+      /'old_text' found multiple times/,
     );
   });
 
   it('throws when neither old_text nor start_line/end_line provided', async () => {
-    await fs.writeFile(
-      TEST_FILE,
-      'some content',
-      'utf8'
-    );
+    await fs.writeFile(TEST_FILE, 'some content', 'utf8');
     const mod = await import('../../../src/tools/file/edit.js');
     await assert.rejects(
-      () => mod.execute({
-        path: TEST_FILE,
-        new_text: 'replacement',
-      }),
-      /Either 'old_text' or both 'start_line' and 'end_line'/
+      () =>
+        mod.execute({
+          path: TEST_FILE,
+          new_text: 'replacement',
+        }),
+      /Either 'old_text' or both 'start_line' and 'end_line'/,
     );
   });
 });

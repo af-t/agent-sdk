@@ -18,19 +18,20 @@ This skill captures patterns for efficiently working through a large remediation
 
 ### 1. Prioritize by Impact
 
-| Priority | Category | Examples |
-|----------|----------|---------|
-| P0 | Critical Bug Hotfixes | Logic bugs that silently produce wrong results |
-| P1 | Security Hardening | Path traversal, secret leakage, SSRF, command injection |
-| P2 | Reliability & Error Handling | Empty catches, timeouts, circuit breakers, error standardization |
-| P3 | Architecture | Provider abstraction, config improvements, naming consistency |
-| P4 | Tool Improvements | Portability, in-memory operations, tests |
+| Priority | Category                     | Examples                                                         |
+| -------- | ---------------------------- | ---------------------------------------------------------------- |
+| P0       | Critical Bug Hotfixes        | Logic bugs that silently produce wrong results                   |
+| P1       | Security Hardening           | Path traversal, secret leakage, SSRF, command injection          |
+| P2       | Reliability & Error Handling | Empty catches, timeouts, circuit breakers, error standardization |
+| P3       | Architecture                 | Provider abstraction, config improvements, naming consistency    |
+| P4       | Tool Improvements            | Portability, in-memory operations, tests                         |
 
 Always fix P0 and P1 before touching anything else. Security bugs compound.
 
 ### 2. Incremental Marking
 
 Mark progress **immediately after each item**, not at the end. This:
+
 - Prevents losing track of what's done
 - Provides clear rollback points
 - Makes review easier
@@ -61,11 +62,13 @@ You (Orchestrator)
 ```
 
 **When to use this:**
+
 - Multiple files need changes (>3 files)
 - Changes are well-defined and can be described clearly
 - Review requires careful cross-file verification
 
 **When NOT to use this (do yourself):**
+
 - Single-file changes
 - Trivial fixes (1-2 lines)
 - Review findings that are minor (fix directly instead of re-delegating)
@@ -80,12 +83,13 @@ You (Orchestrator)
 // BAD — no validation
 const fullPath = path.resolve(filePath);
 
-// GOOD — use ensureSafePath() 
+// GOOD — use ensureSafePath()
 import { ensureSafePath } from '../../core/utils.js';
 const fullPath = ensureSafePath(filePath);
 ```
 
 **`ensureSafePath()` harus menangani:**
+
 1. ❌ Null bytes (`\0`) — CVE-2021-3805 bypass
 2. ❌ URL-encoded traversal (`%2e%2e`, `%2f`, `%5c`) — double encoding
 3. ❌ Protocol handlers (`file://`, etc.) — SSRF via file path
@@ -104,6 +108,7 @@ env: { ...stripSecrets(process.env), ...(this.config.env || {}) }
 ```
 
 **`stripSecrets()` harus men-strip env vars yang mengandung:**
+
 - `api_key`, `apikey`, `api-key`
 - `secret`, `token`, `password`
 - `credential`, `auth`
@@ -119,11 +124,11 @@ this.apiKey = apiKey;
 // GOOD — private field + read-only getter
 class Agent {
   #apiKey;
-  
+
   constructor() {
     this.#apiKey = apiKey;
   }
-  
+
   get apiKey() {
     return this.#apiKey;
   }
@@ -138,11 +143,13 @@ console.error(`${msg}`, ...args);
 
 // GOOD — redact before logging
 const patterns = [
-  /(sk-(?:or|ant)-[a-zA-Z0-9_-]+)/g,  // OpenRouter keys
-  /(tvly-[a-zA-Z0-9_-]+)/g,           // Tavily keys
-  /(Bearer\s+)[a-zA-Z0-9._-]+/g,      // Bearer tokens
+  /(sk-(?:or|ant)-[a-zA-Z0-9_-]+)/g, // OpenRouter keys
+  /(tvly-[a-zA-Z0-9_-]+)/g, // Tavily keys
+  /(Bearer\s+)[a-zA-Z0-9._-]+/g, // Bearer tokens
 ];
-function redact(msg) { /* apply patterns */ }
+function redact(msg) {
+  /* apply patterns */
+}
 logger.error(`${redact(msg)}`, ...args.map(redact));
 ```
 
@@ -151,9 +158,13 @@ logger.error(`${redact(msg)}`, ...args.map(redact));
 ```js
 // Block these targets:
 const BLOCKED_IPS = [
-  /^127\./, /^10\./, /^192\.168\./,     // Private IPv4
-  /^172\.(1[6-9]|2\d|3[01])\./,         // RFC 1918
-  /^::1$/, /^fc00:/, /^fe80:/,          // IPv6 private
+  /^127\./,
+  /^10\./,
+  /^192\.168\./, // Private IPv4
+  /^172\.(1[6-9]|2\d|3[01])\./, // RFC 1918
+  /^::1$/,
+  /^fc00:/,
+  /^fe80:/, // IPv6 private
 ];
 
 // Block protocols besides http/https
@@ -172,17 +183,19 @@ if (hostname === 'localhost' || hostname === '127.0.0.1') {
 ```js
 // Use blocklist for destruction-level commands
 const BLOCKED = [
-  'rm -rf /', 'dd if=', 'mkfs',
-  ':(){ :|:& };:',  // fork bomb
-  'shutdown', 'reboot', 'poweroff',
-  'wget -O - | sh', 'curl | sh',
+  'rm -rf /',
+  'dd if=',
+  'mkfs',
+  ':(){ :|:& };:', // fork bomb
+  'shutdown',
+  'reboot',
+  'poweroff',
+  'wget -O - | sh',
+  'curl | sh',
 ];
 
 // Warn on suspicious patterns
-const SUSPICIOUS = [
-  /\b(eval|exec|source)\s+.*(\/etc\/|\.ssh|\.env)/,
-  /\bsudo\b/, /\bchown\b/, /\bchmod\s+[0-7]+\b/,
-];
+const SUSPICIOUS = [/\b(eval|exec|source)\s+.*(\/etc\/|\.ssh|\.env)/, /\bsudo\b/, /\bchown\b/, /\bchmod\s+[0-7]+\b/];
 ```
 
 ### Temp File Security
@@ -227,8 +240,8 @@ try {
 
 ```js
 async function withRetry(func, count) {
-  const NON_RETRYABLE = [401, 403, 400, 404];  // Client errors — don't retry
-  const MAX_DELAY = 60_000;                     // Cap exponential backoff
+  const NON_RETRYABLE = [401, 403, 400, 404]; // Client errors — don't retry
+  const MAX_DELAY = 60_000; // Cap exponential backoff
 
   for (let i = 0; i < count; i++) {
     try {
@@ -265,7 +278,7 @@ async function requestWithTimeout(url, options, timeoutMs) {
   try {
     return await fetch(url, { ...options, signal: controller.signal });
   } finally {
-    clearTimeout(timer);  // Always clean up
+    clearTimeout(timer); // Always clean up
   }
 }
 ```
@@ -277,11 +290,13 @@ async function requestWithTimeout(url, options, timeoutMs) {
 When reviewing changes, check these dimensions:
 
 ### 1. Correctness
+
 - Does the logic produce the right result?
 - Are edge cases handled (null, undefined, empty, 0)?
 - Are error paths tested?
 
 ### 2. Security
+
 - Are all file paths validated with `ensureSafePath()`?
 - Are child process env vars sanitized with `stripSecrets()`?
 - Are API keys private fields (not serializable)?
@@ -290,16 +305,19 @@ When reviewing changes, check these dimensions:
 - Are temp file names unpredictable?
 
 ### 3. Regressions
+
 - Does the change break existing functionality?
 - Are imports/exports still compatible?
 - Are renamed things updated everywhere?
 
 ### 4. Consistency
+
 - Does the change follow the project's established patterns?
 - Is error handling consistent with other tools?
 - Are naming conventions followed?
 
 ### 5. Import/Export Verification
+
 - Every new import is actually used
 - Every renamed export has all references updated
 - No circular dependencies
@@ -327,6 +345,7 @@ When reviewing changes, check these dimensions:
 ### Reporting Findings
 
 Categorize findings as:
+
 - **✅ OK** — No issues, implementation is correct
 - **⚠️ FINDING** — Minor issue or improvement suggestion
 - **🚨 CRITICAL** — Bug or security hole that must be fixed before proceeding
@@ -356,11 +375,14 @@ Categorize findings as:
 ## Resources
 
 ### references/security-checklist.md
+
 Quick-reference checklist for security hardening reviews. Covers 7 categories with checkboxes:
+
 - Path Traversal, Secret Leakage, SSRF Prevention, Command Injection, File Operations, Config & Environment
 - Print or use digitally during code review
 
 ### scripts/remediation_helper.sh
+
 Bash script for automated security auditing
 
 ```bash
@@ -372,6 +394,7 @@ bash scripts/remediation_helper.sh
 ```
 
 **Usage examples:**
+
 ```bash
 # Find missed traversal paths
 check_path_traversal src/
@@ -387,6 +410,7 @@ run_all_checks src/
 ```
 
 The script scans for:
+
 - Unguarded `path.resolve()` calls
 - Missing `ensureSafePath` imports
 - `process.env` leaked to child processes

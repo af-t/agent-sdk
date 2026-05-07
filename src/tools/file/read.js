@@ -4,16 +4,17 @@ import { ensureSafePath } from '../../core/utils.js';
 const MAX_READ_SIZE = 10 * 1024 * 1024; // 10MB
 
 export const name = 'Read';
-export const description = 'Read the contents of a file with pagination and line numbers. Use pagination (start_line/end_line) for large files to avoid context overflow and ensure efficient reading.';
+export const description =
+  'Read the contents of a file with pagination and line numbers. Use pagination (start_line/end_line) for large files to avoid context overflow and ensure efficient reading.';
 export const input_schema = {
   type: 'object',
   properties: {
     path: { type: 'string', description: 'File path' },
     start_line: { type: 'number', description: 'Line to start reading from' },
     end_line: { type: 'number', description: 'Line to end reading at' },
-    max_lines: { type: 'number', description: 'Max lines to return (default 1500)' }
+    max_lines: { type: 'number', description: 'Max lines to return (default 1500)' },
   },
-  required: ['path']
+  required: ['path'],
 };
 
 export const execute = async ({ path: filePath, start_line = 1, end_line = Infinity, max_lines = 1500 }) => {
@@ -39,12 +40,14 @@ export const execute = async ({ path: filePath, start_line = 1, end_line = Infin
     const slice = lines.slice(start, end).slice(0, max_lines);
 
     // Format with line numbers like cat -n would
-    let result = slice.map((line, i) => {
-      const lineNum = start + i + 1;
-      return `${String(lineNum).padStart(6, ' ')}\t${line}`;
-    }).join('\n');
+    let result = slice
+      .map((line, i) => {
+        const lineNum = start + i + 1;
+        return `${String(lineNum).padStart(6, ' ')}\t${line}`;
+      })
+      .join('\n');
 
-    if (lines.length > end || (end - start) > max_lines) {
+    if (lines.length > end || end - start > max_lines) {
       result += '\n[... truncated]';
     }
     return result;

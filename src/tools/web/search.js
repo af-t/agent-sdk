@@ -2,21 +2,40 @@ import config from '../../config.js';
 import { CONSTANTS } from '../../core/utils.js';
 
 export const name = 'WebSearch';
-export const description = 'Search the web using Tavily. Use this to find current information, research topics, get documentation links, or answer questions that require up-to-date web data. Returns relevant results with snippets and source URLs. Supports deep search mode for comprehensive research.';
+export const description =
+  'Search the web using Tavily. Use this to find current information, research topics, get documentation links, or answer questions that require up-to-date web data. Returns relevant results with snippets and source URLs. Supports deep search mode for comprehensive research.';
 export const input_schema = {
   type: 'object',
   properties: {
     query: { type: 'string', description: 'Search query — be specific for best results' },
-    depth: { type: 'string', enum: ['basic', 'advanced'], description: '"basic" for quick results (default), "advanced" for deeper research with longer context' },
+    depth: {
+      type: 'string',
+      enum: ['basic', 'advanced'],
+      description: '"basic" for quick results (default), "advanced" for deeper research with longer context',
+    },
     maxResults: { type: 'number', description: 'Number of results to return (default: 5, max: 20)' },
-    includeAnswer: { type: 'boolean', description: 'Include an AI-generated answer synthesizing results (default: false)' },
-    includeDomains: { type: 'array', items: { type: 'string' }, description: 'Only search within these domains (e.g. ["python.org", "stackoverflow.com"])' },
-    excludeDomains: { type: 'array', items: { type: 'string' }, description: 'Exclude these domains from results' }
+    includeAnswer: {
+      type: 'boolean',
+      description: 'Include an AI-generated answer synthesizing results (default: false)',
+    },
+    includeDomains: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Only search within these domains (e.g. ["python.org", "stackoverflow.com"])',
+    },
+    excludeDomains: { type: 'array', items: { type: 'string' }, description: 'Exclude these domains from results' },
   },
-  required: ['query']
+  required: ['query'],
 };
 
-export const execute = async ({ query, depth = 'basic', maxResults = 5, includeAnswer = false, includeDomains, excludeDomains }) => {
+export const execute = async ({
+  query,
+  depth = 'basic',
+  maxResults = 5,
+  includeAnswer = false,
+  includeDomains,
+  excludeDomains,
+}) => {
   const apiKey = config.TAVILY_API_KEY;
   if (!apiKey) {
     throw new Error('TAVILY_API_KEY is not configured. Set it in .env or environment variables.');
@@ -40,7 +59,7 @@ export const execute = async ({ query, depth = 'basic', maxResults = 5, includeA
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal: controller.signal
+      signal: controller.signal,
     });
 
     clearTimeout(timeout);

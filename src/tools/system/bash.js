@@ -16,20 +16,51 @@ async function getPty() {
 }
 
 // Whitelist of safe environment variables to pass to child processes
-const SAFE_ENV_KEYS = ['HOME', 'USER', 'PATH', 'SHELL', 'TERM', 'LANG', 'LC_ALL',
-  'PWD', 'OLDPWD', 'NODE_PATH', 'TMPDIR', 'LD_PRELOAD', 'PREFIX'];
+const SAFE_ENV_KEYS = [
+  'HOME',
+  'USER',
+  'PATH',
+  'SHELL',
+  'TERM',
+  'LANG',
+  'LC_ALL',
+  'PWD',
+  'OLDPWD',
+  'NODE_PATH',
+  'TMPDIR',
+  'LD_PRELOAD',
+  'PREFIX',
+];
 
 // Destruction-level commands that are ALWAYS blocked
 const BLOCKED_COMMANDS = [
-  'rm -rf /', 'rm -rf /*', 'rm -rf ~', 'rm -rf .*',
-  'dd if=', 'mkfs', 'mkswap',
-  ':(){ :|:& };:',  // fork bomb
-  'chmod 777 /', 'chmod -R 777 /',
-  '> /dev/sda', '> /dev/hda', '> /dev/nvme', '> /dev/mmc',
-  'shutdown', 'reboot', 'poweroff', 'halt', 'init 0', 'init 6',
-  '| sh', '| bash', '| zsh', '| ksh',
-  'wget', 'curl',
-  'echo "*/1 * * * *"',  // cron backdoor attempt
+  'rm -rf /',
+  'rm -rf /*',
+  'rm -rf ~',
+  'rm -rf .*',
+  'dd if=',
+  'mkfs',
+  'mkswap',
+  ':(){ :|:& };:', // fork bomb
+  'chmod 777 /',
+  'chmod -R 777 /',
+  '> /dev/sda',
+  '> /dev/hda',
+  '> /dev/nvme',
+  '> /dev/mmc',
+  'shutdown',
+  'reboot',
+  'poweroff',
+  'halt',
+  'init 0',
+  'init 6',
+  '| sh',
+  '| bash',
+  '| zsh',
+  '| ksh',
+  'wget',
+  'curl',
+  'echo "*/1 * * * *"', // cron backdoor attempt
 ];
 
 // Suspicious operations that should be warned (but not outright blocked)
@@ -40,7 +71,7 @@ const SUSPICIOUS_PATTERNS = [
   /\bchmod\s+[0-7]{3,4}\b/,
   /\b(wget|curl)\s+/,
   />\s*\/dev\//,
-  /\|&\s*$/,  // background pipe
+  /\|&\s*$/, // background pipe
 ];
 
 function isBlocked(command) {
@@ -71,11 +102,13 @@ function runWithSpawn(command, cwd, env, timeout) {
       cwd,
       env,
       timeout,
-      stdio: ['pipe', 'pipe', 1]
+      stdio: ['pipe', 'pipe', 1],
     });
     let output = '';
 
-    child.stdout.on('data', (data) => { output += data; });
+    child.stdout.on('data', (data) => {
+      output += data;
+    });
 
     const timer = setTimeout(() => {
       child.kill();
@@ -112,7 +145,7 @@ function runWithPty(command, cwd, env, timeout) {
         cols: 80,
         rows: 30,
         cwd,
-        env
+        env,
       });
     } catch (err) {
       reject(err);
@@ -144,23 +177,26 @@ function runWithPty(command, cwd, env, timeout) {
 }
 
 export const name = 'Bash';
-export const description = 'Execute a shell command. Use this for system operations that do not have a specialized tool, such as running tests, performing builds, or using complex CLI utilities.';
+export const description =
+  'Execute a shell command. Use this for system operations that do not have a specialized tool, such as running tests, performing builds, or using complex CLI utilities.';
 export const input_schema = {
   type: 'object',
   properties: {
     command: { type: 'string', description: 'Shell command to execute' },
     cwd: { type: 'string', description: 'Working directory' },
     env: { type: 'object', description: 'Environment variables' },
-    timeout: { type: 'number', description: 'Timeout in ms (default 300000)' }
+    timeout: { type: 'number', description: 'Timeout in ms (default 300000)' },
   },
-  required: ['command']
+  required: ['command'],
 };
 
 export const execute = async ({ command, cwd = process.cwd(), env = process.env, timeout = 300000 }) => {
   // Check for blocked commands
   const blocked = isBlocked(command);
   if (blocked) {
-    throw new Error(`BLOCKED: Command matches blocked pattern '${blocked}'. This command is not allowed for safety reasons.`);
+    throw new Error(
+      `BLOCKED: Command matches blocked pattern '${blocked}'. This command is not allowed for safety reasons.`,
+    );
   }
 
   // Warn about suspicious patterns

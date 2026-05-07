@@ -19,8 +19,7 @@ function parseFrontmatter(content) {
     if (colonIdx === -1) continue;
     const key = line.slice(0, colonIdx).trim();
     let value = line.slice(colonIdx + 1).trim();
-    if ((value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))) {
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
     }
     metadata[key] = value;
@@ -44,9 +43,7 @@ export class SkillRegistry {
     this._forceRefresh = false;
     this.skills.clear();
 
-    const searchPaths = [
-      { dir: path.join(__dirname, '..', 'skills'), scope: 'builtin' }
-    ];
+    const searchPaths = [{ dir: path.join(__dirname, '..', 'skills'), scope: 'builtin' }];
 
     // Default directories for common AI tool config folders (configurable)
     if (this.scanAgentDirs) {
@@ -77,7 +74,9 @@ export class SkillRegistry {
       return;
     }
 
-    const entries = (await fs.readdir(dir, { recursive: true, withFileTypes: true })).filter(x => x.name === 'SKILL.md');
+    const entries = (await fs.readdir(dir, { recursive: true, withFileTypes: true })).filter(
+      (x) => x.name === 'SKILL.md',
+    );
     for (const entry of entries) {
       const fullPath = path.join(entry.parentPath, entry.name);
       try {
@@ -93,7 +92,7 @@ export class SkillRegistry {
           parent: path.relative(process.cwd(), entry.parentPath),
           scope,
           content: body,
-          raw
+          raw,
         });
 
         logger.debug(`SkillRegistry: loaded "${name}" (${scope})`);
@@ -180,11 +179,25 @@ export default {
     }
     await _discoveryPromise;
   },
-  get skills() { return registry.skills; },
-  get loaded() { return registry.loaded; },
-  list() { return registry.list(); },
-  get(name) { return registry.get(name); },
-  search(query) { return registry.search(query); },
-  refresh() { return registry.refresh(); },
-  reset() { registry.reset(); },
+  get skills() {
+    return registry.skills;
+  },
+  get loaded() {
+    return registry.loaded;
+  },
+  list() {
+    return registry.list();
+  },
+  get(name) {
+    return registry.get(name);
+  },
+  search(query) {
+    return registry.search(query);
+  },
+  refresh() {
+    return registry.refresh();
+  },
+  reset() {
+    registry.reset();
+  },
 };

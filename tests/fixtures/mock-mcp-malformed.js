@@ -3,7 +3,7 @@ import { createInterface } from 'node:readline';
 const rl = createInterface({
   input: process.stdin,
   output: process.stdout,
-  terminal: false
+  terminal: false,
 });
 
 rl.on('line', (line) => {

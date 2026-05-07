@@ -53,9 +53,6 @@ describe('list.js execute', () => {
 
   it('throws for non-existent directory within project root', async () => {
     const mod = await import('../../../src/tools/file/list.js');
-    await assert.rejects(
-      () => mod.execute({ path: 'tests/fixtures/nonexistent-dir-xyz' }),
-      { code: 'ENOENT' }
-    );
+    await assert.rejects(() => mod.execute({ path: 'tests/fixtures/nonexistent-dir-xyz' }), { code: 'ENOENT' });
   });
 });

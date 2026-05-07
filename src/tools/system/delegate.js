@@ -3,16 +3,25 @@ import { CONSTANTS } from '../../core/utils.js';
 import logger from '../../core/logger.js';
 
 export const name = 'Delegate';
-export const description = 'Delegate a specific task to a specialized sub-agent. Use this for complex research, repetitive operations, or tasks with high-volume output to keep the main session history clean.';
+export const description =
+  'Delegate a specific task to a specialized sub-agent. Use this for complex research, repetitive operations, or tasks with high-volume output to keep the main session history clean.';
 export const input_schema = {
   type: 'object',
   properties: {
     description: { type: 'string', description: 'Explain why to use this tool' },
-    prompt: { type: 'string', description: 'Specific instructions for the subagent\n\nIt is highly recommended to ask for a summary so that the context obtained is clear' },
+    prompt: {
+      type: 'string',
+      description:
+        'Specific instructions for the subagent\n\nIt is highly recommended to ask for a summary so that the context obtained is clear',
+    },
     persona: { type: 'string', description: 'Specific System instruction or Rule or Personality for subagent' },
-    context_files: { type: 'array', items: { type: 'string' }, description: 'Paths to files the subagent should read first' }
+    context_files: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Paths to files the subagent should read first',
+    },
   },
-  required: ['prompt', 'description']
+  required: ['prompt', 'description'],
 };
 
 export const execute = async ({ description, prompt, persona, context_files }, { agent }) => {
@@ -26,11 +35,11 @@ export const execute = async ({ description, prompt, persona, context_files }, {
     apiKey: agent.apiKey,
     model: agent.model,
     provider: agent.provider,
-    tools: agent.tools,  // inherit all tools including Delegate (depth check prevents unbounded recursion)
+    tools: agent.tools, // inherit all tools including Delegate (depth check prevents unbounded recursion)
     systemPrompt: persona,
     maxTokens: agent.maxTokens || CONSTANTS.MAX_TOKENS_SUBAGENT,
     maxTurns: 1000, // subagents need more iterations than the default 25
-    isSubagent: true
+    isSubagent: true,
   });
 
   let task = prompt;

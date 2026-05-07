@@ -29,13 +29,13 @@ Bash(tmux) → creates persistent session → survives timeout/detach
 
 ### When to Use Tmux
 
-| Scenario | Without tmux | With tmux |
-|----------|-------------|-----------|
-| Long-running build/test | Timeout kills process | Process continues in session |
-| Interactive program (nano, htop) | No PTY available | Full PTY support via tmux |
-| Multiple parallel tasks | Sequential only | Parallel sessions |
-| Reconnect to running process | Not possible | `tmux attach` works |
-| Background server (dev server, db) | Dies with shell | Persists in tmux session |
+| Scenario                           | Without tmux          | With tmux                    |
+| ---------------------------------- | --------------------- | ---------------------------- |
+| Long-running build/test            | Timeout kills process | Process continues in session |
+| Interactive program (nano, htop)   | No PTY available      | Full PTY support via tmux    |
+| Multiple parallel tasks            | Sequential only       | Parallel sessions            |
+| Reconnect to running process       | Not possible          | `tmux attach` works          |
+| Background server (dev server, db) | Dies with shell       | Persists in tmux session     |
 
 ## Quick Start
 
@@ -296,6 +296,7 @@ tmux kill-session -t server
 2. **Detach by default** - Create sessions with `-d` (detached) so the Bash tool returns immediately.
 
 3. **Check session existence first** - Before sending to a session, verify it exists:
+
    ```bash
    if tmux has-session -t mysession 2>/dev/null; then
      tmux send-keys -t mysession "command" Enter
@@ -311,6 +312,7 @@ tmux kill-session -t server
 7. **Redirect stderr** - When running commands in tmux, redirect stderr: `command 2>&1` to see errors in captured output.
 
 8. **Use 2>/dev/null for session creation** - Suppress "duplicate session" errors:
+
    ```bash
    tmux new-session -d -s mysession 2>/dev/null
    ```
@@ -323,7 +325,9 @@ tmux kill-session -t server
 ## Resources
 
 ### scripts/tmux_helper.sh
+
 A bash helper script for common tmux operations. Use this for reliable, repeatable tmux workflows:
+
 - `session_create <name> [directory]` - Create a detached session
 - `session_send <name> <command>` - Send a command to a session
 - `session_read <name> [lines]` - Read last N lines from a session
@@ -332,4 +336,5 @@ A bash helper script for common tmux operations. Use this for reliable, repeatab
 - `session_run <name> <command> [timeout]` - Run command in session and wait for completion
 
 ### references/tmux-cheatsheet.md
+
 Quick reference for all tmux commands and patterns used in this skill.

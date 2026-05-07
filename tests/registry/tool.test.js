@@ -9,7 +9,7 @@ describe('ToolRegistry', () => {
       name: 'test_tool',
       description: 'A test tool',
       input_schema: { type: 'object', properties: { foo: { type: 'string' } } },
-      execute: async () => 'result'
+      execute: async () => 'result',
     });
 
     const defs = registry.getDefinitions();
@@ -24,7 +24,7 @@ describe('ToolRegistry', () => {
       name: 't1',
       description: 'd1',
       input_schema: {},
-      execute: async () => 'r1'
+      execute: async () => 'r1',
     });
     const list = registry.listTools();
     assert.equal(list.length, 1);
@@ -42,7 +42,7 @@ describe('ToolRegistry', () => {
         called = true;
         assert.deepEqual(input, { x: 1 });
         return 'ok';
-      }
+      },
     });
 
     const res = await registry.execute('call_me', { x: 1 }, {});
@@ -52,10 +52,7 @@ describe('ToolRegistry', () => {
 
   it('execute throws for unknown tool', async () => {
     const registry = new ToolRegistry();
-    await assert.rejects(
-      () => registry.execute('nope', {}, {}),
-      { message: /not found/ }
-    );
+    await assert.rejects(() => registry.execute('nope', {}, {}), { message: /not found/ });
   });
 
   it('unregister removes a tool', () => {
@@ -85,7 +82,7 @@ describe('ToolRegistry', () => {
     const registry = new ToolRegistry();
     assert.throws(
       () => registry.register({ name: 't', description: 'd', input_schema: {} }),
-      /must have an execute function/
+      /must have an execute function/,
     );
   });
 
@@ -102,7 +99,7 @@ describe('ToolRegistry', () => {
       name: 'test',
       description: 'd',
       input_schema: {},
-      execute: async () => 'result'
+      execute: async () => 'result',
     });
 
     await registry.execute('test', { val: 123 }, {});
@@ -111,13 +108,12 @@ describe('ToolRegistry', () => {
 
   it('onBeforeExecute can abort by throwing', async () => {
     const registry = new ToolRegistry();
-    registry.onBeforeExecute(() => { throw new Error('ABORTED'); });
+    registry.onBeforeExecute(() => {
+      throw new Error('ABORTED');
+    });
     registry.register({ name: 't', description: 'd', input_schema: {}, execute: async () => 'r' });
 
-    await assert.rejects(
-      () => registry.execute('t', {}, {}),
-      { message: 'ABORTED' }
-    );
+    await assert.rejects(() => registry.execute('t', {}, {}), { message: 'ABORTED' });
   });
 
   it('onAfterExecute hook runs after tool execution', async () => {
@@ -131,7 +127,7 @@ describe('ToolRegistry', () => {
       name: 't',
       description: 'd',
       input_schema: {},
-      execute: async () => 'success'
+      execute: async () => 'success',
     });
 
     await registry.execute('t', {}, {});
@@ -141,7 +137,9 @@ describe('ToolRegistry', () => {
   it('onBeforeExecute disposer removes the hook', async () => {
     const registry = new ToolRegistry();
     let count = 0;
-    const dispose = registry.onBeforeExecute(() => { count++; });
+    const dispose = registry.onBeforeExecute(() => {
+      count++;
+    });
     registry.register({ name: 't', description: 'd', input_schema: {}, execute: async () => 'r' });
 
     await registry.execute('t', {}, {});
@@ -155,7 +153,9 @@ describe('ToolRegistry', () => {
   it('onAfterExecute disposer removes the hook', async () => {
     const registry = new ToolRegistry();
     let count = 0;
-    const dispose = registry.onAfterExecute(() => { count++; });
+    const dispose = registry.onAfterExecute(() => {
+      count++;
+    });
     registry.register({ name: 't', description: 'd', input_schema: {}, execute: async () => 'r' });
 
     await registry.execute('t', {}, {});
@@ -170,13 +170,10 @@ describe('ToolRegistry', () => {
       name: 'req',
       description: 'd',
       input_schema: { type: 'object', required: ['p1'], properties: { p1: { type: 'string' } } },
-      execute: async () => 'ok'
+      execute: async () => 'ok',
     });
 
-    await assert.rejects(
-      () => registry.execute('req', {}, {}),
-      { message: /requires parameter 'p1'/ }
-    );
+    await assert.rejects(() => registry.execute('req', {}, {}), { message: /requires parameter 'p1'/ });
   });
 
   it('validate parameter type: number', async () => {
@@ -185,7 +182,7 @@ describe('ToolRegistry', () => {
       name: 't',
       description: 'd',
       input_schema: { type: 'object', properties: { p: { type: 'number' } } },
-      execute: async () => 'ok'
+      execute: async () => 'ok',
     });
     await assert.rejects(() => registry.execute('t', { p: '123' }, {}), { message: /must be a number/ });
     await assert.doesNotReject(() => registry.execute('t', { p: 123 }, {}));
@@ -197,7 +194,7 @@ describe('ToolRegistry', () => {
       name: 't',
       description: 'd',
       input_schema: { type: 'object', properties: { p: { type: 'string' } } },
-      execute: async () => 'ok'
+      execute: async () => 'ok',
     });
     await assert.rejects(() => registry.execute('t', { p: 123 }, {}), { message: /must be a string/ });
   });
@@ -208,7 +205,7 @@ describe('ToolRegistry', () => {
       name: 't',
       description: 'd',
       input_schema: { type: 'object', properties: { p: { type: 'boolean' } } },
-      execute: async () => 'ok'
+      execute: async () => 'ok',
     });
     await assert.rejects(() => registry.execute('t', { p: 'true' }, {}), { message: /must be a boolean/ });
   });
@@ -219,7 +216,7 @@ describe('ToolRegistry', () => {
       name: 't',
       description: 'd',
       input_schema: { type: 'object', properties: { p: { type: 'array' } } },
-      execute: async () => 'ok'
+      execute: async () => 'ok',
     });
     await assert.rejects(() => registry.execute('t', { p: {} }, {}), { message: /must be an array/ });
   });
@@ -230,7 +227,7 @@ describe('ToolRegistry', () => {
       name: 't',
       description: 'd',
       input_schema: { type: 'object', properties: { p: { type: 'object' } } },
-      execute: async () => 'ok'
+      execute: async () => 'ok',
     });
     await assert.rejects(() => registry.execute('t', { p: [] }, {}), { message: /must be an object/ });
   });
@@ -241,7 +238,7 @@ describe('ToolRegistry', () => {
       name: 't',
       description: 'd',
       input_schema: { type: 'object', properties: { p: { enum: ['a', 'b'] } } },
-      execute: async () => 'ok'
+      execute: async () => 'ok',
     });
     await assert.rejects(() => registry.execute('t', { p: 'c' }, {}), { message: /must be one of \[a, b\]/ });
     await assert.doesNotReject(() => registry.execute('t', { p: 'a' }, {}));
@@ -258,9 +255,9 @@ describe('ToolRegistry', () => {
       execute: async ({ id }) => {
         callCount++;
         // Simulate async work
-        await new Promise(r => setTimeout(r, 10 + Math.random() * 50));
+        await new Promise((r) => setTimeout(r, 10 + Math.random() * 50));
         return `result-${id}`;
-      }
+      },
     });
 
     // Fire 10 concurrent calls
@@ -295,7 +292,7 @@ describe('ToolRegistry', () => {
       execute: async () => 'a',
     });
 
-    const p1 = registry.execute('tool_a', {}, {}).then(r => results.push(r));
+    const p1 = registry.execute('tool_a', {}, {}).then((r) => results.push(r));
 
     // Concurrently register a second tool
     registry.register({
@@ -305,7 +302,7 @@ describe('ToolRegistry', () => {
       execute: async () => 'b',
     });
 
-    const p2 = registry.execute('tool_b', {}, {}).then(r => results.push(r));
+    const p2 = registry.execute('tool_b', {}, {}).then((r) => results.push(r));
 
     await Promise.all([p1, p2]);
 

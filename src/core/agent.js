@@ -17,18 +17,8 @@ const DEFAULT_MAX_TURNS = 25;
 class Agent {
   #apiKey;
 
-  constructor (options = {}) {
-    const {
-      apiKey,
-      model,
-      tools,
-      order,
-      only,
-      maxTokens,
-      systemPrompt,
-      maxTurns,
-      reasoningEffort
-    } = options;
+  constructor(options = {}) {
+    const { apiKey, model, tools, order, only, maxTokens, systemPrompt, maxTurns, reasoningEffort } = options;
 
     if (!apiKey && !config.API_KEY) {
       throw new ConfigError('OPENROUTER_API_KEY is required. Set it in .env or pass it as an option.');
@@ -44,27 +34,30 @@ class Agent {
     // Max request turns before forcing a break.
     // Set to 0 for unlimited (used by subagents via Delegate).
     this.maxTurns = maxTurns ?? (parseInt(config.MAX_TURNS || 0) || DEFAULT_MAX_TURNS);
-    this.systemPrompt = systemPrompt || (() => {
-      let base = 'You are an interactive agent that helps users with software engineering tasks.';
-      try {
-        base = fs.readFileSync(path.join(__dirname, '..', '..', 'RULE.md'), 'utf8');
-      } catch {
-        logger.debug('No RULE.md found, using default instruction.');
-      }
+    this.systemPrompt =
+      systemPrompt ||
+      (() => {
+        let base = 'You are an interactive agent that helps users with software engineering tasks.';
+        try {
+          base = fs.readFileSync(path.join(__dirname, '..', '..', 'RULE.md'), 'utf8');
+        } catch {
+          logger.debug('No RULE.md found, using default instruction.');
+        }
 
-      const envInfo = [
-        '', '',
-        '# Environment',
-        'You have been invoked in the following environment:',
-        ` - Primary working directory: ${process.cwd()}`,
-        ` - Is a git repository: ${!!fs.existsSync('.git')}`,
-        ` - Platform: ${os.platform()}`,
-        ` - Shell: ${process.env.SHELL || 'unknown'}`,
-        ` - OS version: ${os.release()}`
-      ];
+        const envInfo = [
+          '',
+          '',
+          '# Environment',
+          'You have been invoked in the following environment:',
+          ` - Primary working directory: ${process.cwd()}`,
+          ` - Is a git repository: ${!!fs.existsSync('.git')}`,
+          ` - Platform: ${os.platform()}`,
+          ` - Shell: ${process.env.SHELL || 'unknown'}`,
+          ` - OS version: ${os.release()}`,
+        ];
 
-      return base + envInfo.join('\n');
-    })();
+        return base + envInfo.join('\n');
+      })();
   }
 
   // Read-only API key — used by Delegate tool for sub-agents
@@ -79,11 +72,11 @@ class Agent {
       const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.#apiKey}`,
-          'Content-Type': 'application/json'
+          Authorization: `Bearer ${this.#apiKey}`,
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({ ...payload, stream: false }),
-        signal: controller.signal
+        signal: controller.signal,
       });
 
       let responseBody = await res.text();
@@ -100,7 +93,7 @@ class Agent {
         throw new ApiError(
           responseBody?.error?.message || `OpenRouter API error (${res.status})`,
           res.status,
-          responseBody
+          responseBody,
         );
       }
 
@@ -114,7 +107,12 @@ class Agent {
     // Build messages for payload with cache_control on a defensive copy
     const messagesForPayload = this.messages.map((msg, idx) => {
       // Only add cache_control to the last user message's last content part (on a copy)
-      if (idx === this.messages.length - 1 && msg.role === 'user' && Array.isArray(msg.content) && msg.content.length > 0) {
+      if (
+        idx === this.messages.length - 1 &&
+        msg.role === 'user' &&
+        Array.isArray(msg.content) &&
+        msg.content.length > 0
+      ) {
         const contentCopy = msg.content.map((part, partIdx) => {
           if (partIdx === msg.content.length - 1) {
             return { ...part, cache_control: { type: 'ephemeral' } };
@@ -131,18 +129,20 @@ class Agent {
       messages: [
         {
           role: 'system',
-          content: [{
-            type: 'text',
-            text: this.systemPrompt,
-            cache_control: { type: 'ephemeral' }
-          }]
+          content: [
+            {
+              type: 'text',
+              text: this.systemPrompt,
+              cache_control: { type: 'ephemeral' },
+            },
+          ],
         },
-        ...messagesForPayload
+        ...messagesForPayload,
       ],
       tools: this.tools.getDefinitions(),
       provider: this.provider,
       max_tokens: this.maxTokens,
-      reasoning_effort: this.reasoningEffort
+      reasoning_effort: this.reasoningEffort,
     };
 
     if (payload.tools.length === 0) delete payload.tools;
@@ -152,8 +152,8 @@ class Agent {
     const response = await this._request(payload);
     logger.debug(`Received response from LLM.`);
 
-    this.usage.cost += (response.usage?.cost || 0);
-    this.usage.tokens += (response.usage?.total_tokens || 0);
+    this.usage.cost += response.usage?.cost || 0;
+    this.usage.tokens += response.usage?.total_tokens || 0;
 
     return response;
   }
@@ -212,7 +212,8 @@ class Agent {
       if (this.isSubagent && this.maxTurns > 0 && loopCount === this.maxTurns) {
         const lastMsg = this.messages[this.messages.length - 1];
         if (lastMsg?.role === 'tool') {
-          lastMsg.content += '\n\n[SYSTEM] You have reached the maximum allowed request turns. Please provide a final summary of your work now and stop calling tools.';
+          lastMsg.content +=
+            '\n\n[SYSTEM] You have reached the maximum allowed request turns. Please provide a final summary of your work now and stop calling tools.';
         }
       }
 
@@ -243,7 +244,7 @@ class Agent {
           this.messages.push({
             role: 'tool',
             content: `Error: invalid JSON arguments — ${parseErr.message}`,
-            tool_call_id: tc.id || `call_${crypto.randomUUID()}`
+            tool_call_id: tc.id || `call_${crypto.randomUUID()}`,
           });
           continue;
         }
@@ -259,15 +260,15 @@ class Agent {
           this.messages.push({
             role: 'tool',
             content: `Error: ${toolErr.message}`,
-            tool_call_id: tc.id || `call_${crypto.randomUUID()}`
+            tool_call_id: tc.id || `call_${crypto.randomUUID()}`,
           });
           continue;
         }
 
         this.messages.push({
           role: 'tool',
-          content: (typeof result === 'string') ? result : JSON.stringify(result),
-          tool_call_id: tc.id || `call_${crypto.randomUUID()}`
+          content: typeof result === 'string' ? result : JSON.stringify(result),
+          tool_call_id: tc.id || `call_${crypto.randomUUID()}`,
         });
 
         if (signal?.aborted) {

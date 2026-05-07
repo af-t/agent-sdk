@@ -1,15 +1,24 @@
 import registry from '../../registry/skill.js';
 
 export const name = 'Skill';
-export const description = 'Reusable instruction sets for specialized tasks like code review, debugging, testing, architecture planning, strategy, and more.';
+export const description =
+  'Reusable instruction sets for specialized tasks like code review, debugging, testing, architecture planning, strategy, and more.';
 
 export const input_schema = {
   type: 'object',
   properties: {
-    action: { type: 'string', enum: ['list', 'load', 'search'], description: 'There are 3 options to manage your skills.' },
-    argument: { type: 'string', description: 'Argument for list, load, or search. for list no need to fill in, for load enter name, for search enter query.' }
+    action: {
+      type: 'string',
+      enum: ['list', 'load', 'search'],
+      description: 'There are 3 options to manage your skills.',
+    },
+    argument: {
+      type: 'string',
+      description:
+        'Argument for list, load, or search. for list no need to fill in, for load enter name, for search enter query.',
+    },
   },
-  required: ['action', 'argument']
+  required: ['action', 'argument'],
 };
 
 export const execute = async ({ action, argument }) => {

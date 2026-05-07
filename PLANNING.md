@@ -202,13 +202,13 @@ src/
 
 > **Goal:** Set up build pipeline and modify Agent class for TUI compatibility.
 
-| # | Task | Description | Dependencies |
-|---|------|-------------|--------------|
-| 0.1 | **Build Pipeline** | Setup `esbuild` to transpile JSX for Termux/Node | — |
-| 0.2 | **Install Ink** | Add `ink`, `ink-markdown`, `ink-text-input` deps | 0.1 |
-| 0.3 | **Event Emitter** | Add `EventEmitter` to Agent class | — |
-| 0.4 | **Streaming Support** | Refactor `_request` to handle `stream: true` SSE | 0.3 |
-| 0.5 | **Notify Callback** | Replace notify fn with event-driven architecture | 0.3 |
+| #   | Task                  | Description                                      | Dependencies |
+| --- | --------------------- | ------------------------------------------------ | ------------ |
+| 0.1 | **Build Pipeline**    | Setup `esbuild` to transpile JSX for Termux/Node | —            |
+| 0.2 | **Install Ink**       | Add `ink`, `ink-markdown`, `ink-text-input` deps | 0.1          |
+| 0.3 | **Event Emitter**     | Add `EventEmitter` to Agent class                | —            |
+| 0.4 | **Streaming Support** | Refactor `_request` to handle `stream: true` SSE | 0.3          |
+| 0.5 | **Notify Callback**   | Replace notify fn with event-driven architecture | 0.3          |
 
 **Files modified:** `package.json`, `src/core/agent.js`  
 **Files created:** `src/tui/`, `esbuild.config.js`
@@ -219,12 +219,12 @@ src/
 
 > **Goal:** Robust state layer that the UI can subscribe to.
 
-| # | Task | Description | Dependencies |
-|---|------|-------------|--------------|
-| 1.1 | **Agent Store** | Zustand store for messages, streaming token, cost | 0.3 |
-| 1.2 | **Output Buffer** | Ring buffer for rapid streaming chunks (debounce 50ms) | 1.1 |
-| 1.3 | **Session Store** | Persist session history to disk (JSON) | 1.1 |
-| 1.4 | **UI Store** | Theme, sidebar visibility, layout preferences | — |
+| #   | Task              | Description                                            | Dependencies |
+| --- | ----------------- | ------------------------------------------------------ | ------------ |
+| 1.1 | **Agent Store**   | Zustand store for messages, streaming token, cost      | 0.3          |
+| 1.2 | **Output Buffer** | Ring buffer for rapid streaming chunks (debounce 50ms) | 1.1          |
+| 1.3 | **Session Store** | Persist session history to disk (JSON)                 | 1.1          |
+| 1.4 | **UI Store**      | Theme, sidebar visibility, layout preferences          | —            |
 
 **Files created:** `src/tui/stores/*`
 
@@ -234,17 +234,17 @@ src/
 
 > **Goal:** All UI components built and functional.
 
-| # | Task | Description | Dependencies |
-|---|------|-------------|--------------|
-| 2.1 | **App Shell** | `FullScreen` + flex layout with resize handling | 0.1, 0.2 |
-| 2.2 | **Sidebar** | Model info, cost tracker, token usage | — |
-| 2.3 | **Chat Area** | Message list with auto-scroll-to-bottom | 1.1 |
-| 2.4 | **Message Bubbles** | User/Assistant/Tool/System rendering | 2.3 |
-| 2.5 | **Markdown Render** | `ink-markdown` integration with code blocks | 2.4 |
-| 2.6 | **Streaming Display** | Real-time token-by-token rendering | 2.4, 1.2 |
-| 2.7 | **Input Area** | Multiline input, send on Enter, history (↑↓) | — |
-| 2.8 | **Status Bar** | Tool execution status, connection indicator | 0.3 |
-| 2.9 | **Cancel Button** | AbortController integration | 2.7, 0.4 |
+| #   | Task                  | Description                                     | Dependencies |
+| --- | --------------------- | ----------------------------------------------- | ------------ |
+| 2.1 | **App Shell**         | `FullScreen` + flex layout with resize handling | 0.1, 0.2     |
+| 2.2 | **Sidebar**           | Model info, cost tracker, token usage           | —            |
+| 2.3 | **Chat Area**         | Message list with auto-scroll-to-bottom         | 1.1          |
+| 2.4 | **Message Bubbles**   | User/Assistant/Tool/System rendering            | 2.3          |
+| 2.5 | **Markdown Render**   | `ink-markdown` integration with code blocks     | 2.4          |
+| 2.6 | **Streaming Display** | Real-time token-by-token rendering              | 2.4, 1.2     |
+| 2.7 | **Input Area**        | Multiline input, send on Enter, history (↑↓)    | —            |
+| 2.8 | **Status Bar**        | Tool execution status, connection indicator     | 0.3          |
+| 2.9 | **Cancel Button**     | AbortController integration                     | 2.7, 0.4     |
 
 **Files created:** `src/tui/components/*`
 
@@ -254,15 +254,15 @@ src/
 
 > **Goal:** Delightful UX with keyboard shortcuts, theming, and smooth animations.
 
-| # | Task | Description | Dependencies |
-|---|------|-------------|--------------|
-| 3.1 | **Keyboard Shortcuts** | `Ctrl+N` new session, `Ctrl+D` delete, `Ctrl+Q` quit | 2.1 |
-| 3.2 | **Reasoning Block** | Collapsible `thinking` content with `▼/▶` toggle | 2.4 |
-| 3.3 | **Tool Visualizer** | Spinner during execution, expandable result | 2.6 |
-| 3.4 | **Redaction Display** | Show `***REDACTED***` for sensitive tool calls | 2.4 |
-| 3.5 | **Theming System** | Multiple themes (default, dracula, monokai) | 2.1 |
-| 3.6 | **Session Management** | Save/load sessions, session browser in sidebar | 1.3 |
-| 3.7 | **Search** | `Ctrl+F` search within messages | 2.3 |
+| #   | Task                   | Description                                          | Dependencies |
+| --- | ---------------------- | ---------------------------------------------------- | ------------ |
+| 3.1 | **Keyboard Shortcuts** | `Ctrl+N` new session, `Ctrl+D` delete, `Ctrl+Q` quit | 2.1          |
+| 3.2 | **Reasoning Block**    | Collapsible `thinking` content with `▼/▶` toggle     | 2.4          |
+| 3.3 | **Tool Visualizer**    | Spinner during execution, expandable result          | 2.6          |
+| 3.4 | **Redaction Display**  | Show `***REDACTED***` for sensitive tool calls       | 2.4          |
+| 3.5 | **Theming System**     | Multiple themes (default, dracula, monokai)          | 2.1          |
+| 3.6 | **Session Management** | Save/load sessions, session browser in sidebar       | 1.3          |
+| 3.7 | **Search**             | `Ctrl+F` search within messages                      | 2.3          |
 
 ---
 
@@ -270,13 +270,13 @@ src/
 
 > **Goal:** Battle-test the TUI for daily driver usage.
 
-| # | Task | Description | Dependencies |
-|---|------|-------------|--------------|
-| 4.1 | **Error Boundaries** | React error boundaries for graceful crash recovery | 2.1 |
-| 4.2 | **Terminal Resize** | Handle `SIGWINCH` for responsive layout | 2.1 |
-| 4.3 | **Performance** | Virtual scrolling for large message lists | 2.3 |
-| 4.4 | **Testing** | Unit + integration tests with `ink-testing-library` | All |
-| 4.5 | **Documentation** | Usage guide, config, keybindings reference | All |
+| #   | Task                 | Description                                         | Dependencies |
+| --- | -------------------- | --------------------------------------------------- | ------------ |
+| 4.1 | **Error Boundaries** | React error boundaries for graceful crash recovery  | 2.1          |
+| 4.2 | **Terminal Resize**  | Handle `SIGWINCH` for responsive layout             | 2.1          |
+| 4.3 | **Performance**      | Virtual scrolling for large message lists           | 2.3          |
+| 4.4 | **Testing**          | Unit + integration tests with `ink-testing-library` | All          |
+| 4.5 | **Documentation**    | Usage guide, config, keybindings reference          | All          |
 
 ---
 
@@ -284,13 +284,13 @@ src/
 
 ### Why Ink over Blessed/React-Blessed?
 
-| Factor | Ink | Blessed |
-|--------|-----|---------|
-| **React integration** | Native (JSX) | Requires adapters |
-| **Performance** | Yoga layout (fast) | Custom layout (slower) |
-| **Maintenance** | Active (18k+ ⭐) | Low activity |
-| **Streaming** | Good (incremental render) | Full re-render |
-| **Termux compat** | ✅ Works in Termux | ⚠️ May need patches |
+| Factor                | Ink                       | Blessed                |
+| --------------------- | ------------------------- | ---------------------- |
+| **React integration** | Native (JSX)              | Requires adapters      |
+| **Performance**       | Yoga layout (fast)        | Custom layout (slower) |
+| **Maintenance**       | Active (18k+ ⭐)          | Low activity           |
+| **Streaming**         | Good (incremental render) | Full re-render         |
+| **Termux compat**     | ✅ Works in Termux        | ⚠️ May need patches    |
 
 ### Why Zustand over Redux/Context?
 
@@ -333,13 +333,13 @@ node src/tui/index.js
 
 ## 🔗 Dependencies Reference
 
-| Package | Version | Purpose |
-|---------|---------|---------|
-| `ink` | ^5.x | React for terminal |
-| `ink-markdown` | ^1.x | Markdown rendering |
-| `ink-text-input` | ^5.x | Text input component |
-| `zustand` | ^5.x | State management |
-| `esbuild` | ^0.25.x | JSX transpilation |
+| Package          | Version | Purpose              |
+| ---------------- | ------- | -------------------- |
+| `ink`            | ^5.x    | React for terminal   |
+| `ink-markdown`   | ^1.x    | Markdown rendering   |
+| `ink-text-input` | ^5.x    | Text input component |
+| `zustand`        | ^5.x    | State management     |
+| `esbuild`        | ^0.25.x | JSX transpilation    |
 
 ---
 
@@ -366,19 +366,19 @@ node --test src/tui/*.test.js
 
 ## 📊 Progress Tracker
 
-| Phase | Status | Tasks |
-|-------|--------|-------|
-| **Phase 0** Foundation | ⬜ Not started | 5 tasks |
-| **Phase 1** State Management | ⬜ Not started | 4 tasks |
-| **Phase 2** Core Components | ⬜ Not started | 9 tasks |
-| **Phase 3** Interactions & Polish | ⬜ Not started | 7 tasks |
-| **Phase 4** Production Hardening | ⬜ Not started | 5 tasks |
-| **Total** | **0%** | **30 tasks** |
+| Phase                             | Status         | Tasks        |
+| --------------------------------- | -------------- | ------------ |
+| **Phase 0** Foundation            | ⬜ Not started | 5 tasks      |
+| **Phase 1** State Management      | ⬜ Not started | 4 tasks      |
+| **Phase 2** Core Components       | ⬜ Not started | 9 tasks      |
+| **Phase 3** Interactions & Polish | ⬜ Not started | 7 tasks      |
+| **Phase 4** Production Hardening  | ⬜ Not started | 5 tasks      |
+| **Total**                         | **0%**         | **30 tasks** |
 
 </div>
 
 ---
 
 > 📝 **Last updated:** 2025-05-07
-> 
+>
 > 🔗 **Related:** [TODO.md](./TODO.md) — Technical debt & improvements

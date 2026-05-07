@@ -50,7 +50,7 @@ export const logger = {
   },
   info: (msg, ...args) => {
     console.log(`${prefix(colors.dim)} [INFO] ${redact(msg)}`, ...args.map(redact));
-  }
+  },
 };
 
 export default logger;

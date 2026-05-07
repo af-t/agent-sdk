@@ -24,48 +24,30 @@ describe('ensureSafePath', () => {
   });
 
   it('rejects null byte in path', () => {
-    assert.throws(
-      () => ensureSafePath('../../etc/passwd\0'),
-      { message: /null byte/ },
-    );
+    assert.throws(() => ensureSafePath('../../etc/passwd\0'), { message: /null byte/ });
   });
 
   it('rejects path with .. traversal', () => {
-    assert.throws(
-      () => ensureSafePath('../../etc/passwd'),
-      { message: /URL-encoded traversal|outside project root/ },
-    );
+    assert.throws(() => ensureSafePath('../../etc/passwd'), { message: /URL-encoded traversal|outside project root/ });
   });
 
   it('rejects URL-encoded path traversal %2e%2e', () => {
-    assert.throws(
-      () => ensureSafePath('%2e%2e%2fetc%2fpasswd'),
-      { message: /URL-encoded traversal/ },
-    );
+    assert.throws(() => ensureSafePath('%2e%2e%2fetc%2fpasswd'), { message: /URL-encoded traversal/ });
   });
 
   it('rejects double-encoded path traversal %252e%252e', () => {
     // %252e%252e decodes to %2e%2e then to ..
-    assert.throws(
-      () => ensureSafePath('%252e%252e%252fetc%252fpasswd'),
-      { message: /URL-encoded traversal/ },
-    );
+    assert.throws(() => ensureSafePath('%252e%252e%252fetc%252fpasswd'), { message: /URL-encoded traversal/ });
   });
 
   it('rejects double-encoded %252f forward slash', () => {
     // %252f decodes to %2f which is /
-    assert.throws(
-      () => ensureSafePath('etc%252fpasswd'),
-      { message: /URL-encoded traversal/ },
-    );
+    assert.throws(() => ensureSafePath('etc%252fpasswd'), { message: /URL-encoded traversal/ });
   });
 
   it('rejects %5c backslash encoding', () => {
     // %5c is backslash — should be caught
-    assert.throws(
-      () => ensureSafePath('..%5c..%5cetc%5cpasswd'),
-      { message: /URL-encoded traversal/ },
-    );
+    assert.throws(() => ensureSafePath('..%5c..%5cetc%5cpasswd'), { message: /URL-encoded traversal/ });
   });
 
   it('rejects extremely long path (> 4096 chars)', () => {
@@ -92,10 +74,9 @@ describe('ensureSafePath', () => {
       fs.symlinkSync(target, symlinkPath);
       symlinkCreated = true;
       // ensureSafePath should reject it since it resolves outside root
-      assert.throws(
-        () => ensureSafePath('tests/fixtures/symlink-outside'),
-        { message: /Access denied|outside project root/ },
-      );
+      assert.throws(() => ensureSafePath('tests/fixtures/symlink-outside'), {
+        message: /Access denied|outside project root/,
+      });
     } catch (err) {
       if (symlinkCreated) {
         // If symlink was created but ensureSafePath didn't throw, that's wrong
@@ -109,23 +90,19 @@ describe('ensureSafePath', () => {
       // Symlink creation failed (e.g., restricted filesystem) — skip gracefully
     } finally {
       if (symlinkCreated) {
-        try { fs.unlinkSync(symlinkPath); } catch {}
+        try {
+          fs.unlinkSync(symlinkPath);
+        } catch {}
       }
     }
   });
 
   it('rejects protocol handler file://', () => {
-    assert.throws(
-      () => ensureSafePath('file:///etc/passwd'),
-      { message: /protocol handler/ },
-    );
+    assert.throws(() => ensureSafePath('file:///etc/passwd'), { message: /protocol handler/ });
   });
 
   it('rejects protocol handler https://', () => {
-    assert.throws(
-      () => ensureSafePath('https://evil.com/payload'),
-      { message: /protocol handler/ },
-    );
+    assert.throws(() => ensureSafePath('https://evil.com/payload'), { message: /protocol handler/ });
   });
 });
 
@@ -177,7 +154,10 @@ describe('withRetry', () => {
 
     try {
       await assert.rejects(
-        () => withRetry(async () => { throw new Error('persistent'); }, 3),
+        () =>
+          withRetry(async () => {
+            throw new Error('persistent');
+          }, 3),
         { message: 'persistent' },
       );
     } finally {
@@ -190,11 +170,12 @@ describe('withRetry', () => {
     const err = { status: 401, message: 'Unauthorized' };
 
     await assert.rejects(
-      () => withRetry(async () => {
-        attempts++;
-        throw err;
-      }, 5),
-      { status: 401 }
+      () =>
+        withRetry(async () => {
+          attempts++;
+          throw err;
+        }, 5),
+      { status: 401 },
     );
     assert.equal(attempts, 1);
   });
@@ -202,8 +183,12 @@ describe('withRetry', () => {
   it('circuit breaker: does not retry 401', async () => {
     let count = 0;
     await assert.rejects(
-      () => withRetry(async () => { count++; throw { status: 401 }; }, 3),
-      { status: 401 }
+      () =>
+        withRetry(async () => {
+          count++;
+          throw { status: 401 };
+        }, 3),
+      { status: 401 },
     );
     assert.equal(count, 1);
   });
@@ -211,8 +196,12 @@ describe('withRetry', () => {
   it('circuit breaker: does not retry 403', async () => {
     let count = 0;
     await assert.rejects(
-      () => withRetry(async () => { count++; throw { status: 403 }; }, 3),
-      { status: 403 }
+      () =>
+        withRetry(async () => {
+          count++;
+          throw { status: 403 };
+        }, 3),
+      { status: 403 },
     );
     assert.equal(count, 1);
   });
@@ -220,8 +209,12 @@ describe('withRetry', () => {
   it('circuit breaker: does not retry 404', async () => {
     let count = 0;
     await assert.rejects(
-      () => withRetry(async () => { count++; throw { status: 404 }; }, 3),
-      { status: 404 }
+      () =>
+        withRetry(async () => {
+          count++;
+          throw { status: 404 };
+        }, 3),
+      { status: 404 },
     );
     assert.equal(count, 1);
   });
@@ -229,8 +222,12 @@ describe('withRetry', () => {
   it('circuit breaker: does not retry 400 with different message', async () => {
     let count = 0;
     await assert.rejects(
-      () => withRetry(async () => { count++; throw { status: 400, message: 'Bad input' }; }, 3),
-      { status: 400 }
+      () =>
+        withRetry(async () => {
+          count++;
+          throw { status: 400, message: 'Bad input' };
+        }, 3),
+      { status: 400 },
     );
     assert.equal(count, 1);
   });
@@ -242,12 +239,17 @@ describe('withRetry', () => {
     try {
       let callbackCalled = false;
       await assert.rejects(
-        () => withRetry(
-          async () => { throw new Error('fail'); },
-          2,
-          () => { callbackCalled = true; }
-        ),
-        { message: 'fail' }
+        () =>
+          withRetry(
+            async () => {
+              throw new Error('fail');
+            },
+            2,
+            () => {
+              callbackCalled = true;
+            },
+          ),
+        { message: 'fail' },
       );
       assert.equal(callbackCalled, true);
     } finally {
@@ -269,14 +271,17 @@ describe('withRetry', () => {
       let callbackCalled = false;
       // This callback returns a promise that never resolves
       await assert.rejects(
-        () => withRetry(
-          async () => { throw new Error('fail'); },
-          2,
-          () => {
-            callbackCalled = true;
-            return new Promise(() => {}); // never resolves
-          },
-        ),
+        () =>
+          withRetry(
+            async () => {
+              throw new Error('fail');
+            },
+            2,
+            () => {
+              callbackCalled = true;
+              return new Promise(() => {}); // never resolves
+            },
+          ),
         { message: 'fail' },
       );
       // The withRetry should have completed despite the hanging callback
@@ -299,11 +304,12 @@ describe('withRetry', () => {
     try {
       let attempts = 0;
       await assert.rejects(
-        () => withRetry(async () => {
-          attempts++;
-          // This promise never resolves on its own — simulating timeout
-          throw new Error('timeout');
-        }, 3),
+        () =>
+          withRetry(async () => {
+            attempts++;
+            // This promise never resolves on its own — simulating timeout
+            throw new Error('timeout');
+          }, 3),
         { message: 'timeout' },
       );
       // Should have tried 3 times
@@ -324,8 +330,8 @@ describe('withRetry', () => {
     };
 
     try {
-      await assert.rejects(
-        () => withRetry(async () => {
+      await assert.rejects(() =>
+        withRetry(async () => {
           throw new Error('fail');
         }, 5),
       );
@@ -334,8 +340,11 @@ describe('withRetry', () => {
       assert.ok(capturedDelays.length >= 5, `Expected >= 5 delays, got ${capturedDelays.length}`);
 
       // Verify delays are not all identical (jitter works)
-      const uniqueDelays = new Set(capturedDelays.map(d => Math.round(d)));
-      assert.ok(uniqueDelays.size > 1, `Expected varying delays (jitter), got all identical: ${capturedDelays.join(',')}`);
+      const uniqueDelays = new Set(capturedDelays.map((d) => Math.round(d)));
+      assert.ok(
+        uniqueDelays.size > 1,
+        `Expected varying delays (jitter), got all identical: ${capturedDelays.join(',')}`,
+      );
 
       // Verify approximate exponential backoff
       for (let i = 1; i < capturedDelays.length; i++) {

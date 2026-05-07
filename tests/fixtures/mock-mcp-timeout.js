@@ -6,7 +6,7 @@ console.error('[MCP Server]: MOCK-TIMEOUT-SERVER: started (will not respond to i
 const rl = createInterface({
   input: process.stdin,
   output: process.stdout,
-  terminal: false
+  terminal: false,
 });
 
 // We ignore all input and never send anything to stdout.

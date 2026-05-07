@@ -101,15 +101,15 @@ Copy `.env.example` to `.env` and fill in your values:
 cp .env.example .env
 ```
 
-| Variable                | Required | Description                                              |
-|-------------------------|----------|----------------------------------------------------------|
-| `OPENROUTER_API_KEY`    | Yes      | Your OpenRouter API key                                  |
-| `OPENROUTER_MODEL`      | No       | Default model (e.g. `inclusionai/ling-2.6-1t:free`) |
-| `OPENROUTER_MAX_TOKENS` | No       | Maximum output tokens                                    |
-| `OPENROUTER_ORDER`      | No       | Comma-separated provider priority order                  |
-| `OPENROUTER_ONLY`       | No       | Restrict to specific providers only                      |
-| `TAVILY_API_KEY`        | No       | API key for WebSearch tool (from [Tavily](https://tavily.com))|
-| `DEBUG`                 | No       | Enable debug logging (`true`/`1`)                        |
+| Variable                | Required | Description                                                    |
+| ----------------------- | -------- | -------------------------------------------------------------- |
+| `OPENROUTER_API_KEY`    | Yes      | Your OpenRouter API key                                        |
+| `OPENROUTER_MODEL`      | No       | Default model (e.g. `inclusionai/ling-2.6-1t:free`)            |
+| `OPENROUTER_MAX_TOKENS` | No       | Maximum output tokens                                          |
+| `OPENROUTER_ORDER`      | No       | Comma-separated provider priority order                        |
+| `OPENROUTER_ONLY`       | No       | Restrict to specific providers only                            |
+| `TAVILY_API_KEY`        | No       | API key for WebSearch tool (from [Tavily](https://tavily.com)) |
+| `DEBUG`                 | No       | Enable debug logging (`true`/`1`)                              |
 
 ## Basic Usage
 
@@ -130,14 +130,11 @@ const result = await agent.run('What is OpenRouter?');
 console.log(result);
 
 // With notification callback (step-by-step updates)
-const result = await agent.run(
-  'Create a README.md for this project.',
-  (update) => {
-    if (update.content) console.log('Content:', update.content);
-    if (update.reasoning) console.log('Reasoning:', update.reasoning);
-    if (update.tool_calls) console.log('Tool calls:', update.tool_calls);
-  }
-);
+const result = await agent.run('Create a README.md for this project.', (update) => {
+  if (update.content) console.log('Content:', update.content);
+  if (update.reasoning) console.log('Reasoning:', update.reasoning);
+  if (update.tool_calls) console.log('Tool calls:', update.tool_calls);
+});
 
 // With abort signal
 const controller = new AbortController();
@@ -145,7 +142,7 @@ setTimeout(() => controller.abort(), 5000); // 5 second timeout
 
 try {
   const result = await agent.run('Process a heavy task...', null, {
-    signal: controller.signal
+    signal: controller.signal,
   });
 } catch (err) {
   if (err.message === 'Agent run aborted') {
@@ -188,15 +185,15 @@ agent.use({
   input_schema: {
     type: 'object',
     properties: {
-      city: { type: 'string', description: 'City name' }
+      city: { type: 'string', description: 'City name' },
     },
-    required: ['city']
+    required: ['city'],
   },
   execute: async ({ city }) => {
     const res = await fetch(`https://api.weather.com/${city}`);
     const data = await res.json();
     return JSON.stringify(data);
-  }
+  },
 });
 
 // Register multiple tools at once
@@ -234,7 +231,7 @@ const agent = new Agent({
   apiKey: 'sk-or-v1-...',
   model: 'openai/gpt-4o',
   tools,
-  systemPrompt: 'Your custom prompt here'
+  systemPrompt: 'Your custom prompt here',
 });
 
 await agent.run('Execute task...');
@@ -248,31 +245,32 @@ await agent.tools.connectMcpServer({
   name: 'my-server',
   command: 'node',
   args: ['path/to/mcp-server.js'],
-  env: { MY_API_KEY: 'xxx' }
+  env: { MY_API_KEY: 'xxx' },
 });
 // Tools from the MCP server are automatically registered as my_server_<toolName>
 ```
 
 ## Available Tools
 
-| Tool        | Category | Description                                        |
-|-------------|----------|----------------------------------------------------|
-| `Read`      | File     | Read file contents with pagination & line numbers  |
-| `Write`     | File     | Write a new file (overwrite)                       |
-| `Edit`      | File     | Edit a file with find-and-replace                  |
-| `Find`      | File     | Search for files by name or content                |
-| `List`      | File     | List directory contents (ls alternative)           |
+| Tool        | Category | Description                                                 |
+| ----------- | -------- | ----------------------------------------------------------- |
+| `Read`      | File     | Read file contents with pagination & line numbers           |
+| `Write`     | File     | Write a new file (overwrite)                                |
+| `Edit`      | File     | Edit a file with find-and-replace                           |
+| `Find`      | File     | Search for files by name or content                         |
+| `List`      | File     | List directory contents (ls alternative)                    |
 | `Bash`      | System   | Execute shell commands (pty with fallback to child_process) |
-| `Delegate`  | System   | Delegate tasks to a sub-agent                      |
-| `Skill`     | System   | Manage and load skills                             |
-| `WebSearch` | Web      | Web search via Tavily API                          |
-| `WebFetch`  | Web      | Extract content from URLs                          |
+| `Delegate`  | System   | Delegate tasks to a sub-agent                               |
+| `Skill`     | System   | Manage and load skills                                      |
+| `WebSearch` | Web      | Web search via Tavily API                                   |
+| `WebFetch`  | Web      | Extract content from URLs                                   |
 
 ## MCP Server
 
 This SDK supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) — a standard protocol for connecting LLMs with external tools.
 
 **How it works:**
+
 1. Call `agent.tools.connectMcpServer({ name, command, args, env })`
 2. The SDK spawns the MCP server as a child process (stdio-based)
 3. Tools from the MCP server are auto-registered with `<name>_<toolName>` prefix
@@ -339,45 +337,46 @@ openrouter/
 
 Factory function to create an Agent instance.
 
-| Option    | Type     | Description                          |
-|-----------|----------|--------------------------------------|
-| `apiKey`  | string   | OpenRouter API key (overrides .env)  |
-| `model`   | string   | Model identifier                     |
-| `order`   | string[] | Provider routing order               |
-| `only`    | string[] | Restrict to specific providers       |
+| Option   | Type     | Description                         |
+| -------- | -------- | ----------------------------------- |
+| `apiKey` | string   | OpenRouter API key (overrides .env) |
+| `model`  | string   | Model identifier                    |
+| `order`  | string[] | Provider routing order              |
+| `only`   | string[] | Restrict to specific providers      |
 
 ### `agent.run(prompt, notify?, options?)`
 
 | Parameter | Type            | Description                                     |
-|-----------|-----------------|-------------------------------------------------|
+| --------- | --------------- | ----------------------------------------------- |
 | `prompt`  | string or array | Prompt text or array of content parts           |
 | `notify`  | function        | Callback `({ content, reasoning, tool_calls })` |
 | `options` | object          | `{ signal: AbortSignal }`                       |
 
 ### Agent Properties
 
-| Property       | Type         | Description                          |
-|----------------|--------------|--------------------------------------|
-| `messages`     | array        | Conversation history                 |
-| `maxTurns`     | number       | Max LLM request cycles               |
-| `isSubagent`   | boolean      | Whether the agent is a sub-agent     |
-| `tools`        | ToolRegistry | Registry of registered tools         |
-| `usage`        | object       | `{ cost: number, tokens: number }`   |
-| `systemPrompt` | string       | System prompt (can be overridden)    |
+| Property       | Type         | Description                        |
+| -------------- | ------------ | ---------------------------------- |
+| `messages`     | array        | Conversation history               |
+| `maxTurns`     | number       | Max LLM request cycles             |
+| `isSubagent`   | boolean      | Whether the agent is a sub-agent   |
+| `tools`        | ToolRegistry | Registry of registered tools       |
+| `usage`        | object       | `{ cost: number, tokens: number }` |
+| `systemPrompt` | string       | System prompt (can be overridden)  |
 
 ### ToolRegistry
 
-| Method                  | Description                                      |
-|-------------------------|--------------------------------------------------|
-| `register(tool)`        | Register a new tool into the registry            |
-| `execute(name, input)`  | Execute a tool with input validation             |
-| `listTools()`           | List all registered tools                        |
-| `getDefinitions()`      | Get tool definitions formatted for OpenRouter    |
-| `connectMcpServer()`    | Connect an external MCP server                   |
+| Method                 | Description                                   |
+| ---------------------- | --------------------------------------------- |
+| `register(tool)`       | Register a new tool into the registry         |
+| `execute(name, input)` | Execute a tool with input validation          |
+| `listTools()`          | List all registered tools                     |
+| `getDefinitions()`     | Get tool definitions formatted for OpenRouter |
+| `connectMcpServer()`   | Connect an external MCP server                |
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines on:
+
 - Getting started with development
 - Code style (ES modules, async/await, JSDoc)
 - Submitting changes (feature branch, pull request)

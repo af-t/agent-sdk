@@ -12,7 +12,7 @@ async function diff(file1, file2) {
   return new Promise((resolve, reject) => {
     // stdio: [stdin, stdout, stderr] -> redirect 2 to 1 (stdout)
     const child = spawn('diff', [file1, file2], { stdio: ['pipe', 'pipe', 1] });
-    child.stdout.on('data', chunk => output.push(chunk));
+    child.stdout.on('data', (chunk) => output.push(chunk));
     child.on('error', (err) => reject(err));
     child.on('exit', (code) => {
       // diff exit codes: 0=identical, 1=different, 2=trouble
@@ -26,7 +26,8 @@ async function diff(file1, file2) {
 }
 
 export const name = 'Edit';
-export const description = 'Surgically update a file by replacing a specific text block or line range. Provide exact context to ensure the replacement is targeted, safe, and avoids unintended matches.';
+export const description =
+  'Surgically update a file by replacing a specific text block or line range. Provide exact context to ensure the replacement is targeted, safe, and avoids unintended matches.';
 export const input_schema = {
   type: 'object',
   properties: {
@@ -34,9 +35,9 @@ export const input_schema = {
     new_text: { type: 'string', description: 'The replacement text' },
     old_text: { type: 'string', description: 'Exact text to find and replace (Priority 1)' },
     start_line: { type: 'number', description: 'Start line for range replacement (Priority 2)' },
-    end_line: { type: 'number', description: 'End line for range replacement (Priority 2)' }
+    end_line: { type: 'number', description: 'End line for range replacement (Priority 2)' },
   },
-  required: ['path', 'new_text']
+  required: ['path', 'new_text'],
 };
 
 export const execute = async ({ path: filePath, new_text, old_text, start_line, end_line }) => {

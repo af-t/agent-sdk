@@ -21,12 +21,12 @@ export class McpNativeClient extends EventEmitter {
   async connect() {
     this.process = spawn(this.config.command, this.config.args || [], {
       env: { ...stripSecrets(process.env), ...(this.config.env || {}) },
-      stdio: ['pipe', 'pipe', 1]
+      stdio: ['pipe', 'pipe', 1],
     });
 
     this.rl = createInterface({
       input: this.process.stdout,
-      terminal: false
+      terminal: false,
     });
 
     this.rl.on('line', (line) => {
@@ -47,7 +47,7 @@ export class McpNativeClient extends EventEmitter {
     const response = await this.request('initialize', {
       protocolVersion: '2024-11-05',
       capabilities: {},
-      clientInfo: { name: 'mcp-native-client', version: '1.0.0' }
+      clientInfo: { name: 'mcp-native-client', version: '1.0.0' },
     });
 
     this.initialized = true;
@@ -60,7 +60,7 @@ export class McpNativeClient extends EventEmitter {
   async request(method, params, timeout) {
     const effectiveTimeout = timeout || this.defaultTimeout;
     if (!this.process || this.process.killed) {
-      throw new Error("Process not running");
+      throw new Error('Process not running');
     }
     const id = ++this.requestId;
     return new Promise((resolve, reject) => {
@@ -70,12 +70,18 @@ export class McpNativeClient extends EventEmitter {
       }, effectiveTimeout);
 
       this.pendingRequests.set(id, {
-        resolve: (val) => { clearTimeout(timer); resolve(val); },
-        reject: (err) => { clearTimeout(timer); reject(err); }
+        resolve: (val) => {
+          clearTimeout(timer);
+          resolve(val);
+        },
+        reject: (err) => {
+          clearTimeout(timer);
+          reject(err);
+        },
       });
 
       try {
-        this.process.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + '\n');
+        this.process.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
       } catch (err) {
         this.pendingRequests.delete(id);
         clearTimeout(timer);
@@ -91,7 +97,7 @@ export class McpNativeClient extends EventEmitter {
   async callTool(name, args) {
     return this.request('tools/call', {
       name,
-      arguments: args
+      arguments: args,
     });
   }
 
@@ -110,18 +116,18 @@ export class McpNativeClient extends EventEmitter {
   async getPrompt(name, args) {
     return this.request('prompts/get', {
       name,
-      arguments: args
+      arguments: args,
     });
   }
 
   async notify(method, params) {
     if (!this.process || this.process.killed) {
-      throw new Error("Process not running");
+      throw new Error('Process not running');
     }
     const message = {
       jsonrpc: '2.0',
       method,
-      params
+      params,
     };
     try {
       this.process.stdin.write(JSON.stringify(message) + '\n');

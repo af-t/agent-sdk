@@ -9,10 +9,10 @@ import logger from './logger.js';
 // Constants
 export const CONSTANTS = Object.freeze({
   MAX_FILE_SIZE_SEARCH: 500 * 1024, // 500KB
-  RETRY_BASE_DELAY_MS: 5000,        // ms
+  RETRY_BASE_DELAY_MS: 5000, // ms
   RETRY_BACKOFF_FACTOR: 1.3,
-  MCP_TIMEOUT: 30000,               // ms
-  FETCH_TIMEOUT_MS: 15000,          // ms
+  MCP_TIMEOUT: 30000, // ms
+  FETCH_TIMEOUT_MS: 15000, // ms
   FETCH_MAX_SIZE: 10 * 1024 * 1024, // 10MB — response body limit for WebFetch
   MAX_TOKENS_SUBAGENT: 32000,
 });
@@ -30,7 +30,9 @@ export async function getIgnoreFilter() {
   const cwd = process.cwd();
   const gitignorePath = path.join(cwd, '.gitignore');
   let mtime = 0;
-  try { mtime = statSync(gitignorePath).mtimeMs; } catch {}
+  try {
+    mtime = statSync(gitignorePath).mtimeMs;
+  } catch {}
 
   // Invalidate cache if cwd changed or .gitignore was modified
   if (_ignoreFilterCache && _ignoreFilterCacheKey === cwd && _ignoreFilterMtime === mtime) {
@@ -56,7 +58,7 @@ export async function getIgnoreFilter() {
       const relPath = path.relative(cwd, ensureSafePath(filePath));
       return ig.ignores(relPath);
     },
-    add: (content) => ig.add(content)
+    add: (content) => ig.add(content),
   };
   _ignoreFilterCacheKey = cwd;
 
@@ -159,11 +161,18 @@ export function ensureSafePath(filePath) {
 
 // Sensitive env var substrings (case-insensitive) — stripped from child process environments
 const SENSITIVE_ENV_PATTERNS = [
-  'api_key', 'apikey', 'api-key',
-  'secret', 'token', 'password',
-  'credential', 'auth',
-  'openrouter', 'tavily',
-  'private_key', 'privatekey',
+  'api_key',
+  'apikey',
+  'api-key',
+  'secret',
+  'token',
+  'password',
+  'credential',
+  'auth',
+  'openrouter',
+  'tavily',
+  'private_key',
+  'privatekey',
 ];
 
 // Strip sensitive env vars, return safe copy
@@ -171,7 +180,7 @@ export function stripSecrets(env) {
   const safe = {};
   for (const [key, value] of Object.entries(env)) {
     const keyLower = key.toLowerCase();
-    const isSensitive = SENSITIVE_ENV_PATTERNS.some(pattern => keyLower.includes(pattern));
+    const isSensitive = SENSITIVE_ENV_PATTERNS.some((pattern) => keyLower.includes(pattern));
     if (!isSensitive) {
       safe[key] = value;
     }
@@ -204,7 +213,7 @@ export async function withRetry(func, count = config.MAX_RETRIES, callback) {
       }
       // Add jitter: ±20% random variation to prevent thundering herd
       const jitter = delay * (0.8 + Math.random() * 0.4);
-      await new Promise(resolve => setTimeout(resolve, Math.min(jitter, MAX_DELAY)));
+      await new Promise((resolve) => setTimeout(resolve, Math.min(jitter, MAX_DELAY)));
       lastError = err;
       delay = Math.min(delay * CONSTANTS.RETRY_BACKOFF_FACTOR, MAX_DELAY);
     }
@@ -219,7 +228,7 @@ export async function withRetry(func, count = config.MAX_RETRIES, callback) {
       if (callbackPromise && typeof callbackPromise.then === 'function') {
         await Promise.race([
           callbackPromise,
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Callback timed out')), 5000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Callback timed out')), 5000)),
         ]);
       }
     } catch (err) {
@@ -244,7 +253,7 @@ export async function* loadTools(dirPath) {
   if (!(await isDirectory(dirPath))) return;
 
   logger.debug(`Loading tools from: ${dirPath}`);
-  const entries = (await fs.readdir(dirPath, { recursive: true, withFileTypes: true })).filter(x => x.isFile());
+  const entries = (await fs.readdir(dirPath, { recursive: true, withFileTypes: true })).filter((x) => x.isFile());
   for (const entry of entries) {
     const fullPath = path.resolve(path.join(entry.parentPath, entry.name));
     try {
@@ -253,7 +262,7 @@ export async function* loadTools(dirPath) {
         name: mod.name || mod.default?.name,
         description: mod.description || mod.default?.description,
         input_schema: mod.input_schema || mod.default?.input_schema,
-        execute: mod.execute || mod.default?.execute
+        execute: mod.execute || mod.default?.execute,
       };
 
       if (!tool.name || !tool.input_schema || !tool.execute) {

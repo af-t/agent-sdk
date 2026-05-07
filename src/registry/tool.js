@@ -32,8 +32,8 @@ export class ToolRegistry {
         function: {
           name,
           description: val.description,
-          parameters: val.input_schema
-        }
+          parameters: val.input_schema,
+        },
       });
     }
     return res;
@@ -45,7 +45,7 @@ export class ToolRegistry {
       tools.push({
         name,
         description: val.description,
-        input_schema: val.input_schema
+        input_schema: val.input_schema,
       });
     }
     return tools;
@@ -103,7 +103,9 @@ export class ToolRegistry {
             throw new Error(`Tool '${name}': parameter '${key}' must be an object, got ${typeof value}`);
           }
           if (propSchema.enum && !propSchema.enum.includes(value)) {
-            throw new Error(`Tool '${name}': parameter '${key}' must be one of [${propSchema.enum.join(', ')}], got '${value}'`);
+            throw new Error(
+              `Tool '${name}': parameter '${key}' must be one of [${propSchema.enum.join(', ')}], got '${value}'`,
+            );
           }
         }
       }
@@ -133,14 +135,16 @@ export class ToolRegistry {
         execute: async (input) => {
           const result = await client.executeTool(remoteTool.name, input);
           if (result.isError) {
-            throw new Error(result.content.map(c => c.text).join('\n'));
+            throw new Error(result.content.map((c) => c.text).join('\n'));
           }
-          return result.content.map(c => {
-             if (c.type === 'text') return c.text;
-             if (c.type === 'resource') return `[Resource: ${c.resource.uri}]`;
-             return JSON.stringify(c);
-          }).join('\n');
-        }
+          return result.content
+            .map((c) => {
+              if (c.type === 'text') return c.text;
+              if (c.type === 'resource') return `[Resource: ${c.resource.uri}]`;
+              return JSON.stringify(c);
+            })
+            .join('\n');
+        },
       });
     }
     this._mcpClients.push(client);

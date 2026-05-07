@@ -9,11 +9,7 @@ const TEST_FILE = path.join(FIXTURES, 'read-test.txt');
 describe('read.js execute', () => {
   before(async () => {
     await fs.mkdir(FIXTURES, { recursive: true });
-    await fs.writeFile(
-      TEST_FILE,
-      Array.from({ length: 20 }, (_, i) => `Line ${i + 1}`).join('\n'),
-      'utf8'
-    );
+    await fs.writeFile(TEST_FILE, Array.from({ length: 20 }, (_, i) => `Line ${i + 1}`).join('\n'), 'utf8');
   });
 
   after(async () => {
@@ -29,10 +25,7 @@ describe('read.js execute', () => {
 
   it('throws for a non-existent file within project root', async () => {
     const mod = await import('../../../src/tools/file/read.js');
-    await assert.rejects(
-      () => mod.execute({ path: 'tests/fixtures/nonexistent-file-xyz.txt' }),
-      { code: 'ENOENT' }
-    );
+    await assert.rejects(() => mod.execute({ path: 'tests/fixtures/nonexistent-file-xyz.txt' }), { code: 'ENOENT' });
   });
 
   it('supports pagination via start_line / end_line', async () => {
@@ -49,7 +42,7 @@ describe('read.js execute', () => {
   it('respects max_lines limit', async () => {
     const mod = await import('../../../src/tools/file/read.js');
     const result = await mod.execute({ path: TEST_FILE, max_lines: 3 });
-    const lines = result.split('\n').filter(l => l.trim() && !l.includes('[... truncated]'));
+    const lines = result.split('\n').filter((l) => l.trim() && !l.includes('[... truncated]'));
     assert.ok(lines.length <= 3);
   });
 

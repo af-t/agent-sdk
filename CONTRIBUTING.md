@@ -32,6 +32,7 @@ Thanks for your interest in contributing!
 ## Reporting Issues
 
 Use the [GitHub Issues](https://github.com/af-t/openrouter/issues) page. Include:
+
 - Node.js version
 - Steps to reproduce
 - Expected vs actual behavior

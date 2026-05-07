@@ -18,7 +18,7 @@ async function createAgent(options = {}) {
     model: config.MODEL || options.model,
     order: config.ORDER || options.order,
     only: config.ONLY || options.only,
-    tools
+    tools,
   });
 }
 

@@ -5,14 +5,15 @@ import { ensureSafePath } from '../../core/utils.js';
 const MAX_WRITE_SIZE = 10 * 1024 * 1024; // 10MB limit to prevent disk exhaustion
 
 export const name = 'Write';
-export const description = 'Create a new file or completely overwrite an existing one with full content. This tool will automatically create any missing parent directories.';
+export const description =
+  'Create a new file or completely overwrite an existing one with full content. This tool will automatically create any missing parent directories.';
 export const input_schema = {
   type: 'object',
   properties: {
     path: { type: 'string', description: 'Destination path' },
-    content: { type: 'string', description: 'Full content to write' }
+    content: { type: 'string', description: 'Full content to write' },
   },
-  required: ['path', 'content']
+  required: ['path', 'content'],
 };
 
 export const execute = async ({ path: filePath, content }) => {
@@ -32,7 +33,7 @@ export const execute = async ({ path: filePath, content }) => {
       `**File written**`,
       `  Absolute path  : ${safePath}`,
       `  Relative path  : ${path.relative(process.cwd(), safePath)}`,
-      `  Bytes written  : ${Buffer.from(content).length}`
+      `  Bytes written  : ${Buffer.from(content).length}`,
     ].join('\n');
   } catch (error) {
     throw error;

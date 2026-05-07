@@ -3,14 +3,15 @@ import path from 'node:path';
 import { getIgnoreFilter, formatSize, ensureSafePath } from '../../core/utils.js';
 
 export const name = 'List';
-export const description = 'List files and directories at a specified path, respecting .gitignore rules. Use this to explore the project structure and discover available files and folders.';
+export const description =
+  'List files and directories at a specified path, respecting .gitignore rules. Use this to explore the project structure and discover available files and folders.';
 export const input_schema = {
   type: 'object',
   properties: {
     path: { type: 'string', description: 'Directory to list' },
-    depth: { type: 'number', description: 'Recursion depth (default 1)' }
+    depth: { type: 'number', description: 'Recursion depth (default 1)' },
   },
-  required: ['path']
+  required: ['path'],
 };
 
 export const execute = async ({ path: dirPath = '.', depth = 1 }) => {

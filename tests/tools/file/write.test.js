@@ -46,10 +46,7 @@ describe('write.js execute', () => {
   it('rejects oversized content (> 10MB)', async () => {
     const mod = await import('../../../src/tools/file/write.js');
     const largeContent = 'x'.repeat(11 * 1024 * 1024);
-    await assert.rejects(
-      () => mod.execute({ path: TEST_FILE, content: largeContent }),
-      /File too large/
-    );
+    await assert.rejects(() => mod.execute({ path: TEST_FILE, content: largeContent }), /File too large/);
   });
 
   it('accepts content exactly at 10MB limit', async () => {
@@ -67,10 +64,7 @@ describe('write.js execute', () => {
     const mod = await import('../../../src/tools/file/write.js');
     const size = 10 * 1024 * 1024 + 1; // 10MB + 1 byte
     const content = 'z'.repeat(size);
-    await assert.rejects(
-      () => mod.execute({ path: TEST_FILE, content }),
-      /File too large/
-    );
+    await assert.rejects(() => mod.execute({ path: TEST_FILE, content }), /File too large/);
   });
 
   it('handles multi-byte UTF-8 characters near the size limit', async () => {
@@ -103,10 +97,7 @@ describe('write.js execute', () => {
     const size = Buffer.byteLength(content, 'utf8');
     assert.ok(size > maxSize, `Size ${size} should be > ${maxSize}`);
 
-    await assert.rejects(
-      () => mod.execute({ path: TEST_FILE, content }),
-      /File too large/
-    );
+    await assert.rejects(() => mod.execute({ path: TEST_FILE, content }), /File too large/);
   });
 
   it('handles rapid consecutive writes without exhaustion', async () => {

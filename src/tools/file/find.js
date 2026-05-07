@@ -4,15 +4,16 @@ import path from 'node:path';
 import { CONSTANTS, ensureSafePath } from '../../core/utils.js';
 
 export const name = 'Find';
-export const description = 'Search for files by name or content within a directory.  Prioritize using this tool over using commands like `find -iname` or `grep -R` for portability reasons.';
+export const description =
+  'Search for files by name or content within a directory.  Prioritize using this tool over using commands like `find -iname` or `grep -R` for portability reasons.';
 export const input_schema = {
   type: 'object',
   properties: {
     path: { type: 'string', description: 'Directory to search in' },
     pattern: { type: 'string', description: 'Regex or text pattern' },
-    mode: { type: 'string', enum: ['name', 'content'], description: 'Search mode' }
+    mode: { type: 'string', enum: ['name', 'content'], description: 'Search mode' },
   },
-  required: ['pattern', 'mode']
+  required: ['pattern', 'mode'],
 };
 
 // Spawn command, capture stdout. find/rg non-zero exits are ok.
@@ -21,16 +22,14 @@ function spawnCommand(command, args) {
     const output = [];
     const child = spawn(command, args, { stdio: ['pipe', 'pipe', 1] });
 
-    child.stdout.on('data', chunk => output.push(chunk));
+    child.stdout.on('data', (chunk) => output.push(chunk));
     child.on('error', (err) => reject(err));
     child.on('exit', (code) => {
       const out = Buffer.concat(output).toString();
 
       // find: non-zero on permission errors — partial results still valid
       // rg: exit code 1 = no matches (not an error), exit code 2 = actual error
-      const isPartialSuccess =
-        (command === 'find' && out.length > 0) ||
-        (command === 'rg' && code === 1);
+      const isPartialSuccess = (command === 'find' && out.length > 0) || (command === 'rg' && code === 1);
 
       if (code === 0 || isPartialSuccess) {
         resolve(out);
@@ -60,9 +59,7 @@ async function nativeSearch({ absPath, pattern, mode, cwd }) {
   const isSubdir = subdirPrefix && subdirPrefix !== '.';
 
   function toRelative(absFilePath) {
-    let rel = absFilePath.startsWith(searchRootPrefix)
-      ? absFilePath.slice(searchRootPrefix.length)
-      : absFilePath;
+    let rel = absFilePath.startsWith(searchRootPrefix) ? absFilePath.slice(searchRootPrefix.length) : absFilePath;
     if (isSubdir) rel = subdirPrefix + path.sep + rel;
     return rel;
   }
@@ -89,7 +86,7 @@ async function nativeSearch({ absPath, pattern, mode, cwd }) {
 
           // Check first 512 bytes for null bytes before reading entire file
           const header = await fs.readFile(fullPath);
-          const nullByteCount = header.slice(0, 512).filter(b => b === 0).length;
+          const nullByteCount = header.slice(0, 512).filter((b) => b === 0).length;
           if (nullByteCount > 0) continue;
 
           const content = header.toString('utf8');
@@ -126,18 +123,16 @@ function shellFindByRegex(absPath, pattern, cwd) {
   const regex = new RegExp(pattern, 'i');
 
   function toRelative(absFilePath) {
-    let rel = absFilePath.startsWith(searchRootPrefix)
-      ? absFilePath.slice(searchRootPrefix.length)
-      : absFilePath;
+    let rel = absFilePath.startsWith(searchRootPrefix) ? absFilePath.slice(searchRootPrefix.length) : absFilePath;
     if (isSubdir) rel = subdirPrefix + path.sep + rel;
     return rel;
   }
 
-  return spawnCommand('find', [absPath, '-type', 'f']).then(output => {
+  return spawnCommand('find', [absPath, '-type', 'f']).then((output) => {
     const files = output
       .split('\n')
       .filter(Boolean)
-      .filter(absFilePath => regex.test(path.basename(absFilePath)))
+      .filter((absFilePath) => regex.test(path.basename(absFilePath)))
       .map(toRelative);
 
     return files.length ? files.join('\n') : 'No matches found.';
@@ -150,9 +145,7 @@ function shellRgSearch(absPath, pattern, cwd) {
   const isSubdir = subdirPrefix && subdirPrefix !== '.';
 
   function toRelative(absFilePath) {
-    let rel = absFilePath.startsWith(searchRootPrefix)
-      ? absFilePath.slice(searchRootPrefix.length)
-      : absFilePath;
+    let rel = absFilePath.startsWith(searchRootPrefix) ? absFilePath.slice(searchRootPrefix.length) : absFilePath;
     if (isSubdir) rel = subdirPrefix + path.sep + rel;
     return rel;
   }
@@ -161,21 +154,25 @@ function shellRgSearch(absPath, pattern, cwd) {
     '-n',
     '--no-heading',
     '-i',
-    '--max-filesize', String(CONSTANTS.MAX_FILE_SIZE_SEARCH),
-    '--max-columns', '100',
+    '--max-filesize',
+    String(CONSTANTS.MAX_FILE_SIZE_SEARCH),
+    '--max-columns',
+    '100',
     pattern,
-    absPath
-  ]).then(output => {
+    absPath,
+  ]).then((output) => {
     if (!output.trim()) return 'No matches found.';
 
     const lines = output.trim().split('\n');
-    return lines.map(line => {
-      const colonIdx = line.indexOf(':');
-      if (colonIdx === -1) return line;
-      const absFilePath = line.slice(0, colonIdx);
-      const rest = line.slice(colonIdx);
-      return toRelative(absFilePath) + rest;
-    }).join('\n');
+    return lines
+      .map((line) => {
+        const colonIdx = line.indexOf(':');
+        if (colonIdx === -1) return line;
+        const absFilePath = line.slice(0, colonIdx);
+        const rest = line.slice(colonIdx);
+        return toRelative(absFilePath) + rest;
+      })
+      .join('\n');
   });
 }
 
