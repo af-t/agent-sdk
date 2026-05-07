@@ -98,11 +98,10 @@ function hasSuspiciousPattern(command) {
 function runWithSpawn(command, cwd, env, timeout) {
   return new Promise((resolve, reject) => {
     // Redirect stderr (2) to stdout (1) via stdio option
-    const child = spawn('bash', ['-c', command], {
+    const child = spawn('bash', ['-c', command, '2>&1'], {
       cwd,
       env,
       timeout,
-      stdio: ['pipe', 'pipe', 1],
     });
     let output = '';
 
@@ -115,7 +114,7 @@ function runWithSpawn(command, cwd, env, timeout) {
       reject(new Error(`Execution timed out after ${timeout}ms\n\nPartial Output:\n${output}`));
     }, timeout);
 
-    child.on('close', (code) => {
+    child.on('exit', (code) => {
       clearTimeout(timer);
       if (code !== 0) {
         const msg = output

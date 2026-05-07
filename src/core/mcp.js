@@ -21,7 +21,7 @@ export class McpNativeClient extends EventEmitter {
   async connect() {
     this.process = spawn(this.config.command, this.config.args || [], {
       env: { ...stripSecrets(process.env), ...(this.config.env || {}) },
-      stdio: ['pipe', 'pipe', 1],
+      stdio: ['pipe', 'pipe', 'ignore'],
     });
 
     this.rl = createInterface({

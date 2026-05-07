@@ -77,7 +77,7 @@ describe('McpNativeClient — mock server connections', () => {
       const proc = spawn(process.execPath, ['--version'], { stdio: 'pipe' });
       await new Promise((resolve, reject) => {
         proc.on('error', reject);
-        proc.on('close', (code) => {
+        proc.on('exit', (code) => {
           nodeAvailable = code === 0;
           resolve();
         });

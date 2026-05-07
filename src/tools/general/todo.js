@@ -3,7 +3,7 @@ import path from 'node:path';
 import { ensureSafePath } from '../../core/utils.js';
 
 // Default todo file in project root
-const DEFAULT_TODO_FILE = path.join(process.cwd(), '.openrouter-todos.json');
+const DEFAULT_TODO_FILE = path.join(process.cwd(), '.todos.json');
 
 // Hard cap to prevent unbounded growth
 const MAX_TODOS = 1000;
@@ -81,7 +81,7 @@ export const input_schema = {
     },
     todo_file: {
       type: 'string',
-      description: 'Custom todo file path (optional, default: .openrouter-todos.json in project root)',
+      description: 'Custom todo file path (optional, default: .todos.json in project root)',
     },
   },
   required: ['action'],

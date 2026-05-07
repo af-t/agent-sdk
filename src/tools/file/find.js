@@ -17,10 +17,11 @@ export const input_schema = {
 };
 
 // Spawn command, capture stdout. find/rg non-zero exits are ok.
-function spawnCommand(command, args) {
+function spawnCommand(args) {
   return new Promise((resolve, reject) => {
     const output = [];
-    const child = spawn(command, args, { stdio: ['pipe', 'pipe', 1] });
+    const _args = args.map((x) => `"${x}"`).join(' ');
+    const child = spawn('bash', ['-c', _args, '2>&1']);
 
     child.stdout.on('data', (chunk) => output.push(chunk));
     child.on('error', (err) => reject(err));
@@ -29,7 +30,7 @@ function spawnCommand(command, args) {
 
       // find: non-zero on permission errors — partial results still valid
       // rg: exit code 1 = no matches (not an error), exit code 2 = actual error
-      const isPartialSuccess = (command === 'find' && out.length > 0) || (command === 'rg' && code === 1);
+      const isPartialSuccess = (args[0] === 'find' && out.length > 0) || (args[0] === 'rg' && code === 1);
 
       if (code === 0 || isPartialSuccess) {
         resolve(out);
@@ -128,7 +129,7 @@ function shellFindByRegex(absPath, pattern, cwd) {
     return rel;
   }
 
-  return spawnCommand('find', [absPath, '-type', 'f']).then((output) => {
+  return spawnCommand(['find', absPath, '-type', 'f']).then((output) => {
     const files = output
       .split('\n')
       .filter(Boolean)
@@ -150,7 +151,8 @@ function shellRgSearch(absPath, pattern, cwd) {
     return rel;
   }
 
-  return spawnCommand('rg', [
+  return spawnCommand([
+    'rg',
     '-n',
     '--no-heading',
     '-i',

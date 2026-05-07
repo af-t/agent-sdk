@@ -11,7 +11,7 @@ async function diff(file1, file2) {
 
   return new Promise((resolve, reject) => {
     // stdio: [stdin, stdout, stderr] -> redirect 2 to 1 (stdout)
-    const child = spawn('diff', [file1, file2], { stdio: ['pipe', 'pipe', 1] });
+    const child = spawn('bash', ['-c', `diff "${file1}" "${file2}"`, '2>&1']);
     child.stdout.on('data', (chunk) => output.push(chunk));
     child.on('error', (err) => reject(err));
     child.on('exit', (code) => {

@@ -12,7 +12,7 @@ describe('Todo Tool', () => {
   before(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'todo-test-'));
     testFile = path.join(tmpDir, 'test-todos.json');
-    cleanup = async() => fs.rm(testFile, { force: true });
+    cleanup = async () => fs.rm(testFile, { force: true });
     mock.method(process, 'cwd', () => tmpDir);
   });
 
@@ -54,7 +54,7 @@ describe('Todo Tool', () => {
           action: 'add',
           todo_file: testFile,
         }),
-      /Parameter "text" is required/
+      /Parameter "text" is required/,
     );
   });
 
@@ -167,10 +167,7 @@ describe('Todo Tool', () => {
   it('should reject complete without id', async () => {
     await cleanup();
     const mod = await import('../../../src/tools/general/todo.js');
-    await assert.rejects(
-      () => mod.execute({ action: 'complete', todo_file: testFile }),
-      /Parameter "id" is required/
-    );
+    await assert.rejects(() => mod.execute({ action: 'complete', todo_file: testFile }), /Parameter "id" is required/);
   });
 
   it('should reject complete with non-existent id', async () => {
@@ -178,7 +175,7 @@ describe('Todo Tool', () => {
     const mod = await import('../../../src/tools/general/todo.js');
     await assert.rejects(
       () => mod.execute({ action: 'complete', id: 'nonexistent', todo_file: testFile }),
-      /not found/
+      /not found/,
     );
   });
 
@@ -222,19 +219,13 @@ describe('Todo Tool', () => {
   it('should reject delete without id', async () => {
     await cleanup();
     const mod = await import('../../../src/tools/general/todo.js');
-    await assert.rejects(
-      () => mod.execute({ action: 'delete', todo_file: testFile }),
-      /Parameter "id" is required/
-    );
+    await assert.rejects(() => mod.execute({ action: 'delete', todo_file: testFile }), /Parameter "id" is required/);
   });
 
   it('should reject delete with non-existent id', async () => {
     await cleanup();
     const mod = await import('../../../src/tools/general/todo.js');
-    await assert.rejects(
-      () => mod.execute({ action: 'delete', id: 'nonexistent', todo_file: testFile }),
-      /not found/
-    );
+    await assert.rejects(() => mod.execute({ action: 'delete', id: 'nonexistent', todo_file: testFile }), /not found/);
   });
 
   it('should update todo text', async () => {
