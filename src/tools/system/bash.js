@@ -93,7 +93,7 @@ function hasSuspiciousPattern(command) {
   return null;
 }
 
-// ── spawn fallback (used when node-pty is unavailable) ──────────────────
+// spawn fallback (used when node-pty is unavailable)
 
 function runWithSpawn(command, cwd, env, timeout) {
   return new Promise((resolve, reject) => {
@@ -133,7 +133,7 @@ function runWithSpawn(command, cwd, env, timeout) {
   });
 }
 
-// ── PTY mode (primary, uses node-pty) ───────────────────────────────────
+// PTY mode (primary, uses node-pty)
 
 function runWithPty(command, cwd, env, timeout) {
   return new Promise((resolve, reject) => {

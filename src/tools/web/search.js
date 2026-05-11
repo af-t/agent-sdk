@@ -1,9 +1,21 @@
-import config from '../../config.js';
-import { CONSTANTS } from '../../core/utils.js';
+import { CONSTANTS, truncateOutput } from '../../core/utils.js';
+
+function decodeHtmlEntities(str) {
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+function stripTags(str) {
+  return str.replace(/<[^>]+>/g, '').trim();
+}
 
 export const name = 'WebSearch';
 export const description =
-  'Search the web using Tavily. Use this to find current information, research topics, get documentation links, or answer questions that require up-to-date web data. Returns relevant results with snippets and source URLs. Supports deep search mode for comprehensive research.';
+  'Search the web. Uses Tavily when TAVILY_API_KEY is configured, otherwise falls back to DuckDuckGo. Use to find current information, research topics, or answer questions that require up-to-date web data. Returns results with snippets and source URLs.';
 export const input_schema = {
   type: 'object',
   properties: {
@@ -28,6 +40,103 @@ export const input_schema = {
   required: ['query'],
 };
 
+export async function ddgJsonSearch(query, maxResults) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CONSTANTS.FETCH_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(
+      `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`,
+      { signal: controller.signal },
+    );
+
+    if (!res.ok) throw new Error(`DuckDuckGo search failed (${res.status})`);
+
+    const data = await res.json();
+    const results = [];
+
+    if (data.AbstractText && data.AbstractURL) {
+      results.push({ title: data.Heading || query, url: data.AbstractURL, snippet: data.AbstractText });
+    }
+
+    for (const topic of data.RelatedTopics || []) {
+      if (results.length >= maxResults) break;
+      if (topic.Topics) continue;
+      if (topic.FirstURL && topic.Text) {
+        results.push({ title: topic.Text.split(' - ')[0].trim(), url: topic.FirstURL, snippet: topic.Text });
+      }
+    }
+
+    return results.slice(0, maxResults);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function ddgHtmlSearch(query, maxResults) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CONSTANTS.FETCH_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      signal: controller.signal,
+    });
+
+    if (!res.ok) throw new Error(`DuckDuckGo search failed (${res.status})`);
+
+    const html = await res.text();
+    const results = [];
+    const blocks = html.split(/<div\b[^>]*\bclass="result\b/);
+    const linkRe = /href="[^"]*uddg=([^&"]+)[^"]*"[^>]*>([\s\S]*?)<\/a>/;
+    const snippetRe = /class="result__snippet"[^>]*>([\s\S]*?)<\/a>/;
+
+    for (let i = 1; i < blocks.length && results.length < maxResults; i++) {
+      const block = blocks[i];
+      const linkMatch = linkRe.exec(block);
+      if (!linkMatch) continue;
+      let url;
+      try {
+        url = decodeURIComponent(linkMatch[1]);
+      } catch {
+        continue;
+      }
+      const snippetMatch = snippetRe.exec(block);
+      results.push({
+        url,
+        title: decodeHtmlEntities(stripTags(linkMatch[2])),
+        snippet: snippetMatch ? decodeHtmlEntities(stripTags(snippetMatch[1])) : '',
+      });
+    }
+
+    return results;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function ddgSearch(query, maxResults) {
+  try {
+    const results = await ddgJsonSearch(query, maxResults);
+    if (results.length > 0) return results;
+  } catch (err) {
+    if (err.name === 'AbortError') throw err;
+  }
+  return ddgHtmlSearch(query, maxResults);
+}
+
+export function formatDdgResults(query, results) {
+  if (results.length === 0) return 'No results found.';
+  let output = `## Search Results for: "${query}" [via DuckDuckGo]\n\n`;
+  results.forEach((r, i) => {
+    output += `${i + 1}. ${r.title}\n`;
+    output += `   URL: ${r.url}\n`;
+    if (r.snippet) output += `   ${truncateOutput(r.snippet, 500)}\n`;
+    output += '\n';
+  });
+  return output.trim();
+}
+
 export const execute = async ({
   query,
   depth = 'basic',
@@ -36,9 +145,19 @@ export const execute = async ({
   includeDomains,
   excludeDomains,
 }) => {
-  const apiKey = config.TAVILY_API_KEY;
+  const apiKey = process.env.TAVILY_API_KEY;
+
   if (!apiKey) {
-    throw new Error('TAVILY_API_KEY is not configured. Set it in .env or environment variables.');
+    const capped = Math.min(maxResults, 20);
+    try {
+      const results = await ddgSearch(query, capped);
+      return formatDdgResults(query, results);
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new Error('Search request timed out after 15 seconds. Try a more specific query.');
+      }
+      throw error;
+    }
   }
 
   try {
@@ -81,7 +200,7 @@ export const execute = async ({
       data.results.forEach((r, i) => {
         output += `${i + 1}. ${r.title || 'Untitled'}\n`;
         output += `   URL: ${r.url}\n`;
-        output += `   ${r.content?.slice(0, 500) || 'No content available'}\n`;
+        output += `   ${truncateOutput(r.content || 'No content available', 500)}\n`;
         if (r.score !== undefined) output += `   Relevance: ${(r.score * 100).toFixed(0)}%\n`;
         output += '\n';
       });

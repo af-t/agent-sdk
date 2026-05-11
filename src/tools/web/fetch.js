@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio';
-import { CONSTANTS } from '../../core/utils.js';
+import { CONSTANTS, truncateOutput } from '../../core/utils.js';
 import dns from 'node:dns/promises';
 
 // Private/reserved IP ranges to block for SSRF prevention
@@ -178,7 +178,7 @@ export const execute = async ({ url, useRaw = false, limit = 20000 }) => {
     }
 
     if (contentType.includes('application/json')) {
-      return withContentType(contentType, raw.length > limit ? raw.slice(0, limit) + '\n[... truncated]' : raw);
+      return withContentType(contentType, truncateOutput(raw, limit));
     }
 
     if (
@@ -186,17 +186,17 @@ export const execute = async ({ url, useRaw = false, limit = 20000 }) => {
       contentType.includes('text/csv') ||
       contentType.includes('text/markdown')
     ) {
-      return withContentType(contentType, raw.length > limit ? raw.slice(0, limit) + '\n[... truncated]' : raw);
+      return withContentType(contentType, truncateOutput(raw, limit));
     }
 
     if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
       // Unknown type — return as plain text
-      return withContentType(contentType, raw.length > limit ? raw.slice(0, limit) + '\n[... truncated]' : raw);
+      return withContentType(contentType, truncateOutput(raw, limit));
     }
 
     // Only HTML reaches cheerio
     if (useRaw) {
-      return withContentType(contentType, raw.length > limit ? raw.slice(0, limit) + '\n[... truncated]' : raw);
+      return withContentType(contentType, truncateOutput(raw, limit));
     }
 
     // Smart Scraper
@@ -216,7 +216,7 @@ export const execute = async ({ url, useRaw = false, limit = 20000 }) => {
       .replace(/\n{3,}/g, '\n\n')
       .trim();
 
-    return cleanText.length > limit ? cleanText.slice(0, limit) + '\n[... truncated]' : cleanText;
+    return truncateOutput(cleanText, limit);
   } catch (error) {
     throw error;
   }

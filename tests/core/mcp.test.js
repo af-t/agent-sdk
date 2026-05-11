@@ -135,7 +135,7 @@ describe('McpNativeClient — mock server connections', () => {
       try {
         // The server sends multiple types of malformed JSON after initialize.
         // connect() sends initialize and waits for response.
-        // Since responses are malformed, _parseMessage returns null for each
+        // Since responses are malformed, #parseMessage returns null for each
         // and the request eventually times out.
         await assert.rejects(
           () => client.connect(),

@@ -50,7 +50,7 @@ find_secrets_in_logs() {
     | grep -v "node_modules" \
     | grep -v "\.test\." \
     || echo "✅ No console.log found"
-  
+
   echo ""
   echo "--- Public apiKey properties ---"
   grep -rn "this\.apiKey\s*=" "$dir" --include='*.js' \
@@ -128,7 +128,7 @@ run_all_checks() {
   echo "Directory: $dir"
   echo "Date: $(date)"
   echo ""
-  
+
   check_path_traversal "$dir"
   check_missing_import "$dir"
   check_env_leakage "$dir"
@@ -136,7 +136,7 @@ run_all_checks() {
   check_empty_catches "$dir"
   check_tool_error_pattern "$dir"
   check_ssrf_protection "$dir"
-  
+
   echo "╔══════════════════════════════════════════╗"
   echo "║   ✅ Audit Complete                      ║"
   echo "╚══════════════════════════════════════════╝"

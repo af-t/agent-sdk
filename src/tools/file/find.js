@@ -50,7 +50,7 @@ function commandAvailable(cmd) {
   });
 }
 
-// ── Native fallback: recursive Node.js walk ──────────────────────────────
+// Native fallback: recursive Node.js walk
 
 async function nativeSearch({ absPath, pattern, mode, cwd }) {
   const regex = new RegExp(pattern, 'i');
@@ -115,7 +115,7 @@ async function nativeSearch({ absPath, pattern, mode, cwd }) {
   return matches.length ? matches.join('\n') : 'No matches found.';
 }
 
-// ── Shell-accelerated search ─────────────────────────────────────────────
+// Shell-accelerated search
 
 function shellFindByRegex(absPath, pattern, cwd) {
   const searchRootPrefix = absPath.endsWith(path.sep) ? absPath : absPath + path.sep;
@@ -178,7 +178,7 @@ function shellRgSearch(absPath, pattern, cwd) {
   });
 }
 
-// ── Main execute ─────────────────────────────────────────────────────────
+// Main execute
 
 export const execute = async ({ path: dirPath = '.', pattern, mode }) => {
   try {

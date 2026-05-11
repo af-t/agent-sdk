@@ -51,6 +51,11 @@ export const execute = async ({ description, prompt, persona, context_files }, {
 
   try {
     const report = await subagent.run(task);
+
+    // add up cost and token use from subagent to main agent
+    agent.usage.cost += subagent.usage.cost;
+    agent.usage.tokens += subagent.usage.tokens;
+
     return report;
   } catch (err) {
     throw new Error(`Delegation failed: ${err.message}`);

@@ -2,9 +2,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ensureSafePath } from '../../core/utils.js';
 
-// Default todo file in project root
-const DEFAULT_TODO_FILE = path.join(process.cwd(), '.todos.json');
-
 // Hard cap to prevent unbounded growth
 const MAX_TODOS = 1000;
 
@@ -99,7 +96,7 @@ export const execute = async ({
   sort_by = 'created_at',
   todo_file,
 }) => {
-  const todoPath = todo_file || DEFAULT_TODO_FILE;
+  const todoPath = todo_file || path.join(process.cwd(), '.todos.json');
 
   try {
     let todos = await readTodos(todoPath);

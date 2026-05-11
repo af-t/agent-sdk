@@ -15,7 +15,13 @@ export const CONSTANTS = Object.freeze({
   FETCH_TIMEOUT_MS: 15000, // ms
   FETCH_MAX_SIZE: 10 * 1024 * 1024, // 10MB — response body limit for WebFetch
   MAX_TOKENS_SUBAGENT: 32000,
+  MAX_TOOL_OUTPUT: 50_000,
 });
+
+export function truncateOutput(text, maxChars = CONSTANTS.MAX_TOOL_OUTPUT) {
+  if (typeof text !== 'string' || text.length <= maxChars) return text;
+  return text.slice(0, maxChars) + `\n[... truncated: ${text.length - maxChars} characters omitted]`;
+}
 
 export function getDirname(importMeta) {
   return importMeta.dirname || path.dirname(fileURLToPath(importMeta.url));

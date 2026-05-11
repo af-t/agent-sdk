@@ -30,9 +30,9 @@ export class McpNativeClient extends EventEmitter {
     });
 
     this.rl.on('line', (line) => {
-      const message = this._parseMessage(line);
+      const message = this.#parseMessage(line);
       if (!message) return;
-      this._handleMessage(message);
+      this.#handleMessage(message);
     });
 
     this.process.on('error', (err) => {
@@ -41,7 +41,7 @@ export class McpNativeClient extends EventEmitter {
 
     this.process.on('exit', (code) => {
       this.emit('exit', code);
-      this._cleanup();
+      this.#cleanup();
     });
 
     const response = await this.request('initialize', {
@@ -139,11 +139,11 @@ export class McpNativeClient extends EventEmitter {
   async close() {
     if (this.process) {
       this.process.kill();
-      this._cleanup();
+      this.#cleanup();
     }
   }
 
-  _cleanup() {
+  #cleanup() {
     this.rl?.close();
     this.process = null;
     for (const { reject } of this.pendingRequests.values()) {
@@ -152,7 +152,7 @@ export class McpNativeClient extends EventEmitter {
     this.pendingRequests.clear();
   }
 
-  _handleMessage(message) {
+  #handleMessage(message) {
     if (message.id !== undefined) {
       const pending = this.pendingRequests.get(message.id);
       if (pending) {
@@ -168,7 +168,7 @@ export class McpNativeClient extends EventEmitter {
     }
   }
 
-  _parseMessage(line) {
+  #parseMessage(line) {
     try {
       return JSON.parse(line.trim());
     } catch {

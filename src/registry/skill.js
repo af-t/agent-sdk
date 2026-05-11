@@ -29,18 +29,19 @@ function parseFrontmatter(content) {
 }
 
 export class SkillRegistry {
+  #forceRefresh = false;
+
   constructor(options = {}) {
     this.skills = new Map();
     this.loaded = false;
     this.scanAgentDirs = options.scanAgentDirs !== undefined ? options.scanAgentDirs : true;
     this.extraSearchDirs = options.extraSearchDirs || [];
-    this._forceRefresh = false;
   }
 
   async discover() {
-    if (this.loaded && !this._forceRefresh) return;
+    if (this.loaded && !this.#forceRefresh) return;
     this.loaded = true;
-    this._forceRefresh = false;
+    this.#forceRefresh = false;
     this.skills.clear();
 
     const searchPaths = [{ dir: path.join(__dirname, '..', 'skills'), scope: 'builtin' }];
@@ -60,13 +61,13 @@ export class SkillRegistry {
     }
 
     for (const { dir, scope } of searchPaths) {
-      await this._discover(dir, scope);
+      await this.#discover(dir, scope);
     }
 
     logger.debug(`SkillRegistry: discovered ${this.skills.size} skills`);
   }
 
-  async _discover(dir, scope) {
+  async #discover(dir, scope) {
     try {
       await fs.access(dir);
     } catch {
@@ -149,14 +150,14 @@ export class SkillRegistry {
   }
 
   refresh() {
-    this._forceRefresh = true;
+    this.#forceRefresh = true;
     return this.discover();
   }
 
   reset() {
     this.skills.clear();
     this.loaded = false;
-    this._forceRefresh = false;
+    this.#forceRefresh = false;
   }
 }
 

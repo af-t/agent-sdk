@@ -1,5 +1,24 @@
-import { describe, it, before } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { CONSTANTS } from '../../src/core/utils.js';
+
+function makeSseResponse(lines) {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      for (const line of lines) {
+        controller.enqueue(encoder.encode(line + '\n'));
+      }
+      controller.close();
+    },
+  });
+  return { ok: true, status: 200, body: stream };
+}
+
+function makeJsonResponse(body) {
+  const text = JSON.stringify(body);
+  return { ok: true, status: 200, text: async () => text };
+}
 
 describe('Agent', () => {
   let Agent;
@@ -26,7 +45,7 @@ describe('Agent', () => {
       assert.equal(typeof agent.usage, 'object');
       assert.equal(agent.usage.cost, 0);
       assert.equal(agent.usage.tokens, 0);
-      assert.equal(agent.reasoningEffort, 'high');
+      assert.equal(agent.effort, 'high');
       assert.equal(agent.maxTurns, 25);
       assert.ok(Array.isArray(agent.messages));
       assert.equal(agent.messages.length, 0);
@@ -47,14 +66,14 @@ describe('Agent', () => {
       assert.deepEqual(agent.provider.only, ['openai']);
     });
 
-    it('accepts reasoningEffort option', () => {
-      const agent = new Agent({ apiKey: 'sk-key', reasoningEffort: 'low' });
-      assert.equal(agent.reasoningEffort, 'low');
+    it('accepts effort option', () => {
+      const agent = new Agent({ apiKey: 'sk-key', effort: 'low' });
+      assert.equal(agent.effort, 'low');
     });
 
-    it('default reasoningEffort is high', () => {
+    it('default effort is high', () => {
       const agent = new Agent({ apiKey: 'sk-key' });
-      assert.equal(agent.reasoningEffort, 'high');
+      assert.equal(agent.effort, 'high');
     });
 
     it('accepts maxTurns option', () => {
@@ -76,6 +95,16 @@ describe('Agent', () => {
       const registry = new ToolRegistry();
       const agent = new Agent({ apiKey: 'sk-key', tools: registry });
       assert.equal(agent.tools, registry);
+    });
+
+    it('defaults maxToolOutputChars to CONSTANTS.MAX_TOOL_OUTPUT', () => {
+      const agent = new Agent({ apiKey: 'sk-key' });
+      assert.strictEqual(agent.maxToolOutputChars, CONSTANTS.MAX_TOOL_OUTPUT);
+    });
+
+    it('accepts maxToolOutputChars override', () => {
+      const agent = new Agent({ apiKey: 'sk-key', maxToolOutputChars: 1000 });
+      assert.strictEqual(agent.maxToolOutputChars, 1000);
     });
   });
 
@@ -136,5 +165,138 @@ describe('Agent', () => {
       assert.deepEqual(agent.messages, []);
       assert.deepEqual(agent.usage, { cost: 0, tokens: 0 });
     });
+  });
+});
+
+describe('run() — non-streaming (no notify)', () => {
+  let Agent;
+  let originalFetch;
+
+  before(async () => {
+    const mod = await import('../../src/core/agent.js');
+    Agent = mod.default;
+    originalFetch = global.fetch;
+  });
+
+  after(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('returns assistant content when no notify is passed', async () => {
+    global.fetch = async () =>
+      makeJsonResponse({
+        choices: [{ message: { content: 'Hello!', reasoning: null, tool_calls: undefined } }],
+        usage: { cost: 0.001, total_tokens: 50 },
+      });
+
+    const agent = new Agent({ apiKey: 'sk-test' });
+    const result = await agent.run('Hi');
+    assert.strictEqual(result, 'Hello!');
+  });
+
+  it('accumulates usage on non-streaming run', async () => {
+    global.fetch = async () =>
+      makeJsonResponse({
+        choices: [{ message: { content: 'ok', reasoning: null, tool_calls: undefined } }],
+        usage: { cost: 0.002, total_tokens: 80 },
+      });
+
+    const agent = new Agent({ apiKey: 'sk-test' });
+    await agent.run('test');
+    assert.ok(agent.usage.cost > 0);
+    assert.ok(agent.usage.tokens > 0);
+  });
+});
+
+describe('run() — streaming (with notify)', () => {
+  let Agent;
+  let originalFetch;
+
+  before(async () => {
+    const mod = await import('../../src/core/agent.js');
+    Agent = mod.default;
+    originalFetch = global.fetch;
+  });
+
+  after(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('calls notify with content_delta and accumulated content per chunk', async () => {
+    global.fetch = async () =>
+      makeSseResponse([
+        'data: {"choices":[{"delta":{"content":"hel"}}],"usage":null}',
+        'data: {"choices":[{"delta":{"content":"lo"}}],"usage":null}',
+        'data: [DONE]',
+      ]);
+
+    const agent = new Agent({ apiKey: 'sk-test' });
+    const calls = [];
+    const result = await agent.run('hi', (data) => calls.push(data));
+
+    assert.strictEqual(calls.length, 2);
+    assert.strictEqual(calls[0].content_delta, 'hel');
+    assert.strictEqual(calls[0].content, 'hel');
+    assert.strictEqual(calls[1].content_delta, 'lo');
+    assert.strictEqual(calls[1].content, 'hello');
+    assert.strictEqual(result, 'hello');
+  });
+
+  it('assembles tool_calls from multi-chunk stream and notifies once', async () => {
+    let fetchCount = 0;
+    global.fetch = async () => {
+      fetchCount++;
+      if (fetchCount === 1) {
+        return makeSseResponse([
+          'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"Echo","arguments":"{\\"msg\\":\\"hi\\"}"}}]}}],"usage":null}',
+          'data: [DONE]',
+        ]);
+      }
+      return makeSseResponse(['data: {"choices":[{"delta":{"content":"done"}}],"usage":null}', 'data: [DONE]']);
+    };
+
+    const agent = new Agent({ apiKey: 'sk-test' });
+    agent.use({
+      name: 'Echo',
+      description: 'echo the message',
+      input_schema: { type: 'object', properties: { msg: { type: 'string' } }, required: ['msg'] },
+      execute: async ({ msg }) => msg,
+    });
+
+    const calls = [];
+    await agent.run('run something', (data) => calls.push(data));
+
+    const tcCall = calls.find((c) => c.tool_calls);
+    assert.ok(tcCall, 'Expected a notify call with tool_calls');
+    assert.strictEqual(tcCall.tool_calls[0].id, 'call_1');
+    assert.strictEqual(tcCall.tool_calls[0].function.name, 'Echo');
+    assert.strictEqual(tcCall.tool_calls[0].function.arguments, '{"msg":"hi"}');
+  });
+
+  it('stops parsing after [DONE] — no extra notify calls', async () => {
+    global.fetch = async () =>
+      makeSseResponse([
+        'data: {"choices":[{"delta":{"content":"hi"}}],"usage":null}',
+        'data: [DONE]',
+        'data: {"choices":[{"delta":{"content":"EXTRA"}}],"usage":null}',
+      ]);
+
+    const agent = new Agent({ apiKey: 'sk-test' });
+    const calls = [];
+    await agent.run('test', (data) => calls.push(data));
+    const contentCalls = calls.filter((c) => c.content_delta);
+    assert.strictEqual(contentCalls.length, 1);
+    assert.strictEqual(contentCalls[0].content_delta, 'hi');
+  });
+
+  it('throws ApiError on non-ok streaming response', async () => {
+    global.fetch = async () => ({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: { message: 'Unauthorized' } }),
+    });
+
+    const agent = new Agent({ apiKey: 'sk-test' });
+    await assert.rejects(() => agent.run('hi', () => {}), /Unauthorized|401/);
   });
 });

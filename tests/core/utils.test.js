@@ -1,6 +1,6 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { ensureSafePath, getIgnoreFilter, stripSecrets } from '../../src/core/utils.js';
+import { ensureSafePath, getIgnoreFilter, stripSecrets, truncateOutput, CONSTANTS } from '../../src/core/utils.js';
 import path from 'node:path';
 
 const projectRoot = process.cwd();
@@ -406,5 +406,35 @@ describe('stripSecrets', () => {
     const env = { API_KEY: '123' };
     stripSecrets(env);
     assert.equal(env.API_KEY, '123');
+  });
+});
+
+describe('truncateOutput', () => {
+  it('returns text unchanged when under limit', () => {
+    assert.strictEqual(truncateOutput('hello', 10), 'hello');
+  });
+
+  it('returns text unchanged when exactly at limit', () => {
+    assert.strictEqual(truncateOutput('hello', 5), 'hello');
+  });
+
+  it('truncates and appends omitted-char count when over limit', () => {
+    const result = truncateOutput('hello world', 5);
+    assert.strictEqual(result.startsWith('hello'), true);
+    assert.ok(result.includes('[... truncated:'));
+    assert.ok(result.includes('6 characters omitted'));
+  });
+
+  it('does not truncate non-string values', () => {
+    assert.strictEqual(truncateOutput(null, 5), null);
+    assert.deepEqual(truncateOutput({ a: 1 }, 5), { a: 1 });
+    assert.strictEqual(truncateOutput(42, 5), 42);
+  });
+
+  it('uses CONSTANTS.MAX_TOOL_OUTPUT as default limit', () => {
+    const long = 'x'.repeat(CONSTANTS.MAX_TOOL_OUTPUT + 1000);
+    const result = truncateOutput(long);
+    assert.strictEqual(result.length < long.length, true);
+    assert.ok(result.includes('[... truncated:'));
   });
 });

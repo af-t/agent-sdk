@@ -86,6 +86,16 @@ describe('ToolRegistry', () => {
     );
   });
 
+  it('register throws if name is missing', () => {
+    const registry = new ToolRegistry();
+    assert.throws(() => registry.register({ description: 'd', input_schema: {}, execute: async () => {} }), /name/);
+  });
+
+  it('register throws if description is missing', () => {
+    const registry = new ToolRegistry();
+    assert.throws(() => registry.register({ name: 't', input_schema: {}, execute: async () => {} }), /description/);
+  });
+
   it('onBeforeExecute hook runs before tool execution', async () => {
     const registry = new ToolRegistry();
     let hookCalled = false;
@@ -278,6 +288,78 @@ describe('ToolRegistry', () => {
     const defs = registry.getDefinitions();
     assert.equal(defs.length, 1);
     assert.equal(defs[0].function.name, 'concurrent');
+  });
+
+  it('getDefinitions injects output_limit into every tool schema', () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 'my_tool',
+      description: 'd',
+      input_schema: { type: 'object', properties: { x: { type: 'string' } } },
+      execute: async () => 'ok',
+    });
+    const [def] = registry.getDefinitions();
+    assert.ok(def.function.parameters.properties.output_limit, 'output_limit should be injected');
+    assert.strictEqual(def.function.parameters.properties.output_limit.type, 'number');
+    assert.ok(def.function.parameters.properties.x);
+  });
+
+  it('execute truncates result when it exceeds agent.maxToolOutputChars', async () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 'big',
+      description: 'd',
+      input_schema: { type: 'object', properties: {} },
+      execute: async () => 'x'.repeat(200),
+    });
+    const fakeAgent = { maxToolOutputChars: 50 };
+    const result = await registry.execute('big', {}, { agent: fakeAgent });
+    assert.strictEqual(result.length < 200, true);
+    assert.ok(result.includes('[... truncated:'));
+  });
+
+  it('execute respects output_limit from input over agent default', async () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 'sized',
+      description: 'd',
+      input_schema: { type: 'object', properties: {} },
+      execute: async () => 'y'.repeat(300),
+    });
+    const fakeAgent = { maxToolOutputChars: 200 };
+    const result = await registry.execute('sized', { output_limit: 100 }, { agent: fakeAgent });
+    assert.ok(result.startsWith('y'.repeat(100)));
+    assert.ok(result.includes('[... truncated:'));
+  });
+
+  it('execute does not pass output_limit to the tool function', async () => {
+    const registry = new ToolRegistry();
+    let receivedInput;
+    registry.register({
+      name: 'spy',
+      description: 'd',
+      input_schema: { type: 'object', properties: {} },
+      execute: async (input) => {
+        receivedInput = input;
+        return 'ok';
+      },
+    });
+    await registry.execute('spy', { output_limit: 100, foo: 'bar' }, {});
+    assert.strictEqual(receivedInput.output_limit, undefined);
+    assert.strictEqual(receivedInput.foo, 'bar');
+  });
+
+  it('execute does not truncate non-string results', async () => {
+    const registry = new ToolRegistry();
+    const obj = { a: 1, b: 2 };
+    registry.register({
+      name: 'objt',
+      description: 'd',
+      input_schema: { type: 'object', properties: {} },
+      execute: async () => obj,
+    });
+    const result = await registry.execute('objt', { output_limit: 1 }, {});
+    assert.deepEqual(result, obj);
   });
 
   it('concurrency: register and execute from interleaved promises has no state corruption', async () => {

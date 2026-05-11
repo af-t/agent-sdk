@@ -43,8 +43,11 @@ export const input_schema = {
 export const execute = async ({ path: filePath, new_text, old_text, start_line, end_line }) => {
   try {
     const safePath = ensureSafePath(filePath);
-    const content = await fs.readFile(safePath, 'utf8');
-    const temp = path.join(os.tmpdir(), `.openrouter-edit-${crypto.randomUUID()}`);
+    const content = (await fs.readFile(safePath, 'utf8'))
+      .split('\n')
+      .map((x) => x.replace(/ +$/, ''))
+      .join('\n');
+    const temp = path.join(os.tmpdir(), `.oasdk-${Array.from(crypto.randomBytes(5), (x) => x.toString(36)).join('')}`);
 
     if (old_text) {
       const occurrences = content.split(old_text).length - 1;
@@ -66,7 +69,7 @@ export const execute = async ({ path: filePath, new_text, old_text, start_line, 
 
     const difference = await diff(safePath, temp);
     const newContent = await fs.readFile(temp);
-    await fs.rm(temp);
+    await fs.rm(temp, { force: true });
     await fs.writeFile(safePath, newContent);
 
     if (difference) {

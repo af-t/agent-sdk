@@ -1,47 +1,67 @@
 import { McpClientWrapper } from '../core/mcp.js';
 import logger from '../core/logger.js';
+import { truncateOutput, CONSTANTS } from '../core/utils.js';
 
 export class ToolRegistry {
-  _tools = new Map();
-  _mcpClients = [];
-  _hooks = { beforeExecute: [], afterExecute: [] };
+  #tools = new Map();
+  #mcpClients = [];
+  #hooks = { beforeExecute: [], afterExecute: [] };
 
   // Hook before tool execute — receives { name, input, context }, throw to abort. Returns disposer.
   onBeforeExecute(fn) {
-    this._hooks.beforeExecute.push(fn);
+    this.#hooks.beforeExecute.push(fn);
     return () => {
-      const idx = this._hooks.beforeExecute.indexOf(fn);
-      if (idx !== -1) this._hooks.beforeExecute.splice(idx, 1);
+      const idx = this.#hooks.beforeExecute.indexOf(fn);
+      if (idx !== -1) this.#hooks.beforeExecute.splice(idx, 1);
     };
   }
 
   // Hook after tool execute — receives { name, input, context, result }, throw to discard result. Returns disposer.
   onAfterExecute(fn) {
-    this._hooks.afterExecute.push(fn);
+    this.#hooks.afterExecute.push(fn);
     return () => {
-      const idx = this._hooks.afterExecute.indexOf(fn);
-      if (idx !== -1) this._hooks.afterExecute.splice(idx, 1);
+      const idx = this.#hooks.afterExecute.indexOf(fn);
+      if (idx !== -1) this.#hooks.afterExecute.splice(idx, 1);
     };
   }
 
-  getDefinitions() {
+  getDefinitions(filter) {
     const res = [];
-    for (const [name, val] of this._tools) {
+    const push = (name, val) => {
+      const schema = val.input_schema || { type: 'object', properties: {} };
       res.push({
         type: 'function',
         function: {
           name,
           description: val.description,
-          parameters: val.input_schema,
+          parameters: {
+            ...schema,
+            properties: {
+              ...(schema.properties || {}),
+              output_limit: {
+                type: 'number',
+                description: 'Maximum characters to return from this tool call. Overrides the agent default.',
+              },
+            },
+          },
         },
       });
+    };
+
+    for (const [name, val] of this.#tools) {
+      if (filter && Array.isArray(filter)) {
+        if (filter.includes(name)) push(name, val);
+      } else {
+        push(name, val);
+      }
     }
+
     return res;
   }
 
   listTools() {
     const tools = [];
-    for (const [name, val] of this._tools) {
+    for (const [name, val] of this.#tools) {
       tools.push({
         name,
         description: val.description,
@@ -52,26 +72,28 @@ export class ToolRegistry {
   }
 
   register({ name, description, input_schema, execute }) {
+    if (name == null || typeof name !== 'string') throw Error('Tool must have a name');
+    if (description == null || typeof description !== 'string') throw Error('Tool must have a description');
     if (typeof execute !== 'function') throw Error('Tool must have an execute function');
-    this._tools.set(name, { description, input_schema, execute });
+    this.#tools.set(name, { description, input_schema, execute });
   }
 
   unregister(name) {
-    return this._tools.delete(name);
+    return this.#tools.delete(name);
   }
 
   clear() {
-    this._tools.clear();
-    this._mcpClients = [];
-    this._hooks = { beforeExecute: [], afterExecute: [] };
+    this.#tools.clear();
+    this.#mcpClients = [];
+    this.#hooks = { beforeExecute: [], afterExecute: [] };
   }
 
   async execute(name, input, context) {
-    const tool = this._tools.get(name);
+    const tool = this.#tools.get(name);
     if (!tool) throw new Error(`Tool ${name} not found`);
 
     // Run before-execute hooks (can throw to abort)
-    for (const hook of this._hooks.beforeExecute) {
+    for (const hook of this.#hooks.beforeExecute) {
       await hook({ name, input, context });
     }
 
@@ -79,7 +101,7 @@ export class ToolRegistry {
     if (tool.input_schema) {
       const { required = [], properties = {} } = tool.input_schema;
       for (const key of required) {
-        if (input[key] === undefined || input[key] === null || input[key] === '') {
+        if (input[key] === undefined || input[key] === null) {
           throw new Error(`Tool '${name}' requires parameter '${key}'`);
         }
       }
@@ -111,14 +133,17 @@ export class ToolRegistry {
       }
     }
 
-    const result = await tool.execute(input, context);
+    const { output_limit, ...cleanInput } = input;
+    const limit = output_limit ?? context?.agent?.maxToolOutputChars ?? CONSTANTS.MAX_TOOL_OUTPUT;
+
+    const result = await tool.execute(cleanInput, context);
 
     // Run after-execute hooks (can throw to signal problems)
-    for (const hook of this._hooks.afterExecute) {
+    for (const hook of this.#hooks.afterExecute) {
       await hook({ name, input, context, result });
     }
 
-    return result;
+    return truncateOutput(result, limit);
   }
 
   async connectMcpServer({ name, command, args, env }) {
@@ -147,17 +172,17 @@ export class ToolRegistry {
         },
       });
     }
-    this._mcpClients.push(client);
+    this.#mcpClients.push(client);
   }
 
   async cleanup() {
-    for (const client of this._mcpClients) {
+    for (const client of this.#mcpClients) {
       try {
         await client.close();
       } catch (err) {
         logger.warn('MCP client close failed:', err.message);
       }
     }
-    this._mcpClients = [];
+    this.#mcpClients = [];
   }
 }
