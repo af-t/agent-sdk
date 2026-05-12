@@ -42,6 +42,7 @@ class Agent {
     this.effort = effort || 'high';
     this.maxTokens = parseInt(maxTokens || config.MAX_TOKENS || 0) || undefined;
     this.usage = { cost: 0, tokens: 0 };
+    this.subagents = new Map();
     // Max request turns before forcing a break.
     // Set to 0 for unlimited (used by subagents via Delegate).
     this.maxTurns = maxTurns ?? (parseInt(config.MAX_TURNS || 0) || DEFAULT_MAX_TURNS);

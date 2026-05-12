@@ -27,6 +27,16 @@ describe('Delegate tool module', () => {
     assert.ok(mod.input_schema.required.includes('description'));
   });
 
+  it('should not include context_files in input_schema', () => {
+    assert.strictEqual(mod.input_schema.properties.context_files, undefined);
+  });
+
+  it('should include id in input_schema as optional string', () => {
+    assert.ok(mod.input_schema.properties.id);
+    assert.strictEqual(mod.input_schema.properties.id.type, 'string');
+    assert.ok(!mod.input_schema.required.includes('id'));
+  });
+
   it('should export execute as a function', () => {
     assert.strictEqual(typeof mod.execute, 'function');
   });
@@ -45,8 +55,7 @@ describe('Delegate tool — execute()', () => {
     mock.reset();
   });
 
-  it('should spawn a sub-agent and return its result', async () => {
-    // Mock Agent.run to return a fake report
+  it('should spawn a sub-agent and return its result with ID prefix', async () => {
     mock.method(Agent.prototype, 'run', async () => 'Sub-agent report: done');
 
     const fakeAgent = {
@@ -56,11 +65,14 @@ describe('Delegate tool — execute()', () => {
       tools: {},
       usage: { cost: 0, tokens: 0 },
       maxTokens: undefined,
+      subagents: new Map(),
     };
 
     const result = await mod.execute({ description: 'Test task', prompt: 'Do something useful' }, { agent: fakeAgent });
 
-    assert.strictEqual(result, 'Sub-agent report: done');
+    assert.ok(result.startsWith('Sub-agent report: done'));
+    assert.ok(result.includes('Subagent ID:'));
+    assert.ok(result.includes('(new)'));
     assert.strictEqual(Agent.prototype.run.mock.calls.length, 1);
     assert.ok(fakeAgent.usage.cost >= 0);
   });
@@ -76,6 +88,7 @@ describe('Delegate tool — execute()', () => {
       provider: {},
       tools: {},
       usage: { cost: 0, tokens: 0 },
+      subagents: new Map(),
     };
 
     const result = await mod.execute(
@@ -83,7 +96,7 @@ describe('Delegate tool — execute()', () => {
       { agent: fakeAgent },
     );
 
-    assert.strictEqual(result, 'You are a code reviewer');
+    assert.ok(result.startsWith('You are a code reviewer'));
   });
 
   it('should reject delegation when depth exceeds limit', async () => {
@@ -93,7 +106,8 @@ describe('Delegate tool — execute()', () => {
       provider: {},
       tools: {},
       usage: { cost: 0, tokens: 0 },
-      _delegateDepth: 3, // Already at max
+      _delegateDepth: 3,
+      subagents: new Map(),
     };
 
     await assert.rejects(
@@ -113,12 +127,11 @@ describe('Delegate tool — execute()', () => {
       provider: {},
       tools: {},
       usage: { cost: 0, tokens: 0 },
+      subagents: new Map(),
     };
 
     await mod.execute({ description: 'Cost test', prompt: 'Do work' }, { agent: fakeAgent });
 
-    // The sub-agent was created and its usage should be merged
-    // Since we mocked run(), usage stays 0, but the merge logic runs
     assert.strictEqual(fakeAgent.usage.cost, 0);
     assert.strictEqual(fakeAgent.usage.tokens, 0);
   });
@@ -134,6 +147,7 @@ describe('Delegate tool — execute()', () => {
       provider: {},
       tools: {},
       usage: { cost: 0, tokens: 0 },
+      subagents: new Map(),
     };
 
     await assert.rejects(
@@ -164,6 +178,7 @@ describe('Delegate tool — execute()', () => {
       provider: {},
       tools: parentTools,
       usage: { cost: 0, tokens: 0 },
+      subagents: new Map(),
     };
 
     await mod.execute({ description: 'Registry test', prompt: 'do it' }, { agent: fakeAgent });
@@ -183,9 +198,78 @@ describe('Delegate tool — execute()', () => {
       provider: {},
       tools: {},
       usage: { cost: 0, tokens: 0 },
+      subagents: new Map(),
     };
 
     await mod.execute({ description: 'MaxTurns test', prompt: 'do it' }, { agent: fakeAgent });
     assert.strictEqual(capturedMaxTurns, 1000);
+  });
+
+  it('should store new subagent in agent.subagents with auto-generated id', async () => {
+    mock.method(Agent.prototype, 'run', async () => 'done');
+
+    const fakeAgent = {
+      apiKey: 'k',
+      model: 'm',
+      provider: {},
+      tools: {},
+      usage: { cost: 0, tokens: 0 },
+      subagents: new Map(),
+    };
+
+    const result = await mod.execute({ description: 'd', prompt: 'p' }, { agent: fakeAgent });
+
+    assert.strictEqual(fakeAgent.subagents.size, 1);
+    const [[id]] = fakeAgent.subagents;
+    assert.ok(result.includes(`Subagent ID: ${id} (new)`));
+  });
+
+  it('should reuse existing subagent when id matches', async () => {
+    let callCount = 0;
+    mock.method(Agent.prototype, 'run', async () => {
+      callCount++;
+      return `call-${callCount}`;
+    });
+
+    const fakeAgent = {
+      apiKey: 'k',
+      model: 'm',
+      provider: {},
+      tools: {},
+      usage: { cost: 0, tokens: 0 },
+      subagents: new Map(),
+    };
+
+    await mod.execute({ description: 'd', prompt: 'first', id: 'mybot' }, { agent: fakeAgent });
+    const subagent = fakeAgent.subagents.get('mybot');
+    assert.ok(subagent);
+
+    const result2 = await mod.execute({ description: 'd', prompt: 'second', id: 'mybot' }, { agent: fakeAgent });
+    assert.strictEqual(fakeAgent.subagents.size, 1);
+    assert.strictEqual(fakeAgent.subagents.get('mybot'), subagent);
+    assert.ok(result2.includes('Subagent ID: mybot (reused)'));
+  });
+
+  it('should only accumulate delta usage on reuse', async () => {
+    mock.method(Agent.prototype, 'run', async function () {
+      this.usage.cost += 0.01;
+      this.usage.tokens += 100;
+      return 'done';
+    });
+
+    const fakeAgent = {
+      apiKey: 'k',
+      model: 'm',
+      provider: {},
+      tools: {},
+      usage: { cost: 0, tokens: 0 },
+      subagents: new Map(),
+    };
+
+    await mod.execute({ description: 'd', prompt: 'first', id: 'bot' }, { agent: fakeAgent });
+    assert.ok(Math.abs(fakeAgent.usage.cost - 0.01) < 1e-9);
+
+    await mod.execute({ description: 'd', prompt: 'second', id: 'bot' }, { agent: fakeAgent });
+    assert.ok(Math.abs(fakeAgent.usage.cost - 0.02) < 1e-9);
   });
 });

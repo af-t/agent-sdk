@@ -15,48 +15,68 @@ export const input_schema = {
         'Specific instructions for the subagent\n\nIt is highly recommended to ask for a summary so that the context obtained is clear',
     },
     persona: { type: 'string', description: 'Specific System instruction or Rule or Personality for subagent' },
-    context_files: {
-      type: 'array',
-      items: { type: 'string' },
-      description: 'Paths to files the subagent should read first',
+    id: {
+      type: 'string',
+      description:
+        'Subagent ID. If provided and already exists, the same subagent is reused (history preserved). If omitted, a short random ID is auto-generated.',
     },
   },
   required: ['prompt', 'description'],
 };
 
-export const execute = async ({ description, prompt, persona, context_files }, { agent }) => {
+export const execute = async ({ description, prompt, persona, id }, { agent }) => {
   const depth = (agent._delegateDepth || 0) + 1;
   const MAX_DELEGATE_DEPTH = 3;
   if (depth > MAX_DELEGATE_DEPTH) {
     throw new Error(`Delegate depth limit reached (${MAX_DELEGATE_DEPTH}). Cannot nest deeper.`);
   }
 
-  const subagent = new Agent({
-    apiKey: agent.apiKey,
-    model: agent.model,
-    provider: agent.provider,
-    tools: agent.tools, // inherit all tools including Delegate (depth check prevents unbounded recursion)
-    systemPrompt: persona,
-    maxTokens: agent.maxTokens || CONSTANTS.MAX_TOKENS_SUBAGENT,
-    maxTurns: 1000, // subagents need more iterations than the default 25
-    isSubagent: true,
-  });
+  let resolvedId = id;
+  if (!resolvedId) {
+    resolvedId = Math.random().toString(36).slice(2, 7);
+    if (agent.subagents.has(resolvedId)) resolvedId = Math.random().toString(36).slice(2, 7);
+  }
 
-  let task = prompt;
-  if (context_files?.length) {
-    task = `I need you to work on these files: ${context_files.join(', ')}\n\nTask: ${prompt}`;
+  const isNew = !agent.subagents.has(resolvedId);
+  let subagent;
+
+  if (isNew) {
+    subagent = new Agent({
+      apiKey: agent.apiKey,
+      model: agent.model,
+      provider: agent.provider,
+      tools: agent.tools,
+      systemPrompt: persona,
+      maxTokens: agent.maxTokens || CONSTANTS.MAX_TOKENS_SUBAGENT,
+      maxTurns: 1000,
+      isSubagent: true,
+    });
+    agent.subagents.set(resolvedId, subagent);
+  } else {
+    subagent = agent.subagents.get(resolvedId);
   }
 
   logger.info('Spawning subagent for:', description);
 
   try {
-    const report = await subagent.run(task);
+    const usageBefore = { cost: subagent.usage.cost, tokens: subagent.usage.tokens };
+    const msgsBefore = subagent.messages.length;
+    const startTime = Date.now();
 
-    // add up cost and token use from subagent to main agent
-    agent.usage.cost += subagent.usage.cost;
-    agent.usage.tokens += subagent.usage.tokens;
+    const report = await subagent.run(prompt);
 
-    return report;
+    const elapsed = Date.now() - startTime;
+    const toolCalls = subagent.messages.slice(msgsBefore).filter((m) => m.role === 'tool').length;
+    agent.usage.cost += subagent.usage.cost - usageBefore.cost;
+    agent.usage.tokens += subagent.usage.tokens - usageBefore.tokens;
+
+    const status = isNew ? 'new' : 'reused';
+    const duration =
+      elapsed < 60000
+        ? `${Math.round(elapsed / 1000)}s`
+        : `${Math.floor(elapsed / 60000)}m ${Math.round((elapsed % 60000) / 1000)}s`;
+    const footer = `\n\n---\nSubagent ID: ${resolvedId} (${status})\nTool calls: ${toolCalls}\nDuration: ${duration}`;
+    return report + footer;
   } catch (err) {
     throw new Error(`Delegation failed: ${err.message}`);
   }
