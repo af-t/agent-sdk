@@ -6,11 +6,9 @@ import os from 'node:os';
 
 describe('Skill tool module', () => {
   let mod;
-  let registry;
 
   before(async () => {
     mod = await import('../../../src/tools/system/skill.js');
-    registry = (await import('../../../src/registry/skill.js')).default;
   });
 
   it('should export name', () => {

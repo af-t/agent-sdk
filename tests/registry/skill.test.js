@@ -1,5 +1,8 @@
-import { describe, it, before } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import path from 'node:path';
+import fs from 'node:fs/promises';
+import os from 'node:os';
 
 describe('SkillRegistry (default singleton)', () => {
   let skillModule;
@@ -77,5 +80,104 @@ describe('SkillRegistry (default singleton)', () => {
     // refresh should not throw even with no skills dirs
     await singleton.refresh();
     assert.ok(true);
+  });
+});
+
+describe('SkillRegistry — discovery with real SKILL.md files', () => {
+  let registry;
+  let tmpdir;
+
+  before(async () => {
+    const mod = await import('../../src/registry/skill.js');
+    registry = mod.default;
+    tmpdir = await fs.mkdtemp(path.join(os.tmpdir(), 'skill-reg-test-'));
+
+    await fs.mkdir(path.join(tmpdir, 'alpha-skill'), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpdir, 'alpha-skill', 'SKILL.md'),
+      [
+        '---',
+        'name: AlphaSkill',
+        'description: A skill about alpha things',
+        '---',
+        '',
+        'Alpha skill body content here.',
+      ].join('\n'),
+      'utf8',
+    );
+
+    await fs.mkdir(path.join(tmpdir, 'beta-skill'), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpdir, 'beta-skill', 'SKILL.md'),
+      [
+        '---',
+        'name: BetaSkill',
+        'description: A skill about beta things',
+        '---',
+        '',
+        'Beta skill body content here.',
+      ].join('\n'),
+      'utf8',
+    );
+
+    registry.reset();
+    registry.configure({ extraSearchDirs: [tmpdir], scanAgentDirs: false });
+    await registry.refresh();
+  });
+
+  after(async () => {
+    registry.configure({ extraSearchDirs: [], scanAgentDirs: true });
+    registry.reset();
+    await fs.rm(tmpdir, { recursive: true, force: true });
+  });
+
+  it('list() returns string including both skill names', () => {
+    const result = registry.list();
+    assert.strictEqual(typeof result, 'string');
+    assert.ok(result.includes('AlphaSkill'));
+    assert.ok(result.includes('BetaSkill'));
+  });
+
+  it('get("AlphaSkill") returns a non-null object', () => {
+    const skill = registry.get('AlphaSkill');
+    assert.ok(skill !== null);
+    assert.strictEqual(typeof skill, 'object');
+  });
+
+  it('AlphaSkill description is correctly parsed from frontmatter', () => {
+    const skill = registry.get('AlphaSkill');
+    assert.ok(skill.description.toLowerCase().includes('alpha'));
+  });
+
+  it('get("NonExistentXYZ") returns null', () => {
+    assert.strictEqual(registry.get('NonExistentXYZ'), null);
+  });
+
+  it('search("alpha") returns array with AlphaSkill', () => {
+    const results = registry.search('alpha');
+    assert.ok(Array.isArray(results));
+    assert.ok(results.some((r) => r.name === 'AlphaSkill'));
+  });
+
+  it('search("zyxnonexistent999") returns empty array', () => {
+    const results = registry.search('zyxnonexistent999');
+    assert.ok(Array.isArray(results));
+    assert.strictEqual(results.length, 0);
+  });
+
+  it('BetaSkill description is correctly parsed from frontmatter', () => {
+    const skill = registry.get('BetaSkill');
+    assert.ok(skill !== null);
+    assert.ok(skill.description.toLowerCase().includes('beta'));
+  });
+
+  it('skill body is accessible via .content property', () => {
+    const alpha = registry.get('AlphaSkill');
+    assert.strictEqual(typeof alpha.content, 'string');
+    assert.ok(alpha.content.includes('Alpha skill body content here'));
+
+    const beta = registry.get('BetaSkill');
+    assert.strictEqual(typeof beta.content, 'string');
+    assert.ok(beta.content.includes('Beta skill body content here'));
   });
 });

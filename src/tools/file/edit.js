@@ -153,10 +153,7 @@ export const execute = async ({ path: filePath, edits }) => {
     content = applyEdit(content, edits[i], i);
   }
 
-  const temp = path.join(
-    os.tmpdir(),
-    `.oasdk-${Array.from(crypto.randomBytes(5), (x) => x.toString(36)).join('')}`,
-  );
+  const temp = path.join(os.tmpdir(), `.oasdk-${Array.from(crypto.randomBytes(5), (x) => x.toString(36)).join('')}`);
   await fs.writeFile(temp, content, 'utf8');
   const difference = await diff(safePath, temp);
   await fs.rm(temp, { force: true });

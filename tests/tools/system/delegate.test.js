@@ -58,10 +58,7 @@ describe('Delegate tool — execute()', () => {
       maxTokens: undefined,
     };
 
-    const result = await mod.execute(
-      { description: 'Test task', prompt: 'Do something useful' },
-      { agent: fakeAgent },
-    );
+    const result = await mod.execute({ description: 'Test task', prompt: 'Do something useful' }, { agent: fakeAgent });
 
     assert.strictEqual(result, 'Sub-agent report: done');
     assert.strictEqual(Agent.prototype.run.mock.calls.length, 1);
@@ -143,5 +140,52 @@ describe('Delegate tool — execute()', () => {
       () => mod.execute({ description: 'Failing task', prompt: 'Do it' }, { agent: fakeAgent }),
       /Delegation failed: Internal failure/,
     );
+  });
+
+  it('should inherit parent tool registry including custom tools', async () => {
+    const { ToolRegistry } = await import('../../../src/registry/tool.js');
+    const parentTools = new ToolRegistry();
+    parentTools.register({
+      name: 'CustomTestTool',
+      description: 'custom tool for testing',
+      input_schema: { type: 'object', properties: {}, required: [] },
+      execute: async () => 'ok',
+    });
+
+    let capturedToolNames;
+    mock.method(Agent.prototype, 'run', async function () {
+      capturedToolNames = this.tools.listTools().map((t) => t.name);
+      return 'done';
+    });
+
+    const fakeAgent = {
+      apiKey: 'sk-test-key',
+      model: 'test-model',
+      provider: {},
+      tools: parentTools,
+      usage: { cost: 0, tokens: 0 },
+    };
+
+    await mod.execute({ description: 'Registry test', prompt: 'do it' }, { agent: fakeAgent });
+    assert.ok(capturedToolNames.includes('CustomTestTool'));
+  });
+
+  it('should set subagent maxTurns to 1000', async () => {
+    let capturedMaxTurns;
+    mock.method(Agent.prototype, 'run', async function () {
+      capturedMaxTurns = this.maxTurns;
+      return 'done';
+    });
+
+    const fakeAgent = {
+      apiKey: 'sk-test-key',
+      model: 'test-model',
+      provider: {},
+      tools: {},
+      usage: { cost: 0, tokens: 0 },
+    };
+
+    await mod.execute({ description: 'MaxTurns test', prompt: 'do it' }, { agent: fakeAgent });
+    assert.strictEqual(capturedMaxTurns, 1000);
   });
 });

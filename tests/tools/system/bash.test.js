@@ -176,7 +176,12 @@ describe('Bash tool — command injection fuzzing', () => {
       // If it errors (e.g. file not found, permission denied), that's also fine.
       assert.ok(err.message.length > 0);
       // Error should be meaningful — not just an empty string
-      assert.ok(err.message.includes('exit') || err.message.includes('ENOENT') || err.message.includes('Permission') || err.message.length > 5);
+      assert.ok(
+        err.message.includes('exit') ||
+          err.message.includes('ENOENT') ||
+          err.message.includes('Permission') ||
+          err.message.length > 5,
+      );
     }
   });
 

@@ -245,3 +245,90 @@ describe('McpClientWrapper', () => {
     assert.equal(typeof wrapper.close, 'function');
   });
 });
+
+describe('McpClientWrapper — functional', () => {
+  let McpClientWrapper;
+  let nodeAvailable = true;
+  const toolsScript = path.join(fixturesDir, 'mock-mcp-tools.js');
+
+  before(async () => {
+    const mod = await import('../../src/core/mcp.js');
+    McpClientWrapper = mod.McpClientWrapper;
+    try {
+      const proc = spawn(process.execPath, ['--version'], { stdio: 'pipe' });
+      await new Promise((resolve) => {
+        proc.on('error', () => {
+          nodeAvailable = false;
+          resolve();
+        });
+        proc.on('exit', (code) => {
+          nodeAvailable = code === 0;
+          resolve();
+        });
+        setTimeout(() => {
+          proc.kill();
+          resolve();
+        }, 2000);
+      });
+    } catch {
+      nodeAvailable = false;
+    }
+  });
+
+  it(
+    'connectAndGetTools() returns array of tool definitions',
+    { skip: !nodeAvailable ? 'node not spawnable' : undefined },
+    async () => {
+      const wrapper = new McpClientWrapper({ command: process.execPath, args: [toolsScript] });
+      let tools;
+      try {
+        tools = await wrapper.connectAndGetTools();
+      } finally {
+        await wrapper.close().catch(() => {});
+      }
+      assert.ok(Array.isArray(tools));
+      assert.ok(tools.length >= 1);
+      assert.strictEqual(typeof tools[0].name, 'string');
+      assert.strictEqual(typeof tools[0].description, 'string');
+    },
+  );
+
+  it(
+    'executeTool() calls a tool and returns content',
+    { skip: !nodeAvailable ? 'node not spawnable' : undefined },
+    async () => {
+      const wrapper = new McpClientWrapper({ command: process.execPath, args: [toolsScript] });
+      try {
+        await wrapper.connectAndGetTools();
+        const result = await wrapper.executeTool('echo', { text: 'hello' });
+        assert.ok(result, 'expected a result');
+        assert.ok(Array.isArray(result.content), 'expected content array');
+        assert.strictEqual(result.content[0].type, 'text');
+        assert.ok(result.content[0].text.includes('hello'));
+      } finally {
+        await wrapper.close().catch(() => {});
+      }
+    },
+  );
+
+  it(
+    'close() does not throw after successful connection',
+    { skip: !nodeAvailable ? 'node not spawnable' : undefined },
+    async () => {
+      const wrapper = new McpClientWrapper({ command: process.execPath, args: [toolsScript] });
+      await wrapper.connectAndGetTools();
+      await assert.doesNotReject(() => wrapper.close());
+    },
+  );
+
+  it(
+    'close() is safe to call multiple times',
+    { skip: !nodeAvailable ? 'node not spawnable' : undefined },
+    async () => {
+      const wrapper = new McpClientWrapper({ command: process.execPath, args: [toolsScript] });
+      await wrapper.connectAndGetTools();
+      await wrapper.close();
+      await assert.doesNotReject(() => wrapper.close());
+    },
+  );
+});

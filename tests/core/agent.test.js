@@ -300,3 +300,162 @@ describe('run() — streaming (with notify)', () => {
     await assert.rejects(() => agent.run('hi', () => {}), /Unauthorized|401/);
   });
 });
+
+describe('run() — maxTurns enforcement', () => {
+  let Agent;
+  let originalFetch;
+
+  before(async () => {
+    const mod = await import('../../src/core/agent.js');
+    Agent = mod.default;
+    originalFetch = global.fetch;
+  });
+
+  after(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('stops after maxTurns loop iterations and returns last tool result', async () => {
+    let fetchCallCount = 0;
+    global.fetch = async () => {
+      fetchCallCount++;
+      return makeJsonResponse({
+        choices: [
+          {
+            message: {
+              content: null,
+              reasoning: null,
+              tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Loop', arguments: '{}' } }],
+            },
+          },
+        ],
+        usage: { cost: 0, total_tokens: 10 },
+      });
+    };
+
+    const agent = new Agent({ apiKey: 'sk-test', maxTurns: 2 });
+    agent.use({
+      name: 'Loop',
+      description: 'loops',
+      input_schema: { type: 'object', properties: {}, required: [] },
+      execute: async () => 'looped',
+    });
+
+    const result = await agent.run('start');
+    assert.strictEqual(fetchCallCount, 2);
+    assert.strictEqual(result, 'looped');
+  });
+});
+
+describe('run() — cache_control placement', () => {
+  let Agent;
+  let originalFetch;
+
+  before(async () => {
+    const mod = await import('../../src/core/agent.js');
+    Agent = mod.default;
+    originalFetch = global.fetch;
+  });
+
+  after(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('adds cache_control to system message and user message copies, not original', async () => {
+    let capturedPayload;
+    global.fetch = async (_url, opts) => {
+      capturedPayload = JSON.parse(opts.body);
+      return makeJsonResponse({
+        choices: [{ message: { content: 'ok', reasoning: null, tool_calls: null } }],
+        usage: { cost: 0, total_tokens: 5 },
+      });
+    };
+
+    const agent = new Agent({ apiKey: 'sk-test' });
+    await agent.run('hello');
+
+    // System message always has cache_control on its content item
+    const sysMsg = capturedPayload.messages[0];
+    assert.strictEqual(sysMsg.role, 'system');
+    assert.deepEqual(sysMsg.content[0].cache_control, { type: 'ephemeral' });
+
+    // Last user message last content part has cache_control in the payload copy
+    const userMsg = capturedPayload.messages.find((m) => m.role === 'user');
+    const lastPart = userMsg.content[userMsg.content.length - 1];
+    assert.deepEqual(lastPart.cache_control, { type: 'ephemeral' });
+
+    // Original agent.messages do NOT have cache_control (added on copies only)
+    const origUser = agent.messages.find((m) => m.role === 'user');
+    assert.strictEqual(origUser.content[0].cache_control, undefined);
+  });
+});
+
+describe('run() — AbortSignal', () => {
+  let Agent;
+
+  before(async () => {
+    const mod = await import('../../src/core/agent.js');
+    Agent = mod.default;
+  });
+
+  it('throws "Agent run aborted" when signal is already aborted before run()', async () => {
+    const ctrl = new AbortController();
+    ctrl.abort();
+    const agent = new Agent({ apiKey: 'sk-test' });
+    await assert.rejects(() => agent.run('hello', null, { signal: ctrl.signal }), /Agent run aborted/);
+  });
+});
+
+describe('run() — message accumulation and reset', () => {
+  let Agent;
+  let originalFetch;
+
+  before(async () => {
+    const mod = await import('../../src/core/agent.js');
+    Agent = mod.default;
+    originalFetch = global.fetch;
+  });
+
+  after(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('appends messages across multiple run() calls', async () => {
+    let callCount = 0;
+    global.fetch = async () => {
+      callCount++;
+      return makeJsonResponse({
+        choices: [{ message: { content: `response ${callCount}`, reasoning: null, tool_calls: null } }],
+        usage: { cost: 0.001, total_tokens: 10 },
+      });
+    };
+
+    const agent = new Agent({ apiKey: 'sk-test' });
+    const r1 = await agent.run('turn 1');
+    assert.strictEqual(r1, 'response 1');
+    const afterFirst = agent.messages.length;
+    assert.ok(afterFirst >= 2, 'should have at least user + assistant after first run');
+
+    const r2 = await agent.run('turn 2');
+    assert.strictEqual(r2, 'response 2');
+    assert.ok(agent.messages.length > afterFirst, 'messages should grow after second run');
+  });
+
+  it('reset() clears messages and zeroes usage', async () => {
+    global.fetch = async () =>
+      makeJsonResponse({
+        choices: [{ message: { content: 'hi', reasoning: null, tool_calls: null } }],
+        usage: { cost: 0.001, total_tokens: 10 },
+      });
+
+    const agent = new Agent({ apiKey: 'sk-test' });
+    await agent.run('hello');
+    assert.ok(agent.messages.length > 0);
+    assert.ok(agent.usage.cost > 0);
+
+    agent.reset();
+    assert.strictEqual(agent.messages.length, 0);
+    assert.strictEqual(agent.usage.cost, 0);
+    assert.strictEqual(agent.usage.tokens, 0);
+  });
+});

@@ -92,4 +92,44 @@ describe('createAgent', () => {
     assert(agent1 !== agent2);
     assert(agent1.tools !== agent2.tools, 'Each agent should have its own ToolRegistry');
   });
+
+  it('Read tool actually executes and returns file content', async () => {
+    const agent = await createAgent();
+    const result = await agent.tools.execute('Read', { path: process.cwd() + '/package.json' }, { agent });
+    assert.strictEqual(typeof result, 'string');
+    assert.ok(result.includes('openrouter'), 'result should contain openrouter from package.json');
+  });
+
+  it('List tool actually executes and returns directory listing', async () => {
+    const agent = await createAgent();
+    const result = await agent.tools.execute('List', { path: process.cwd() }, { agent });
+    assert.strictEqual(typeof result, 'string');
+    assert.ok(result.includes('package.json') || result.includes('src'), 'result should list project files');
+  });
+
+  it('agent.use() registers a callable tool', async () => {
+    const agent = await createAgent();
+    agent.use({
+      name: 'PingTool',
+      description: 'test tool',
+      input_schema: { type: 'object', properties: {}, required: [] },
+      execute: async () => 'pong',
+    });
+    const result = await agent.tools.execute('PingTool', {}, { agent });
+    assert.strictEqual(result, 'pong');
+  });
+
+  it('two agents have independent tool registries', async () => {
+    const [agent1, agent2] = await Promise.all([createAgent(), createAgent()]);
+    agent1.use({
+      name: 'OnlyAgent1Tool',
+      description: 'test',
+      input_schema: { type: 'object', properties: {}, required: [] },
+      execute: async () => 'ok',
+    });
+    const names1 = agent1.tools.listTools().map((t) => t.name);
+    const names2 = agent2.tools.listTools().map((t) => t.name);
+    assert.ok(names1.includes('OnlyAgent1Tool'), 'agent1 should have the custom tool');
+    assert.ok(!names2.includes('OnlyAgent1Tool'), 'agent2 should not have the custom tool');
+  });
 });

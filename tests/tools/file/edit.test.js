@@ -165,7 +165,11 @@ describe('Edit — insert action', () => {
 
   it('throws when anchor_text not found', async () => {
     await assert.rejects(
-      () => execute({ path: TEST_FILE, edits: [{ action: 'insert', anchor_text: 'NOTEXIST', position: 'after', text: 'x' }] }),
+      () =>
+        execute({
+          path: TEST_FILE,
+          edits: [{ action: 'insert', anchor_text: 'NOTEXIST', position: 'after', text: 'x' }],
+        }),
       /edit\[0\]: 'anchor_text' not found/,
     );
   });
@@ -186,7 +190,11 @@ describe('Edit — insert action', () => {
 
   it('throws when position is invalid', async () => {
     await assert.rejects(
-      () => execute({ path: TEST_FILE, edits: [{ action: 'insert', anchor_text: 'Line two', position: 'middle', text: 'x' }] }),
+      () =>
+        execute({
+          path: TEST_FILE,
+          edits: [{ action: 'insert', anchor_text: 'Line two', position: 'middle', text: 'x' }],
+        }),
       /edit\[0\]: insert requires 'position'/,
     );
   });
@@ -307,10 +315,7 @@ describe('Edit — multi-action and edge cases', () => {
   });
 
   it('throws when edits array is empty', async () => {
-    await assert.rejects(
-      () => execute({ path: TEST_FILE, edits: [] }),
-      /edits must not be empty/,
-    );
+    await assert.rejects(() => execute({ path: TEST_FILE, edits: [] }), /edits must not be empty/);
   });
 });
 

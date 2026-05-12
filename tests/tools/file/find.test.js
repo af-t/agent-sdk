@@ -194,11 +194,7 @@ describe('find.js — injection resistance', () => {
 
   it('treats $(id) as literal regex, not command substitution (content mode)', async () => {
     const mod = await import('../../../src/tools/file/find.js');
-    await fs.writeFile(
-      path.join(fixturesDir, 'content-test.txt'),
-      'this file contains $(id) as literal text',
-      'utf8',
-    );
+    await fs.writeFile(path.join(fixturesDir, 'content-test.txt'), 'this file contains $(id) as literal text', 'utf8');
     try {
       const result = await mod.execute({
         path: fixturesDir,
