@@ -45,7 +45,14 @@ class Agent {
     this.subagents = new Map();
     // Max request turns before forcing a break.
     // Set to 0 for unlimited (used by subagents via Delegate).
-    this.maxTurns = maxTurns ?? (parseInt(config.MAX_TURNS || 0) || DEFAULT_MAX_TURNS);
+    if (maxTurns !== undefined) {
+      this.maxTurns = maxTurns;
+    } else if (config.MAX_TURNS !== undefined && config.MAX_TURNS !== '') {
+      const parsed = parseInt(config.MAX_TURNS);
+      this.maxTurns = Number.isNaN(parsed) ? DEFAULT_MAX_TURNS : parsed;
+    } else {
+      this.maxTurns = DEFAULT_MAX_TURNS;
+    }
     this.maxToolOutputChars = maxToolOutputChars ?? CONSTANTS.MAX_TOOL_OUTPUT;
     this.systemPrompt =
       systemPrompt ||

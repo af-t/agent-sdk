@@ -140,6 +140,59 @@ describe('WebFetch tool module', () => {
       // A redirect to a public URL should be fine
       await assert.doesNotReject(() => checkSSRF('https://example.com/redirect-target'), /Access denied/);
     });
+
+    it('should strip credentials from redirect URL before recursive call', async () => {
+      // Simulate a 302 with Location containing credentials
+      // Use a counter to distinguish initial request from redirect request
+      let callCount = 0;
+      let redirectFetchUrl;
+      const originalFetch = global.fetch;
+      global.fetch = async (url, _opts) => {
+        callCount++;
+        if (callCount === 1) {
+          // First call: return 302 redirect with credentials
+          return {
+            status: 302,
+            headers: {
+              get: (name) => {
+                if (name === 'location') return 'https://leaked:secret@example.com/';
+                if (name === 'content-type') return 'text/plain';
+                return null;
+              },
+            },
+            body: {
+              cancel: async () => {},
+            },
+          };
+        }
+        // Second call (redirect): capture URL and return success
+        redirectFetchUrl = typeof url === 'string' ? url : url.toString();
+        return {
+          status: 200,
+          headers: {
+            get: (name) => {
+              if (name === 'content-type') return 'text/plain';
+              return null;
+            },
+          },
+          text: async () => 'redirected content',
+        };
+      };
+
+      await mod.execute({ url: 'https://example.com/initial' });
+
+      global.fetch = originalFetch;
+
+      // Assert that the redirect URL passed to fetch has no userinfo
+      assert.ok(redirectFetchUrl, 'redirect fetch should have been called');
+      assert.ok(!redirectFetchUrl.includes('leaked'), 'credentials should be stripped from the URL');
+      assert.ok(!redirectFetchUrl.includes('secret'), 'password should be stripped from the URL');
+      // Verify the URL still reaches the same host
+      const parsed = new URL(redirectFetchUrl);
+      assert.strictEqual(parsed.hostname, 'example.com');
+      assert.strictEqual(parsed.username, '');
+      assert.strictEqual(parsed.password, '');
+    });
   });
 
   describe('SSRF — non-standard protocols', () => {
