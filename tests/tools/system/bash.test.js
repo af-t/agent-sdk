@@ -441,3 +441,39 @@ describe('Bash tool — env sanitization', () => {
     }
   });
 });
+
+describe('Bash tool — abort signal handling', () => {
+  let mod;
+
+  before(async () => {
+    mod = await import('../../../src/tools/system/bash.js');
+  });
+
+  it('rejects immediately when ctx.signal is already aborted', async () => {
+    const ac = new AbortController();
+    ac.abort();
+    const start = Date.now();
+    await assert.rejects(() => mod.execute({ command: 'sleep 5', timeout: 10000 }, { signal: ac.signal }), /abort/i);
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed < 500, `pre-aborted signal should reject quickly, got ${elapsed}ms`);
+  });
+
+  it('terminates a running command when signal aborts mid-execution', async () => {
+    const ac = new AbortController();
+    const start = Date.now();
+    setTimeout(() => ac.abort(), 150);
+
+    await assert.rejects(
+      () => mod.execute({ command: 'sleep 5', timeout: 10000 }, { signal: ac.signal }),
+      (err) => /abort|sigterm|sigkill|signal/i.test(err.message),
+    );
+
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed < 3000, `aborted command should die within SIGKILL grace, got ${elapsed}ms`);
+  });
+
+  it('runs normally when no signal is provided', async () => {
+    const result = await mod.execute({ command: 'echo hello-no-signal', timeout: 5000 });
+    assert.match(result, /hello-no-signal/);
+  });
+});

@@ -1,4 +1,4 @@
-import { withRetry, getDirname, CONSTANTS } from './utils.js';
+import { withRetry, getDirname, CONSTANTS, groupToolCalls } from './utils.js';
 import { ToolRegistry } from '../registry/tool.js';
 import { ApiError, ConfigError } from './errors.js';
 import logger from './logger.js';
@@ -272,6 +272,52 @@ class Agent {
     };
   }
 
+  async #executeOneToolCall(tc, signal, notify) {
+    const name = tc.function.name;
+    const tool_call_id = tc.id || `call_${crypto.randomUUID()}`;
+    let input;
+    try {
+      input = JSON.parse(tc.function.arguments);
+    } catch (parseErr) {
+      logger.warn(`Agent: failed to parse tool arguments for "${name}": ${parseErr.message}`);
+      throw new Error(`invalid JSON arguments — ${parseErr.message}`);
+    }
+
+    if (typeof notify === 'function') {
+      try {
+        await notify({ tool_start: { tool_call_id, name, input } });
+      } catch (err) {
+        logger.debug('Notify callback error:', err.message);
+      }
+    }
+
+    logger.debug('Agent: Executing tool:', name);
+    const started = Date.now();
+    let output;
+    let toolError;
+    try {
+      const result = await this.tools.execute(name, input, { agent: this, signal });
+      output = typeof result === 'string' ? result : JSON.stringify(result);
+    } catch (err) {
+      toolError = err;
+    }
+    const duration_ms = Date.now() - started;
+
+    if (typeof notify === 'function') {
+      const payload = { tool_call_id, name, duration_ms };
+      if (toolError) payload.error = toolError.message;
+      else payload.output = output;
+      try {
+        await notify({ tool_end: payload });
+      } catch (err) {
+        logger.debug('Notify callback error:', err.message);
+      }
+    }
+
+    if (toolError) throw toolError;
+    return output;
+  }
+
   use(tools) {
     if (Array.isArray(tools)) {
       for (const tool of tools) {
@@ -344,42 +390,28 @@ class Agent {
       this.messages.push({ role: 'assistant', reasoning, content, tool_calls });
 
       if (!tool_calls || tool_calls.length === 0) break;
-      for (const tc of tool_calls) {
-        const name = tc.function.name;
-        let input;
-        try {
-          input = JSON.parse(tc.function.arguments);
-        } catch (parseErr) {
-          logger.warn(`Agent: failed to parse tool arguments for "${name}": ${parseErr.message}`);
-          this.messages.push({
-            role: 'tool',
-            content: `Error: invalid JSON arguments — ${parseErr.message}`,
-            tool_call_id: tc.id || `call_${crypto.randomUUID()}`,
-          });
-          continue;
-        }
 
-        logger.debug('Agent: Executing tool:', name);
-        let result;
-        try {
-          result = await this.tools.execute(name, input, { agent: this });
-        } catch (toolErr) {
-          // Log only the first line of the error message to avoid leaking large command output
-          const summary = (toolErr.message || '').split('\n')[0];
-          logger.warn(`Tool ${name} failed: ${summary}`);
-          this.messages.push({
-            role: 'tool',
-            content: `Error: ${toolErr.message}`,
-            tool_call_id: tc.id || `call_${crypto.randomUUID()}`,
-          });
-          continue;
-        }
+      const groups = groupToolCalls(tool_calls, this.tools);
 
-        this.messages.push({
-          role: 'tool',
-          content: typeof result === 'string' ? result : JSON.stringify(result),
-          tool_call_id: tc.id || `call_${crypto.randomUUID()}`,
-        });
+      for (const group of groups) {
+        const settled = await Promise.allSettled(group.map((tc) => this.#executeOneToolCall(tc, signal, notify)));
+
+        for (let i = 0; i < group.length; i++) {
+          const tc = group[i];
+          const r = settled[i];
+          const tool_call_id = tc.id || `call_${crypto.randomUUID()}`;
+          if (r.status === 'fulfilled') {
+            this.messages.push({ role: 'tool', content: r.value, tool_call_id });
+          } else {
+            const summary = (r.reason?.message || '').split('\n')[0];
+            logger.warn(`Tool ${tc.function.name} failed: ${summary}`);
+            this.messages.push({
+              role: 'tool',
+              content: `Error: ${r.reason?.message ?? r.reason}`,
+              tool_call_id,
+            });
+          }
+        }
 
         if (signal?.aborted) {
           throw new Error('Agent run aborted');

@@ -25,6 +25,11 @@ async function diff(file1, file2) {
   });
 }
 
+function fmtSnippet(text) {
+  const s = text.replace(/\n/g, '↵');
+  return s.length > 60 ? s.substring(0, 60) + '…' : s;
+}
+
 function validateEdit(edit, i) {
   const label = `edit[${i}]`;
   if (!['replace', 'insert', 'delete'].includes(edit.action)) {
@@ -58,21 +63,31 @@ function validateEdit(edit, i) {
   }
 }
 
-function applyEdit(content, edit, i) {
+function applyEdit(content, edit, i, lineOffset) {
   const label = `edit[${i}]`;
 
   if (edit.action === 'replace') {
     if (edit.old_text) {
       const occurrences = content.split(edit.old_text).length - 1;
-      if (occurrences === 0) throw new Error(`${label}: 'old_text' not found`);
-      if (occurrences > 1) throw new Error(`${label}: 'old_text' found multiple times. Provide more context.`);
-      return content.replace(edit.old_text, () => edit.new_text);
+      if (occurrences === 0) {
+        const snippet = fmtSnippet(edit.old_text);
+        throw new Error(
+          `${label}: 'old_text' not found in file.\n  Searched for: "${snippet}"\n  Tip: check for trailing whitespace or indentation differences.`,
+        );
+      }
+      if (occurrences > 1) {
+        const snippet = fmtSnippet(edit.old_text);
+        throw new Error(`${label}: 'old_text' found multiple times. Provide more context. Searched for: "${snippet}"`);
+      }
+      const delta = edit.new_text.split('\n').length - edit.old_text.split('\n').length;
+      return { content: content.replace(edit.old_text, () => edit.new_text), delta };
     }
     const lines = content.split('\n');
-    const start = Math.max(0, edit.start_line - 1);
-    const end = Math.min(lines.length, edit.end_line);
+    const start = Math.max(0, edit.start_line + lineOffset - 1);
+    const end = Math.min(lines.length, edit.end_line + lineOffset);
     lines.splice(start, end - start, edit.new_text);
-    return lines.join('\n');
+    const delta = edit.new_text.split('\n').length - (edit.end_line - edit.start_line + 1);
+    return { content: lines.join('\n'), delta };
   }
 
   if (edit.action === 'insert') {
@@ -83,34 +98,50 @@ function applyEdit(content, edit, i) {
       if (idx === -1) throw new Error(`${label}: 'anchor_text' not found`);
       insertIndex = edit.position === 'after' ? idx + 1 : idx;
     } else {
+      const adjustedLine = edit.line + lineOffset;
       const M = lines.length;
-      if (edit.line < 1 || edit.line > M) {
+      if (adjustedLine < 1 || adjustedLine > M) {
         throw new Error(`${label}: line ${edit.line} is out of range (file has ${M} lines)`);
       }
-      insertIndex = edit.position === 'after' ? edit.line : edit.line - 1;
+      insertIndex = edit.position === 'after' ? adjustedLine : adjustedLine - 1;
     }
     lines.splice(insertIndex, 0, edit.text);
-    return lines.join('\n');
+    return { content: lines.join('\n'), delta: edit.text.split('\n').length };
   }
 
   if (edit.action === 'delete') {
     if (edit.old_text) {
       const occurrences = content.split(edit.old_text).length - 1;
-      if (occurrences === 0) throw new Error(`${label}: 'old_text' not found`);
-      if (occurrences > 1) throw new Error(`${label}: 'old_text' found multiple times. Provide more context.`);
-      return content.replace(edit.old_text, () => '');
+      if (occurrences === 0) {
+        const snippet = fmtSnippet(edit.old_text);
+        throw new Error(
+          `${label}: 'old_text' not found in file.\n  Searched for: "${snippet}"\n  Tip: check for trailing whitespace or indentation differences.`,
+        );
+      }
+      if (occurrences > 1) {
+        const snippet = fmtSnippet(edit.old_text);
+        throw new Error(`${label}: 'old_text' found multiple times. Provide more context. Searched for: "${snippet}"`);
+      }
+      const delta = -(edit.old_text.split('\n').length - 1);
+      return { content: content.replace(edit.old_text, () => ''), delta };
     }
     const lines = content.split('\n');
-    const start = Math.max(0, edit.start_line - 1);
-    const end = Math.min(lines.length, edit.end_line);
+    const start = Math.max(0, edit.start_line + lineOffset - 1);
+    const end = Math.min(lines.length, edit.end_line + lineOffset);
     lines.splice(start, end - start);
-    return lines.join('\n');
+    return { content: lines.join('\n'), delta: -(edit.end_line - edit.start_line + 1) };
   }
 }
 
 export const name = 'Edit';
+export const parallelSafe = false;
 export const description =
-  'Surgically update a file with one or more sequential actions (replace, insert, delete). All actions target the same file and are applied top-to-bottom. The file is only written if every action succeeds.';
+  'Surgically update a file with one or more sequential actions (replace, insert, delete). ' +
+  'Actions are applied top-to-bottom; the file is only written if every action succeeds. ' +
+  'Prefer old_text over line numbers — old_text is content-anchored and immune to shifting. ' +
+  'When using line-based edits in a multi-edit call, line numbers are automatically adjusted ' +
+  'for insertions and deletions made by earlier actions in the same call. ' +
+  'Line-based edits must be specified in top-to-bottom order (ascending start_line).';
 
 export const input_schema = {
   type: 'object',
@@ -118,19 +149,36 @@ export const input_schema = {
     path: { type: 'string', description: 'File to update' },
     edits: {
       type: 'array',
-      description: 'Edit actions applied sequentially. File is unchanged if any action fails.',
+      description:
+        'Edit actions applied sequentially top-to-bottom. Prefer old_text for robustness — it is content-anchored and unaffected by prior edits in the same call. File is unchanged if any action fails.',
       items: {
         type: 'object',
         properties: {
           action: { type: 'string', enum: ['replace', 'insert', 'delete'], description: 'Action type' },
-          old_text: { type: 'string', description: '(replace/delete) Exact text to find — must appear exactly once' },
+          old_text: {
+            type: 'string',
+            description:
+              '(replace/delete) Exact text to find — must appear exactly once. Preferred over line numbers: content-anchored and unaffected by line shifting from other edits.',
+          },
           new_text: { type: 'string', description: '(replace) Replacement text' },
-          start_line: { type: 'number', description: '(replace/delete) Start line, 1-based' },
-          end_line: { type: 'number', description: '(replace/delete) End line, 1-based inclusive' },
+          start_line: {
+            type: 'number',
+            description:
+              '(replace/delete) Start line, 1-based, in the original file. Automatically adjusted for lines added/removed by earlier actions in this call.',
+          },
+          end_line: {
+            type: 'number',
+            description:
+              '(replace/delete) End line, 1-based inclusive, in the original file. Automatically adjusted for earlier actions in this call.',
+          },
           text: { type: 'string', description: '(insert) Text to insert' },
           position: { type: 'string', description: '(insert) "before" or "after" the anchor' },
           anchor_text: { type: 'string', description: '(insert) First line containing this string is the anchor' },
-          line: { type: 'number', description: '(insert) 1-based line number anchor' },
+          line: {
+            type: 'number',
+            description:
+              '(insert) 1-based line number anchor in the original file. Automatically adjusted for earlier actions in this call.',
+          },
         },
         required: ['action'],
       },
@@ -148,9 +196,24 @@ export const execute = async ({ path: filePath, edits }) => {
     .map((x) => x.replace(/ +$/, ''))
     .join('\n');
 
+  let lineOffset = 0;
+  let lastOriginalEndLine = -Infinity;
+
   for (let i = 0; i < edits.length; i++) {
     validateEdit(edits[i], i);
-    content = applyEdit(content, edits[i], i);
+
+    const edit = edits[i];
+    const origStart = edit.start_line ?? edit.line;
+    if (origStart !== undefined) {
+      if (origStart <= lastOriginalEndLine) {
+        throw new Error(`edit[${i}]: line-based edits must be ordered top-to-bottom in the original file`);
+      }
+      lastOriginalEndLine = edit.end_line ?? origStart;
+    }
+
+    const { content: newContent, delta } = applyEdit(content, edit, i, lineOffset);
+    content = newContent;
+    lineOffset += delta;
   }
 
   const temp = path.join(os.tmpdir(), `.oasdk-${Array.from(crypto.randomBytes(5), (x) => x.toString(36)).join('')}`);

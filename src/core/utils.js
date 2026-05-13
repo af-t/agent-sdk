@@ -269,6 +269,7 @@ export async function* loadTools(dirPath) {
         description: mod.description || mod.default?.description,
         input_schema: mod.input_schema || mod.default?.input_schema,
         execute: mod.execute || mod.default?.execute,
+        parallelSafe: mod.parallelSafe ?? mod.default?.parallelSafe ?? false,
       };
 
       if (!tool.name || !tool.input_schema || !tool.execute) {
@@ -281,4 +282,27 @@ export async function* loadTools(dirPath) {
       logger.error(`Failed to load tool from ${entry.name}: ${err.message}`);
     }
   }
+}
+
+// Group consecutive tool_calls with parallelSafe=true into runs.
+// Tools with parallelSafe=false each form their own run.
+// Returns an array of arrays; the inner arrays partition toolCalls in original order.
+export function groupToolCalls(toolCalls, registry) {
+  const groups = [];
+  let current = null;
+  for (const tc of toolCalls) {
+    const safe = registry.isParallelSafe(tc.function.name);
+    if (safe) {
+      if (current && current.safe) {
+        current.list.push(tc);
+      } else {
+        current = { safe: true, list: [tc] };
+        groups.push(current.list);
+      }
+    } else {
+      current = { safe: false, list: [tc] };
+      groups.push(current.list);
+    }
+  }
+  return groups;
 }

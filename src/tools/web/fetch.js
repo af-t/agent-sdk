@@ -132,7 +132,7 @@ export const input_schema = {
   required: ['url'],
 };
 
-export const execute = async ({ url, useRaw = false, limit = 20000 }) => {
+export const execute = async ({ url, useRaw = false, limit = 20000 }, ctx = {}) => {
   try {
     // Validate URL format (throws if invalid)
     new URL(url);
@@ -140,8 +140,14 @@ export const execute = async ({ url, useRaw = false, limit = 20000 }) => {
     // SSRF protection: block internal/private resources
     await checkSSRF(url);
 
+    if (ctx.signal?.aborted) throw new Error('Request aborted');
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), CONSTANTS.FETCH_TIMEOUT_MS);
+
+    if (ctx.signal) {
+      ctx.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
 
     // Redirect hardening: manual mode to re-check each step
     const res = await fetch(url, {

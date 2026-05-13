@@ -1,6 +1,7 @@
 import registry from '../../registry/skill.js';
 
 export const name = 'Skill';
+export const parallelSafe = false;
 export const description =
   'Reusable instruction sets for specialized tasks like code review, debugging, testing, architecture planning, strategy, and more.';
 

@@ -223,3 +223,43 @@ describe('find.js — injection resistance', () => {
     }
   });
 });
+
+describe('find.js — abort signal handling', () => {
+  const FIXTURES_ABORT = path.resolve('tests/fixtures/find-abort-dir');
+
+  before(async () => {
+    await fs.mkdir(path.join(FIXTURES_ABORT, 'sub'), { recursive: true });
+    await fs.writeFile(path.join(FIXTURES_ABORT, 'a.txt'), 'hello', 'utf8');
+    await fs.writeFile(path.join(FIXTURES_ABORT, 'sub', 'b.txt'), 'world', 'utf8');
+  });
+
+  after(async () => {
+    await fs.rm(FIXTURES_ABORT, { recursive: true, force: true });
+  });
+
+  it('rejects immediately when ctx.signal is pre-aborted (mode=name)', async () => {
+    const mod = await import('../../../src/tools/file/find.js');
+    const ac = new AbortController();
+    ac.abort();
+    await assert.rejects(
+      () => mod.execute({ path: FIXTURES_ABORT, pattern: '.', mode: 'name' }, { signal: ac.signal }),
+      /abort/i,
+    );
+  });
+
+  it('rejects immediately when ctx.signal is pre-aborted (mode=content)', async () => {
+    const mod = await import('../../../src/tools/file/find.js');
+    const ac = new AbortController();
+    ac.abort();
+    await assert.rejects(
+      () => mod.execute({ path: FIXTURES_ABORT, pattern: 'hello', mode: 'content' }, { signal: ac.signal }),
+      /abort/i,
+    );
+  });
+
+  it('runs normally when no ctx is provided', async () => {
+    const mod = await import('../../../src/tools/file/find.js');
+    const result = await mod.execute({ path: FIXTURES_ABORT, pattern: 'a\\.txt', mode: 'name' });
+    assert.ok(typeof result === 'string');
+  });
+});

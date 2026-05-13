@@ -250,6 +250,80 @@ describe('Delegate tool — execute()', () => {
     assert.ok(result2.includes('Subagent ID: mybot (reused)'));
   });
 
+  it('should short-circuit when signal is pre-aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const fakeAgent = {
+      apiKey: 'k',
+      model: 'm',
+      provider: {},
+      tools: {},
+      usage: { cost: 0, tokens: 0 },
+      subagents: new Map(),
+    };
+
+    await assert.rejects(
+      () => mod.execute({ description: 'd', prompt: 'p' }, { agent: fakeAgent, signal: controller.signal }),
+      /Delegate aborted/,
+    );
+
+    // Subagent should never have been created
+    assert.strictEqual(fakeAgent.subagents.size, 0);
+  });
+
+  it('should forward signal to subagent.run', async () => {
+    const controller = new AbortController();
+    let capturedOpts;
+
+    mock.method(Agent.prototype, 'run', async function (prompt, notify, opts) {
+      capturedOpts = opts;
+      return 'done';
+    });
+
+    const fakeAgent = {
+      apiKey: 'k',
+      model: 'm',
+      provider: {},
+      tools: {},
+      usage: { cost: 0, tokens: 0 },
+      subagents: new Map(),
+    };
+
+    await mod.execute({ description: 'd', prompt: 'p' }, { agent: fakeAgent, signal: controller.signal });
+
+    assert.ok(capturedOpts);
+    assert.strictEqual(capturedOpts.signal, controller.signal);
+  });
+
+  it('should reject when parent signal aborts mid-run', async () => {
+    const controller = new AbortController();
+
+    mock.method(Agent.prototype, 'run', async function (prompt, notify, opts) {
+      // Check signal mid-execution like real Agent.run() does
+      const signal = opts?.signal;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      controller.abort();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      if (signal?.aborted) throw new Error('Agent run aborted');
+      return 'should not reach';
+    });
+
+    const fakeAgent = {
+      apiKey: 'k',
+      model: 'm',
+      provider: {},
+      tools: {},
+      usage: { cost: 0, tokens: 0 },
+      subagents: new Map(),
+    };
+
+    await assert.rejects(
+      () => mod.execute({ description: 'd', prompt: 'p' }, { agent: fakeAgent, signal: controller.signal }),
+      /Delegation failed: Agent run aborted/,
+    );
+  });
+
   it('should only accumulate delta usage on reuse', async () => {
     mock.method(Agent.prototype, 'run', async function () {
       this.usage.cost += 0.01;

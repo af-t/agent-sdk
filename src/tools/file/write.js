@@ -5,6 +5,7 @@ import { ensureSafePath } from '../../core/utils.js';
 const MAX_WRITE_SIZE = 10 * 1024 * 1024; // 10MB limit to prevent disk exhaustion
 
 export const name = 'Write';
+export const parallelSafe = false;
 export const description =
   'Create a new file or completely overwrite an existing one with full content. This tool will automatically create any missing parent directories.';
 export const input_schema = {

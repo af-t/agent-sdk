@@ -14,6 +14,7 @@ function stripTags(str) {
 }
 
 export const name = 'WebSearch';
+export const parallelSafe = true;
 export const description =
   'Search the web. Uses Tavily when TAVILY_API_KEY is configured, otherwise falls back to DuckDuckGo. Use to find current information, research topics, or answer questions that require up-to-date web data. Returns results with snippets and source URLs.';
 export const input_schema = {
@@ -40,8 +41,9 @@ export const input_schema = {
   required: ['query'],
 };
 
-export async function ddgJsonSearch(query, maxResults) {
+export async function ddgJsonSearch(query, maxResults, signal) {
   const controller = new AbortController();
+  if (signal) signal.addEventListener('abort', () => controller.abort(), { once: true });
   const timer = setTimeout(() => controller.abort(), CONSTANTS.FETCH_TIMEOUT_MS);
 
   try {
@@ -73,8 +75,9 @@ export async function ddgJsonSearch(query, maxResults) {
   }
 }
 
-export async function ddgHtmlSearch(query, maxResults) {
+export async function ddgHtmlSearch(query, maxResults, signal) {
   const controller = new AbortController();
+  if (signal) signal.addEventListener('abort', () => controller.abort(), { once: true });
   const timer = setTimeout(() => controller.abort(), CONSTANTS.FETCH_TIMEOUT_MS);
 
   try {
@@ -115,14 +118,14 @@ export async function ddgHtmlSearch(query, maxResults) {
   }
 }
 
-export async function ddgSearch(query, maxResults) {
+export async function ddgSearch(query, maxResults, signal) {
   try {
-    const results = await ddgJsonSearch(query, maxResults);
+    const results = await ddgJsonSearch(query, maxResults, signal);
     if (results.length > 0) return results;
   } catch (err) {
     if (err.name === 'AbortError') throw err;
   }
-  return ddgHtmlSearch(query, maxResults);
+  return ddgHtmlSearch(query, maxResults, signal);
 }
 
 export function formatDdgResults(query, results) {
@@ -137,20 +140,18 @@ export function formatDdgResults(query, results) {
   return output.trim();
 }
 
-export const execute = async ({
-  query,
-  depth = 'basic',
-  maxResults = 5,
-  includeAnswer = false,
-  includeDomains,
-  excludeDomains,
-}) => {
+export const execute = async (
+  { query, depth = 'basic', maxResults = 5, includeAnswer = false, includeDomains, excludeDomains },
+  ctx = {},
+) => {
+  if (ctx.signal?.aborted) throw new Error('Request aborted');
+
   const apiKey = process.env.TAVILY_API_KEY;
 
   if (!apiKey) {
     const capped = Math.min(maxResults, 20);
     try {
-      const results = await ddgSearch(query, capped);
+      const results = await ddgSearch(query, capped, ctx.signal);
       return formatDdgResults(query, results);
     } catch (error) {
       if (error.name === 'AbortError') {
@@ -162,6 +163,9 @@ export const execute = async ({
 
   try {
     const controller = new AbortController();
+    if (ctx.signal) {
+      ctx.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
     const timeout = setTimeout(() => controller.abort(), CONSTANTS.FETCH_TIMEOUT_MS);
 
     const body = {

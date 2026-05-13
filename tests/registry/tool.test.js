@@ -391,4 +391,116 @@ describe('ToolRegistry', () => {
     assert.equal(registry.listTools().length, 2);
     assert.deepEqual(results.sort(), ['a', 'b']);
   });
+
+  it('default parallelSafe is false when not specified', () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 'ps_default',
+      description: 'd',
+      input_schema: {},
+      execute: async () => 'ok',
+    });
+    assert.equal(registry.isParallelSafe('ps_default'), false);
+  });
+
+  it('register accepts parallelSafe: true', () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 'ps_true',
+      description: 'd',
+      input_schema: {},
+      execute: async () => 'ok',
+      parallelSafe: true,
+    });
+    assert.equal(registry.isParallelSafe('ps_true'), true);
+  });
+
+  it('register rejects non-boolean parallelSafe with clear error', () => {
+    const registry = new ToolRegistry();
+    assert.throws(
+      () =>
+        registry.register({
+          name: 'bad',
+          description: 'd',
+          input_schema: {},
+          execute: async () => 'ok',
+          parallelSafe: 'yes',
+        }),
+      /parallelSafe must be boolean/,
+    );
+  });
+
+  it('isParallelSafe returns false for unknown tool', () => {
+    const registry = new ToolRegistry();
+    assert.equal(registry.isParallelSafe('ghost'), false);
+  });
+
+  it('hook context includes signal field', async () => {
+    const registry = new ToolRegistry();
+    let beforeCtx, afterCtx;
+    registry.onBeforeExecute(({ context }) => {
+      beforeCtx = context;
+    });
+    registry.onAfterExecute(({ context }) => {
+      afterCtx = context;
+    });
+    registry.register({ name: 't', description: 'd', input_schema: {}, execute: async () => 'r' });
+
+    const controller = new AbortController();
+    await registry.execute('t', {}, { signal: controller.signal });
+    assert.ok(beforeCtx.signal instanceof AbortSignal);
+    assert.ok(afterCtx.signal instanceof AbortSignal);
+  });
+
+  it('tool execute receives signal from context', async () => {
+    const registry = new ToolRegistry();
+    let toolSignal;
+    registry.register({
+      name: 't',
+      description: 'd',
+      input_schema: {},
+      execute: async (_input, ctx) => {
+        toolSignal = ctx.signal;
+        return 'ok';
+      },
+    });
+
+    const controller = new AbortController();
+    await registry.execute('t', {}, { signal: controller.signal });
+    assert.ok(toolSignal instanceof AbortSignal);
+  });
+
+  it('loadTools propagates parallelSafe from module exports', async () => {
+    const { loadTools } = await import('../../src/core/utils.js');
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const os = await import('node:os');
+
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tools-ps-'));
+    await fs.writeFile(
+      path.join(tmpDir, 'safe.js'),
+      `export const name = 'SafeTool';
+     export const description = 'd';
+     export const input_schema = { type: 'object', properties: {} };
+     export const execute = async () => 'ok';
+     export const parallelSafe = true;`,
+    );
+    await fs.writeFile(
+      path.join(tmpDir, 'unsafe.js'),
+      `export const name = 'UnsafeTool';
+     export const description = 'd';
+     export const input_schema = { type: 'object', properties: {} };
+     export const execute = async () => 'ok';`,
+    );
+
+    const registry = new ToolRegistry();
+    for await (const tool of loadTools(tmpDir)) {
+      registry.register(tool);
+    }
+
+    assert.equal(registry.isParallelSafe('SafeTool'), true);
+    assert.equal(registry.isParallelSafe('UnsafeTool'), false);
+
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
 });

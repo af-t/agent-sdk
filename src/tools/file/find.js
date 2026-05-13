@@ -4,6 +4,7 @@ import path from 'node:path';
 import { CONSTANTS, ensureSafePath } from '../../core/utils.js';
 
 export const name = 'Find';
+export const parallelSafe = true;
 export const description =
   'Search for files by name or content within a directory.  Prioritize using this tool over using commands like `find -iname` or `grep -R` for portability reasons.';
 export const input_schema = {
@@ -17,21 +18,40 @@ export const input_schema = {
 };
 
 // Spawn command, capture stdout. find/rg non-zero exits are ok.
-function spawnCommand(args) {
+function spawnCommand(args, signal) {
   return new Promise((resolve, reject) => {
     const output = [];
     const errOutput = [];
     const child = spawn(args[0], args.slice(1), { stdio: ['ignore', 'pipe', 'pipe'] });
+    let aborted = false;
+
+    const onAbort = () => {
+      aborted = true;
+      try {
+        child.kill('SIGTERM');
+      } catch {}
+    };
+
+    if (signal) {
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+    }
 
     child.stdout.on('data', (chunk) => output.push(chunk));
     child.stderr.on('data', (chunk) => errOutput.push(chunk));
-    child.on('error', (err) => reject(err));
+    child.on('error', (err) => {
+      if (signal) signal.removeEventListener('abort', onAbort);
+      reject(err);
+    });
     child.on('exit', (code) => {
+      if (signal) signal.removeEventListener('abort', onAbort);
+      if (aborted) {
+        reject(new Error('Find aborted'));
+        return;
+      }
       const out = Buffer.concat(output).toString();
       const err = Buffer.concat(errOutput).toString();
 
-      // find: non-zero on permission errors — partial results still valid
-      // rg: exit code 1 = no matches (not an error), exit code 2 = actual error
       const isPartialSuccess = (args[0] === 'find' && out.length > 0) || (args[0] === 'rg' && code === 1);
 
       if (code === 0 || isPartialSuccess) {
@@ -54,7 +74,7 @@ function commandAvailable(cmd) {
 
 // Native fallback: recursive Node.js walk
 
-async function nativeSearch({ absPath, pattern, mode, cwd }) {
+async function nativeSearch({ absPath, pattern, mode, cwd, signal }) {
   const regex = new RegExp(pattern, 'i');
   const matches = [];
   const searchRootPrefix = absPath.endsWith(path.sep) ? absPath : absPath + path.sep;
@@ -68,14 +88,16 @@ async function nativeSearch({ absPath, pattern, mode, cwd }) {
   }
 
   const walk = async (currentDir) => {
+    if (signal?.aborted) throw new Error('Find aborted');
     let entries;
     try {
       entries = await fs.readdir(currentDir, { withFileTypes: true });
     } catch {
-      return; // permission denied — skip directory
+      return;
     }
 
     for (const entry of entries) {
+      if (signal?.aborted) throw new Error('Find aborted');
       const fullPath = path.join(currentDir, entry.name);
 
       if (mode === 'name') {
@@ -119,7 +141,7 @@ async function nativeSearch({ absPath, pattern, mode, cwd }) {
 
 // Shell-accelerated search
 
-function shellFindByRegex(absPath, pattern, cwd) {
+function shellFindByRegex(absPath, pattern, cwd, signal) {
   const searchRootPrefix = absPath.endsWith(path.sep) ? absPath : absPath + path.sep;
   const subdirPrefix = path.relative(cwd, absPath);
   const isSubdir = subdirPrefix && subdirPrefix !== '.';
@@ -131,7 +153,7 @@ function shellFindByRegex(absPath, pattern, cwd) {
     return rel;
   }
 
-  return spawnCommand(['find', absPath, '-type', 'f']).then((output) => {
+  return spawnCommand(['find', absPath, '-type', 'f'], signal).then((output) => {
     const files = output
       .split('\n')
       .filter(Boolean)
@@ -142,7 +164,7 @@ function shellFindByRegex(absPath, pattern, cwd) {
   });
 }
 
-function shellRgSearch(absPath, pattern, cwd) {
+function shellRgSearch(absPath, pattern, cwd, signal) {
   const searchRootPrefix = absPath.endsWith(path.sep) ? absPath : absPath + path.sep;
   const subdirPrefix = path.relative(cwd, absPath);
   const isSubdir = subdirPrefix && subdirPrefix !== '.';
@@ -153,18 +175,21 @@ function shellRgSearch(absPath, pattern, cwd) {
     return rel;
   }
 
-  return spawnCommand([
-    'rg',
-    '-n',
-    '--no-heading',
-    '-i',
-    '--max-filesize',
-    String(CONSTANTS.MAX_FILE_SIZE_SEARCH),
-    '--max-columns',
-    '100',
-    pattern,
-    absPath,
-  ]).then((output) => {
+  return spawnCommand(
+    [
+      'rg',
+      '-n',
+      '--no-heading',
+      '-i',
+      '--max-filesize',
+      String(CONSTANTS.MAX_FILE_SIZE_SEARCH),
+      '--max-columns',
+      '100',
+      pattern,
+      absPath,
+    ],
+    signal,
+  ).then((output) => {
     if (!output.trim()) return 'No matches found.';
 
     const lines = output.trim().split('\n');
@@ -182,34 +207,33 @@ function shellRgSearch(absPath, pattern, cwd) {
 
 // Main execute
 
-export const execute = async ({ path: dirPath = '.', pattern, mode }) => {
-  try {
-    const absPath = ensureSafePath(dirPath);
-    const cwd = process.cwd();
+export const execute = async ({ path: dirPath = '.', pattern, mode }, ctx = {}) => {
+  const signal = ctx.signal;
 
-    // Validate regex early
-    try {
-      new RegExp(pattern, 'i');
-    } catch {
-      throw new Error(`Invalid regex pattern: ${pattern}`);
-    }
-
-    // Prefer shell tools for speed; fall back to native walk
-    if (mode === 'name') {
-      const hasFind = await commandAvailable('find');
-      if (hasFind) {
-        return await shellFindByRegex(absPath, pattern, cwd);
-      }
-    } else if (mode === 'content') {
-      const hasRg = await commandAvailable('rg');
-      if (hasRg) {
-        return await shellRgSearch(absPath, pattern, cwd);
-      }
-    }
-
-    // Native fallback
-    return await nativeSearch({ absPath, pattern, mode, cwd });
-  } catch (error) {
-    throw error;
+  if (signal?.aborted) {
+    throw new Error('Find aborted before start');
   }
+
+  const absPath = ensureSafePath(dirPath);
+  const cwd = process.cwd();
+
+  try {
+    new RegExp(pattern, 'i');
+  } catch {
+    throw new Error(`Invalid regex pattern: ${pattern}`);
+  }
+
+  if (mode === 'name') {
+    const hasFind = await commandAvailable('find');
+    if (hasFind) {
+      return await shellFindByRegex(absPath, pattern, cwd, signal);
+    }
+  } else if (mode === 'content') {
+    const hasRg = await commandAvailable('rg');
+    if (hasRg) {
+      return await shellRgSearch(absPath, pattern, cwd, signal);
+    }
+  }
+
+  return await nativeSearch({ absPath, pattern, mode, cwd, signal });
 };

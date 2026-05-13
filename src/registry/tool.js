@@ -71,11 +71,16 @@ export class ToolRegistry {
     return tools;
   }
 
-  register({ name, description, input_schema, execute }) {
+  register({ name, description, input_schema, execute, parallelSafe = false }) {
     if (name == null || typeof name !== 'string') throw Error('Tool must have a name');
     if (description == null || typeof description !== 'string') throw Error('Tool must have a description');
     if (typeof execute !== 'function') throw Error('Tool must have an execute function');
-    this.#tools.set(name, { description, input_schema, execute });
+    if (typeof parallelSafe !== 'boolean') throw Error(`Tool '${name}': parallelSafe must be boolean`);
+    this.#tools.set(name, { description, input_schema, execute, parallelSafe });
+  }
+
+  isParallelSafe(name) {
+    return this.#tools.get(name)?.parallelSafe ?? false;
   }
 
   unregister(name) {
@@ -92,9 +97,12 @@ export class ToolRegistry {
     const tool = this.#tools.get(name);
     if (!tool) throw new Error(`Tool ${name} not found`);
 
+    // Ensure ctx.signal is always defined so tool code can rely on it
+    const ctx = { ...context, signal: context?.signal ?? new AbortController().signal };
+
     // Run before-execute hooks (can throw to abort)
     for (const hook of this.#hooks.beforeExecute) {
-      await hook({ name, input, context });
+      await hook({ name, input, context: ctx });
     }
 
     // Validate input against schema
@@ -134,19 +142,19 @@ export class ToolRegistry {
     }
 
     const { output_limit, ...cleanInput } = input;
-    const limit = output_limit ?? context?.agent?.maxToolOutputChars ?? CONSTANTS.MAX_TOOL_OUTPUT;
+    const limit = output_limit ?? ctx?.agent?.maxToolOutputChars ?? CONSTANTS.MAX_TOOL_OUTPUT;
 
-    const result = await tool.execute(cleanInput, context);
+    const result = await tool.execute(cleanInput, ctx);
 
     // Run after-execute hooks (can throw to signal problems)
     for (const hook of this.#hooks.afterExecute) {
-      await hook({ name, input, context, result });
+      await hook({ name, input, context: ctx, result });
     }
 
     return truncateOutput(result, limit);
   }
 
-  async connectMcpServer({ name, command, args, env }) {
+  async connectMcpServer({ name, command, args, env, parallelSafe = false }) {
     const client = new McpClientWrapper({ command, args, env });
     const remoteTools = await client.connectAndGetTools();
 
@@ -157,6 +165,7 @@ export class ToolRegistry {
         name: toolName,
         description: remoteTool.description || `Tool ${remoteTool.name} from ${name}`,
         input_schema: remoteTool.inputSchema || { type: 'object', properties: {} },
+        parallelSafe,
         execute: async (input) => {
           const result = await client.executeTool(remoteTool.name, input);
           if (result.isError) {

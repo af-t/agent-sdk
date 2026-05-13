@@ -94,17 +94,37 @@ function hasSuspiciousPattern(command) {
   return null;
 }
 
+const SIGKILL_GRACE_MS = 2000;
+
 // spawn fallback (used when node-pty is unavailable)
 
-function runWithSpawn(command, cwd, env, timeout) {
+function runWithSpawn(command, cwd, env, timeout, signal) {
   return new Promise((resolve, reject) => {
-    // Redirect stderr (2) to stdout (1) via stdio option
     const child = spawn('bash', ['-c', 'exec 2>&1; ' + command], {
       cwd,
       env,
       timeout,
     });
     let output = '';
+    let aborted = false;
+    let killTimer;
+
+    const onAbort = () => {
+      aborted = true;
+      try {
+        child.kill('SIGTERM');
+      } catch {}
+      killTimer = setTimeout(() => {
+        try {
+          child.kill('SIGKILL');
+        } catch {}
+      }, SIGKILL_GRACE_MS);
+    };
+
+    if (signal) {
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+    }
 
     child.stdout.on('data', (data) => {
       output += data;
@@ -117,6 +137,12 @@ function runWithSpawn(command, cwd, env, timeout) {
 
     child.on('exit', (code) => {
       clearTimeout(timer);
+      clearTimeout(killTimer);
+      if (signal) signal.removeEventListener('abort', onAbort);
+      if (aborted) {
+        reject(new Error(`Bash execution aborted\n\nPartial Output:\n${output}`));
+        return;
+      }
       if (code !== 0) {
         const msg = output
           ? `Process exited with code ${code}\n\nOutput:\n${output}`
@@ -129,6 +155,8 @@ function runWithSpawn(command, cwd, env, timeout) {
 
     child.on('error', (err) => {
       clearTimeout(timer);
+      clearTimeout(killTimer);
+      if (signal) signal.removeEventListener('abort', onAbort);
       reject(err);
     });
   });
@@ -136,7 +164,7 @@ function runWithSpawn(command, cwd, env, timeout) {
 
 // PTY mode (primary, uses node-pty)
 
-function runWithPty(command, cwd, env, timeout) {
+function runWithPty(command, cwd, env, timeout, signal) {
   return new Promise((resolve, reject) => {
     let ptyProcess;
     try {
@@ -153,6 +181,26 @@ function runWithPty(command, cwd, env, timeout) {
     }
 
     let output = '';
+    let aborted = false;
+    let killTimer;
+
+    const onAbort = () => {
+      aborted = true;
+      try {
+        ptyProcess.kill('SIGTERM');
+      } catch {}
+      killTimer = setTimeout(() => {
+        try {
+          ptyProcess.kill('SIGKILL');
+        } catch {}
+      }, SIGKILL_GRACE_MS);
+    };
+
+    if (signal) {
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+    }
+
     const timer = setTimeout(() => {
       ptyProcess.kill();
       reject(new Error(`Execution timed out after ${timeout}ms\n\nPartial Output:\n${output}`));
@@ -162,12 +210,18 @@ function runWithPty(command, cwd, env, timeout) {
       output += data;
     });
 
-    ptyProcess.onExit(({ exitCode, signal }) => {
+    ptyProcess.onExit(({ exitCode, signal: exitSignal }) => {
       clearTimeout(timer);
+      clearTimeout(killTimer);
+      if (signal) signal.removeEventListener('abort', onAbort);
+      if (aborted) {
+        reject(new Error(`Bash execution aborted\n\nPartial Output:\n${output}`));
+        return;
+      }
       if (exitCode !== 0) {
         const msg = output
-          ? `Process exited with code ${exitCode}${signal ? ' (signal ' + signal + ')' : ''}\n\nOutput:\n${output}`
-          : `Process exited with code ${exitCode}${signal ? ' and signal ' + signal : ''}`;
+          ? `Process exited with code ${exitCode}${exitSignal ? ' (signal ' + exitSignal + ')' : ''}\n\nOutput:\n${output}`
+          : `Process exited with code ${exitCode}${exitSignal ? ' and signal ' + exitSignal : ''}`;
         reject(new Error(msg));
       } else {
         resolve(output);
@@ -177,6 +231,7 @@ function runWithPty(command, cwd, env, timeout) {
 }
 
 export const name = 'Bash';
+export const parallelSafe = false;
 export const description =
   'Execute a shell command. Use this for system operations that do not have a specialized tool, such as running tests, performing builds, or using complex CLI utilities.';
 export const input_schema = {
@@ -190,8 +245,13 @@ export const input_schema = {
   required: ['command'],
 };
 
-export const execute = async ({ command, cwd = process.cwd(), env = process.env, timeout = 300000 }) => {
-  // Check for blocked commands
+export const execute = async ({ command, cwd = process.cwd(), env = process.env, timeout = 300000 }, ctx = {}) => {
+  const signal = ctx.signal;
+
+  if (signal?.aborted) {
+    throw new Error('Bash execution aborted before start');
+  }
+
   const blocked = isBlocked(command);
   if (blocked) {
     throw new Error(
@@ -199,13 +259,11 @@ export const execute = async ({ command, cwd = process.cwd(), env = process.env,
     );
   }
 
-  // Warn about suspicious patterns
   const suspicious = hasSuspiciousPattern(command);
   if (suspicious) {
     logger.warn(`Suspicious command pattern detected: ${suspicious}. Proceeding but this may be unsafe.`);
   }
 
-  // Sanitize environment
   const safeEnv = {};
   for (const key of SAFE_ENV_KEYS) {
     if (key in process.env) safeEnv[key] = process.env[key];
@@ -214,13 +272,12 @@ export const execute = async ({ command, cwd = process.cwd(), env = process.env,
     Object.assign(safeEnv, stripSecrets(env));
   }
 
-  // Try PTY first, fall back to spawn if node-pty unavailable
   const ptyMod = await getPty();
   if (ptyMod) {
     _ptyModule = ptyMod;
-    return runWithPty(command, cwd, safeEnv, timeout);
+    return runWithPty(command, cwd, safeEnv, timeout, signal);
   }
 
   logger.debug('node-pty unavailable, falling back to spawn');
-  return runWithSpawn(command, cwd, safeEnv, timeout);
+  return runWithSpawn(command, cwd, safeEnv, timeout, signal);
 };

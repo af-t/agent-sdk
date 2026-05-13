@@ -3,6 +3,7 @@ import { CONSTANTS } from '../../core/utils.js';
 import logger from '../../core/logger.js';
 
 export const name = 'Delegate';
+export const parallelSafe = false;
 export const description =
   'Delegate a specific task to a specialized sub-agent. Use this for complex research, repetitive operations, or tasks with high-volume output to keep the main session history clean.';
 export const input_schema = {
@@ -24,7 +25,11 @@ export const input_schema = {
   required: ['prompt', 'description'],
 };
 
-export const execute = async ({ description, prompt, persona, id }, { agent }) => {
+export const execute = async ({ description, prompt, persona, id }, { agent, signal }) => {
+  if (signal?.aborted) {
+    throw new Error('Delegate aborted');
+  }
+
   const depth = (agent._delegateDepth || 0) + 1;
   const MAX_DELEGATE_DEPTH = 3;
   if (depth > MAX_DELEGATE_DEPTH) {
@@ -63,7 +68,7 @@ export const execute = async ({ description, prompt, persona, id }, { agent }) =
     const msgsBefore = subagent.messages.length;
     const startTime = Date.now();
 
-    const report = await subagent.run(prompt);
+    const report = await subagent.run(prompt, null, { signal });
 
     const elapsed = Date.now() - startTime;
     const toolCalls = subagent.messages.slice(msgsBefore).filter((m) => m.role === 'tool').length;

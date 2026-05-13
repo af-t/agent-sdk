@@ -317,6 +317,72 @@ describe('Edit — multi-action and edge cases', () => {
   it('throws when edits array is empty', async () => {
     await assert.rejects(() => execute({ path: TEST_FILE, edits: [] }), /edits must not be empty/);
   });
+
+  it('multi-edit: line-based delete then line-based replace targets correct original line', async () => {
+    // Deleting lines 1-2 shifts the file by -2. original line 4 must land at
+    // adjusted position 2 in the mutated content.
+    await execute({
+      path: TEST_FILE,
+      edits: [
+        { action: 'delete', start_line: 1, end_line: 2 },
+        { action: 'replace', start_line: 4, end_line: 4, new_text: 'REPLACED' },
+      ],
+    });
+    const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');
+    assert.equal(lines[0], 'Line three: baz qux');
+    assert.equal(lines[1], 'REPLACED');
+    assert.equal(lines[2], 'Line five: dolor sit amet');
+    assert.equal(lines.length, 3);
+  });
+
+  it('multi-edit: line-based insert then line-based replace targets correct original line', async () => {
+    // Inserting after line 2 shifts the file by +1. original line 4 must land
+    // at adjusted position 5 in the mutated content.
+    await execute({
+      path: TEST_FILE,
+      edits: [
+        { action: 'insert', line: 2, position: 'after', text: 'INSERTED' },
+        { action: 'replace', start_line: 4, end_line: 4, new_text: 'REPLACED' },
+      ],
+    });
+    const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');
+    assert.equal(lines[0], 'Line one: hello world');
+    assert.equal(lines[1], 'Line two: foo bar');
+    assert.equal(lines[2], 'INSERTED');
+    assert.equal(lines[3], 'Line three: baz qux');
+    assert.equal(lines[4], 'REPLACED');
+    assert.equal(lines[5], 'Line five: dolor sit amet');
+    assert.equal(lines.length, 6);
+  });
+
+  it('multi-edit: old_text replace then line-based replace — zero delta keeps line numbers intact', async () => {
+    // old_text replace on "foo bar" → "FOO BAR": same line count, delta=0.
+    // Subsequent line-based replace at original line 4 must not be shifted.
+    await execute({
+      path: TEST_FILE,
+      edits: [
+        { action: 'replace', old_text: 'foo bar', new_text: 'FOO BAR' },
+        { action: 'replace', start_line: 4, end_line: 4, new_text: 'REPLACED' },
+      ],
+    });
+    const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');
+    assert.ok(lines[1].includes('FOO BAR'), 'line 2 should contain replaced text');
+    assert.equal(lines[3], 'REPLACED');
+  });
+
+  it('throws when line-based edits are specified out of order', async () => {
+    await assert.rejects(
+      () =>
+        execute({
+          path: TEST_FILE,
+          edits: [
+            { action: 'replace', start_line: 4, end_line: 4, new_text: 'X' },
+            { action: 'delete', start_line: 2, end_line: 2 },
+          ],
+        }),
+      /edit\[1\]: line-based edits must be ordered top-to-bottom/,
+    );
+  });
 });
 
 describe('Edit — shell metacharacter path resistance', () => {
@@ -396,5 +462,59 @@ describe('Edit — shell metacharacter path resistance', () => {
     } finally {
       await fs.rm(filePath, { force: true });
     }
+  });
+});
+
+describe('Edit — error message quality', () => {
+  let execute;
+  before(async () => {
+    await fs.mkdir(FIXTURES, { recursive: true });
+    await reset();
+    execute = (await import('../../../src/tools/file/edit.js')).execute;
+  });
+  after(() => fs.rm(TEST_FILE, { force: true }));
+  beforeEach(reset);
+
+  it('not-found error includes snippet of searched text', async () => {
+    await assert.rejects(
+      () => execute({ path: TEST_FILE, edits: [{ action: 'replace', old_text: 'NOTEXIST', new_text: 'x' }] }),
+      /Searched for: "NOTEXIST"/,
+    );
+  });
+
+  it('not-found error includes whitespace tip', async () => {
+    await assert.rejects(
+      () => execute({ path: TEST_FILE, edits: [{ action: 'replace', old_text: 'NOTEXIST', new_text: 'x' }] }),
+      /Tip: check for trailing whitespace/,
+    );
+  });
+
+  it('truncates old_text to 60 chars with ellipsis in not-found error', async () => {
+    const longText = 'A'.repeat(80);
+    let caught;
+    try {
+      await execute({ path: TEST_FILE, edits: [{ action: 'replace', old_text: longText, new_text: 'x' }] });
+    } catch (e) {
+      caught = e;
+    }
+    assert.ok(caught, 'expected error to be thrown');
+    const match = caught.message.match(/Searched for: "([^"]+)"/);
+    assert.ok(match, 'expected snippet in error message');
+    assert.equal(match[1], 'A'.repeat(60) + '…');
+  });
+
+  it('multiple-times error includes snippet', async () => {
+    await fs.writeFile(TEST_FILE, 'dup\ndup\nother', 'utf8');
+    await assert.rejects(
+      () => execute({ path: TEST_FILE, edits: [{ action: 'replace', old_text: 'dup', new_text: 'x' }] }),
+      /Searched for: "dup"/,
+    );
+  });
+
+  it('delete not-found error includes snippet and tip', async () => {
+    await assert.rejects(
+      () => execute({ path: TEST_FILE, edits: [{ action: 'delete', old_text: 'NOTEXIST' }] }),
+      /Searched for: "NOTEXIST"/,
+    );
   });
 });

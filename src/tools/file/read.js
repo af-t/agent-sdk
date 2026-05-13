@@ -4,6 +4,7 @@ import { ensureSafePath } from '../../core/utils.js';
 const MAX_READ_SIZE = 10 * 1024 * 1024; // 10MB
 
 export const name = 'Read';
+export const parallelSafe = true;
 export const description =
   'Read the contents of a file with pagination and line numbers. Use pagination (start_line/end_line) for large files to avoid context overflow and ensure efficient reading.';
 export const input_schema = {

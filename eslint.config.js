@@ -27,6 +27,7 @@ export default [
         TextEncoder: 'readonly',
         TextDecoder: 'readonly',
         ReadableStream: 'readonly',
+        AbortSignal: 'readonly',
       },
     },
   },
