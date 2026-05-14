@@ -46,7 +46,7 @@ Minimal SDK for building AI agents connected to the [OpenRouter API](https://ope
    ├── push user message to message history
    |
    ├── LOOP:
-   |   ├── _send() ──> POST to OpenRouter /v1/chat/completions
+   |   ├── #send() ──> POST to OpenRouter /v1/chat/completions
    |   |
    |   ├── [response contains tool_calls?]
    |   |   YES ──> for each tool_call:
@@ -81,11 +81,7 @@ Simplified diagram:
 
 ## Installation
 
-```bash
-npm install openrouter
-```
-
-Or clone directly from the repository:
+Clone directly from the repository:
 
 ```bash
 git clone git@github.com:af-t/openrouter.git
@@ -115,7 +111,7 @@ cp .env.example .env
 ## Basic Usage
 
 ```javascript
-import createAgent from 'openrouter';
+import createAgent from './src/index.js';
 
 // Create agent with default config (from .env)
 const agent = await createAgent();
@@ -175,7 +171,7 @@ agent.messages = [];
 You can add your own tools at any point:
 
 ```javascript
-import createAgent from 'openrouter';
+import createAgent from './src/index.js';
 
 const agent = await createAgent();
 
@@ -222,8 +218,8 @@ Be concise and provide runnable code examples.
 ### 3. Use the Bare Agent Class
 
 ```javascript
-import Agent from 'openrouter/src/core/agent.js';
-import { ToolRegistry } from 'openrouter/src/registry/tool.js';
+import Agent from './src/core/agent.js';
+import { ToolRegistry } from './src/registry/tool.js';
 
 const tools = new ToolRegistry();
 tools.register(myCustomTool);
@@ -325,6 +321,7 @@ openrouter/
 │   │   └── skill.js       # SkillRegistry — discover & load SKILL.md
 │   └── tools/
 │       ├── file/          # Read, Write, Edit, Find, List
+│       ├── general/       # Todo
 │       ├── system/        # Bash, Delegate, Skill
 │       └── web/           # Search (Tavily), Fetch
 ├── CONTRIBUTING.md        # Contribution guidelines
