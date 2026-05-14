@@ -13,6 +13,8 @@ Minimal SDK for building AI agents connected to the [OpenRouter API](https://ope
 - [Available Tools](#available-tools)
 - [MCP Server](#mcp-server)
 - [Skill System](#skill-system)
+- [Context Injection Layer](#context-injection-layer)
+- [Persistent Memory](#persistent-memory)
 - [Project Structure](#project-structure)
 - [API Reference](#api-reference)
 - [Contributing](#contributing)
@@ -249,19 +251,19 @@ await agent.tools.connectMcpServer({
 
 ## Available Tools
 
-| Tool        | Category | Description                                                 |
-| ----------- | -------- | ----------------------------------------------------------- |
-| `Read`      | File     | Read file contents with pagination & line numbers           |
-| `Write`     | File     | Write a new file (overwrite)                                |
-| `Edit`      | File     | Edit a file with find-and-replace                           |
-| `Find`      | File     | Search for files by name or content                         |
-| `List`      | File     | List directory contents (ls alternative)                    |
+| Tool        | Category | Description                                                       |
+| ----------- | -------- | ----------------------------------------------------------------- |
+| `Read`      | File     | Read file contents with pagination & line numbers                 |
+| `Write`     | File     | Write a new file (overwrite)                                      |
+| `Edit`      | File     | Edit a file with find-and-replace                                 |
+| `Find`      | File     | Search for files by name or content                               |
+| `List`      | File     | List directory contents (ls alternative)                          |
 | `Todo`      | General  | Manage a todo list (add, list, complete, delete) with persistence |
-| `Bash`      | System   | Execute shell commands (pty with fallback to child_process) |
-| `Delegate`  | System   | Delegate tasks to a sub-agent                               |
-| `Skill`     | System   | Manage and load skills                                      |
-| `WebSearch` | Web      | Web search via Tavily API                                   |
-| `WebFetch`  | Web      | Extract content from URLs                                   |
+| `Bash`      | System   | Execute shell commands (pty with fallback to child_process)       |
+| `Delegate`  | System   | Delegate tasks to a sub-agent                                     |
+| `Skill`     | System   | Manage and load skills                                            |
+| `WebSearch` | Web      | Web search via Tavily API                                         |
+| `WebFetch`  | Web      | Extract content from URLs                                         |
 
 ## MCP Server
 
@@ -303,6 +305,133 @@ The SDK has a discovery system for skills based on `SKILL.md` files. Skills are 
 
 Each SKILL.md contains YAML frontmatter (name, description, etc.) and a markdown body.
 
+## Context Injection Layer
+
+Beyond the system prompt and message history, the agent exposes a **third tier** of context: short fragments injected into the last user message right before each request. This lets you ship dynamic, situational information (current date, loaded files, memory index, custom hints) without polluting the system prompt or rewriting message history.
+
+The injection layer is organised as three tiers:
+
+1. **System prompt** — stable instructions resolved once at construction (`systemPrompt` option or `RULE.md`).
+2. **First-turn injectors** — run once on the first `run()` after `reset()` or construction. Used for one-shot context like loaded files, skill catalogues, memory index.
+3. **Per-turn injectors** — run on every request. Used for live signals like the current timestamp.
+
+The combined output of both scopes is joined with `\n\n`, wrapped in a single `<system-reminder>...</system-reminder>` block, and inserted as a new text part immediately before the trailing content part of the last user message. The trailing part keeps its `cache_control: ephemeral` marker, so reminders do not break prompt caching.
+
+### Builtin Injectors
+
+| Name           | Scope      | What it injects                                                                         |
+| -------------- | ---------- | --------------------------------------------------------------------------------------- |
+| `date`         | per-turn   | `Current date: YYYY-MM-DD HH:MM UTC`                                                    |
+| `contextFiles` | first-turn | Concatenated contents of files listed in `contextFiles` option (defaults to `AGENT.md`) |
+| `memoryIndex`  | first-turn | Contents of `<memoryDir>/MEMORY.md`, if present                                         |
+| `memoryHint`   | first-turn | Brief description of the memory directory and the available memory types                |
+| `skillList`    | first-turn | Name + truncated description of every discovered skill                                  |
+
+Disable any builtin individually via the `injectors` option:
+
+```javascript
+const agent = await createAgent({
+  injectors: { date: false, skillList: false },
+});
+```
+
+### Registering Custom Injectors
+
+```javascript
+import os from 'node:os';
+
+const agent = await createAgent();
+
+agent.registerInjector({
+  name: 'host',
+  scope: 'per-turn',
+  fn: () => `Hostname: ${os.hostname()}, load: ${os.loadavg()[0].toFixed(2)}`,
+});
+
+// Remove later if you no longer want it
+agent.unregisterInjector('host');
+```
+
+An injector function receives `{ messages, usage, turn }` and returns a `string` (sync or via `Promise`). Return `''` to skip the injector for that turn — the wrapper omits empty fragments entirely.
+
+### Mutating the Outgoing Request
+
+For lower-level access, register a `before-request` hook to inspect or mutate the final payload after injectors have been applied:
+
+```javascript
+agent.onBeforeRequest((payload) => {
+  payload.metadata = { traceId: crypto.randomUUID() };
+});
+```
+
+The hook returns a disposer. Hooks run in registration order and may be async.
+
+## Persistent Memory
+
+The SDK ships a file-based memory protocol that lets the agent persist knowledge across sessions. There are **no dedicated memory tools** — the LLM reads, writes, and edits memory files using the standard `Read`, `Write`, and `Edit` tools, guided by the `using-memory` skill and the first-turn memory injectors.
+
+### File Layout
+
+```
+<cwd>/.openrouter/memory/
+├── MEMORY.md                       # Index — one line per memory
+├── feedback-prefers-pnpm.md        # Individual memory file
+├── project-deadline-q3.md
+└── ...
+```
+
+The directory is **not auto-created**. The agent (or you) creates files on demand. Override the location via the `memoryDir` constructor option.
+
+### File Format
+
+Each memory file is a markdown document with simple frontmatter:
+
+```markdown
+---
+name: feedback-prefers-pnpm
+description: User prefers pnpm over npm for this project.
+metadata:
+  type: feedback
+---
+
+# Prefers pnpm
+
+The user explicitly asked to use pnpm for installs in this repo. Honour it for any onboarding or scripted setup instructions.
+```
+
+- `name` — kebab-case slug matching the filename (without `.md`).
+- `description` — one-line summary; used by the LLM to scan for relevance.
+- `metadata.type` — one of the registered memory types (see below).
+
+`MEMORY.md` is a flat index listing each memory as `- [[slug]] — short description`. The agent updates it whenever it adds, renames, or deletes a memory.
+
+### Memory Types
+
+Four types ship by default and describe what each category is for:
+
+| Type        | Purpose                                                                            |
+| ----------- | ---------------------------------------------------------------------------------- |
+| `user`      | Information about the user — role, goals, preferences.                             |
+| `feedback`  | Guidance the user gave about how to approach work.                                 |
+| `project`   | Ongoing work context, decisions, deadlines that aren't derivable from code or git. |
+| `reference` | Pointers to external systems — dashboards, tracker projects, channels.             |
+
+Extend or override via `memoryTypes`:
+
+```javascript
+const agent = await createAgent({
+  memoryTypes: {
+    incident: 'Post-mortem notes and action items from production incidents.',
+  },
+});
+```
+
+Custom keys are merged on top of the built-in defaults.
+
+### Protocol
+
+The `using-memory` builtin skill (see `src/skills/using-memory/SKILL.md`) covers the full protocol: when to save, when not to save, file naming, index conventions, and stale-memory handling. The LLM loads it on demand via the `Skill` tool when it decides memory is relevant.
+
 ## Project Structure
 
 ```
@@ -336,12 +465,21 @@ openrouter/
 
 Factory function to create an Agent instance.
 
-| Option   | Type     | Description                         |
-| -------- | -------- | ----------------------------------- |
-| `apiKey` | string   | OpenRouter API key (overrides .env) |
-| `model`  | string   | Model identifier                    |
-| `order`  | string[] | Provider routing order              |
-| `only`   | string[] | Restrict to specific providers      |
+| Option               | Type     | Description                                                                           |
+| -------------------- | -------- | ------------------------------------------------------------------------------------- |
+| `apiKey`             | string   | OpenRouter API key (overrides `.env`).                                                |
+| `model`              | string   | Model identifier.                                                                     |
+| `order`              | string[] | Provider routing order.                                                               |
+| `only`               | string[] | Restrict to specific providers.                                                       |
+| `systemPrompt`       | string   | System prompt override. Falls back to `RULE.md`, then a built-in default.             |
+| `maxTurns`           | number   | Max request cycles per `run()`. Default `25`; `0` means unlimited.                    |
+| `maxTokens`          | number   | Maximum output tokens per request.                                                    |
+| `effort`             | string   | Reasoning effort: `'low'`, `'medium'`, `'high'`. Default `'high'`.                    |
+| `maxToolOutputChars` | number   | Cap (in chars) for tool output before truncation. Default `50_000`.                   |
+| `contextFiles`       | string[] | Files to inject on the first turn. Default `['AGENT.md']`. Missing files are skipped. |
+| `memoryDir`          | string   | Memory directory (relative to cwd). Default `.openrouter/memory`.                     |
+| `memoryTypes`        | object   | Custom memory type descriptions; merged over the four built-in types.                 |
+| `injectors`          | object   | Disable built-in injectors by name, e.g. `{ date: false, skillList: false }`.         |
 
 ### `agent.run(prompt, notify?, options?)`
 
@@ -361,6 +499,16 @@ Factory function to create an Agent instance.
 | `tools`        | ToolRegistry | Registry of registered tools       |
 | `usage`        | object       | `{ cost: number, tokens: number }` |
 | `systemPrompt` | string       | System prompt (can be overridden)  |
+
+### Agent Methods
+
+| Method                                  | Description                                                             |
+| --------------------------------------- | ----------------------------------------------------------------------- |
+| `use(tool \| tool[])`                   | Register one or more tools after construction.                          |
+| `reset()`                               | Clear messages and reset accumulated usage.                             |
+| `registerInjector({ name, scope, fn })` | Register a context injector. `scope` is `'first-turn'` or `'per-turn'`. |
+| `unregisterInjector(name)`              | Remove a previously registered injector by name.                        |
+| `onBeforeRequest(fn)`                   | Hook the outgoing payload. Returns a disposer.                          |
 
 ### ToolRegistry
 

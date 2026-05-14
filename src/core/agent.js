@@ -1,21 +1,26 @@
-import { withRetry, getDirname, CONSTANTS, groupToolCalls } from './utils.js';
+import { withRetry, getDirname, CONSTANTS, groupToolCalls, ensureSafePath } from './utils.js';
 import { ToolRegistry } from '../registry/tool.js';
 import { ApiError, ConfigError } from './errors.js';
 import logger from './logger.js';
 import config from '../config.js';
+import skillRegistry from '../registry/skill.js';
 import crypto from 'node:crypto';
 import os from 'node:os';
 import fs from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const __dirname = getDirname(import.meta);
 
 const REQUEST_TIMEOUT = 120_000; // 2 minutes
 const DEFAULT_MAX_TURNS = 25;
+const VALID_INJECTOR_SCOPES = new Set(['first-turn', 'per-turn']);
 
 class Agent {
   #apiKey;
   #instructionCache;
+  #injectors = { 'first-turn': [], 'per-turn': [] };
+  #beforeRequestHooks = [];
   #envInfo = [
     '',
     '',
@@ -29,8 +34,22 @@ class Agent {
   ];
 
   constructor(options = {}) {
-    const { apiKey, model, tools, order, only, maxTokens, systemPrompt, maxTurns, effort, maxToolOutputChars } =
-      options;
+    const {
+      apiKey,
+      model,
+      tools,
+      order,
+      only,
+      maxTokens,
+      systemPrompt,
+      maxTurns,
+      effort,
+      maxToolOutputChars,
+      injectors,
+      contextFiles,
+      memoryDir,
+      memoryTypes,
+    } = options;
 
     if (!apiKey && !config.API_KEY) {
       throw new ConfigError('OPENROUTER_API_KEY is required. Set it in .env or pass it as an option.');
@@ -67,11 +86,109 @@ class Agent {
 
         return base;
       })();
+
+    if (injectors?.date !== false) {
+      this.registerInjector({ name: 'date', scope: 'per-turn', fn: defaultDateInjector });
+    }
+
+    if (injectors?.contextFiles !== false) {
+      const files = Array.isArray(contextFiles) && contextFiles.length > 0 ? contextFiles : ['AGENT.md'];
+      this.registerInjector({ name: 'contextFiles', scope: 'first-turn', fn: contextFilesInjector(files) });
+    }
+
+    this._memoryDir = memoryDir || '.openrouter/memory';
+
+    this._memoryTypes = {
+      user: 'Information about the user — role, goals, knowledge, preferences.',
+      feedback: 'Guidance the user gave about how to approach work. Lead with the rule, include why and how to apply.',
+      project: "Ongoing work context, decisions, deadlines that aren't derivable from code/git.",
+      reference: 'Pointers to external systems — dashboards, tracker projects, channels.',
+      ...(memoryTypes || {}),
+    };
+
+    if (injectors?.memoryIndex !== false) {
+      this.registerInjector({
+        name: 'memoryIndex',
+        scope: 'first-turn',
+        fn: memoryIndexInjector(() => this._memoryDir),
+      });
+    }
+
+    if (injectors?.memoryHint !== false) {
+      this.registerInjector({
+        name: 'memoryHint',
+        scope: 'first-turn',
+        fn: memoryHintInjector(
+          () => this._memoryDir,
+          () => this._memoryTypes,
+        ),
+      });
+    }
+
+    if (injectors?.skillList !== false) {
+      this.registerInjector({ name: 'skillList', scope: 'first-turn', fn: skillListInjector });
+    }
   }
 
   // Read-only API key — used by Delegate tool for sub-agents
   get apiKey() {
     return this.#apiKey;
+  }
+
+  registerInjector({ name, scope, fn } = {}) {
+    if (typeof name !== 'string' || name.length === 0) {
+      throw new ConfigError('Injector name must be a non-empty string');
+    }
+    if (!VALID_INJECTOR_SCOPES.has(scope)) {
+      const valid = [...VALID_INJECTOR_SCOPES].join(', ');
+      throw new ConfigError(`Injector scope must be one of: ${valid}. Got: ${String(scope)}`);
+    }
+    if (typeof fn !== 'function') {
+      throw new ConfigError(`Injector '${name}' requires fn to be a function`);
+    }
+    const bucket = this.#injectors[scope];
+    if (bucket.some((entry) => entry.name === name)) {
+      throw new ConfigError(`Injector '${name}' is already registered in scope '${scope}'`);
+    }
+    bucket.push({ name, fn });
+  }
+
+  unregisterInjector(name) {
+    for (const scope of VALID_INJECTOR_SCOPES) {
+      const bucket = this.#injectors[scope];
+      const idx = bucket.findIndex((entry) => entry.name === name);
+      if (idx !== -1) bucket.splice(idx, 1);
+    }
+  }
+
+  onBeforeRequest(fn) {
+    if (typeof fn !== 'function') {
+      throw new ConfigError('onBeforeRequest expects a function');
+    }
+    this.#beforeRequestHooks.push(fn);
+    return () => {
+      const idx = this.#beforeRequestHooks.indexOf(fn);
+      if (idx !== -1) this.#beforeRequestHooks.splice(idx, 1);
+    };
+  }
+
+  async #runInjectors(scope) {
+    const bucket = this.#injectors[scope];
+    const ctx = { messages: this.messages, usage: this.usage, turn: this.messages.length };
+    const out = [];
+    for (const entry of bucket) {
+      let result;
+      try {
+        result = await entry.fn(ctx);
+      } catch (err) {
+        logger.warn(`Injector '${entry.name}' (${scope}) threw: ${err?.message || err}`);
+        continue;
+      }
+      if (typeof result === 'string' && result.trim().length > 0) {
+        out.push(result);
+      }
+    }
+    return out;
   }
 
   async #request(payload) {
@@ -112,7 +229,7 @@ class Agent {
     }
   }
 
-  #buildPayload() {
+  async #buildPayload() {
     const messagesForPayload = this.messages.map((msg, idx) => {
       if (
         idx === this.messages.length - 1 &&
@@ -130,6 +247,27 @@ class Agent {
       }
       return msg;
     });
+
+    // Per-turn injection: payload-only, never persisted to this.messages.
+    const perTurnOut = await this.#runInjectors('per-turn');
+    const perTurnText = perTurnOut.join('\n\n').trim();
+    if (perTurnText.length > 0) {
+      const block = `<system-reminder>\n${perTurnText}\n</system-reminder>`;
+      let injected = false;
+      for (let i = messagesForPayload.length - 1; i >= 0; i--) {
+        const m = messagesForPayload[i];
+        if (m.role === 'user' && Array.isArray(m.content) && m.content.length > 0) {
+          const newContent = [...m.content];
+          newContent.splice(newContent.length - 1, 0, { type: 'text', text: block });
+          messagesForPayload[i] = { ...m, content: newContent };
+          injected = true;
+          break;
+        }
+      }
+      if (!injected) {
+        logger.debug('Per-turn injector output dropped: no user message in payload.');
+      }
+    }
 
     if (!this.#instructionCache) {
       this.#instructionCache = this.systemPrompt + this.#envInfo.join('\n');
@@ -159,12 +297,16 @@ class Agent {
     if (payload.tools.length === 0) delete payload.tools;
     if (!payload.max_tokens) delete payload.max_tokens;
 
+    for (const hook of this.#beforeRequestHooks) {
+      await hook(payload);
+    }
+
     return payload;
   }
 
-  async #send() {
+  async #send(payload) {
     logger.debug(`Sending request to LLM (${this.model})...`);
-    const response = await this.#request(this.#buildPayload());
+    const response = await this.#request(payload);
     logger.debug(`Received response from LLM.`);
 
     this.usage.cost += response.usage?.cost || 0;
@@ -173,8 +315,7 @@ class Agent {
     return response;
   }
 
-  async #sendStream(notify) {
-    const payload = this.#buildPayload();
+  async #sendStream(notify, payload) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
@@ -349,6 +490,9 @@ class Agent {
     const { signal } = options;
     const isStreaming = typeof notify === 'function';
 
+    // freeze before prompt append
+    const wasFresh = this.messages.length < 1;
+
     if (prompt) {
       const contents = Array.isArray(prompt) ? prompt : [{ type: 'text', text: prompt }];
       const lastIdx = this.messages.length - 1;
@@ -390,7 +534,29 @@ class Agent {
         }
       }
 
-      const response = await withRetry(() => (isStreaming ? this.#sendStream(notify) : this.#send()), 5);
+      const isFirstTurn = wasFresh && loopCount === 1;
+
+      // First-turn output is the only thing persisted into this.messages.
+      // Per-turn output is added later inside #buildPayload, payload-only.
+      if (isFirstTurn) {
+        const firstTurnOut = await this.#runInjectors('first-turn');
+        const text = firstTurnOut.join('\n\n').trim();
+        if (text.length > 0) {
+          const block = `<system-reminder>\n${text}\n</system-reminder>`;
+          const lastMsg = this.messages[this.messages.length - 1];
+          if (lastMsg?.role === 'user' && Array.isArray(lastMsg.content) && lastMsg.content.length > 0) {
+            lastMsg.content.splice(lastMsg.content.length - 1, 0, { type: 'text', text: block });
+          }
+        }
+      }
+
+      // Build payload + run per-turn injectors + onBeforeRequest hooks ONCE per turn.
+      // withRetry retries the network call only — injectors and hooks do not re-fire.
+      const payload = await this.#buildPayload();
+      const response = await withRetry(
+        () => (isStreaming ? this.#sendStream(notify, payload) : this.#send(payload)),
+        5,
+      );
       const message = response.choices?.[0]?.message;
       if (!message) {
         logger.warn('Agent: LLM returned no message in response. Breaking loop.');
@@ -433,6 +599,109 @@ class Agent {
 
     return this.messages[this.messages.length - 1].content;
   }
+}
+
+function defaultDateInjector() {
+  const now = new Date();
+  const iso = now.toISOString();
+  const date = iso.slice(0, 10);
+  const time = iso.slice(11, 16);
+  return `Current date: ${date} ${time} UTC`;
+}
+
+function contextFilesInjector(filePaths) {
+  return async function () {
+    const parts = [];
+    for (const filePath of filePaths) {
+      let resolved;
+      try {
+        resolved = ensureSafePath(filePath);
+      } catch {
+        // Path traversal or outside root — skip silently.
+        continue;
+      }
+      let content;
+      try {
+        content = await readFile(resolved, 'utf8');
+      } catch {
+        // File missing — skip silently.
+        continue;
+      }
+      if (filePaths.length > 1) {
+        const basename = path.basename(resolved);
+        parts.push(`## ${basename}\n${content}`);
+      } else {
+        parts.push(content);
+      }
+    }
+    return parts.join('\n\n');
+  };
+}
+
+function memoryIndexInjector(memoryDirFn) {
+  return async function () {
+    const memoryDir = memoryDirFn();
+    let resolved;
+    try {
+      resolved = ensureSafePath(path.join(memoryDir, 'MEMORY.md'));
+    } catch {
+      return '';
+    }
+    try {
+      const content = await readFile(resolved, 'utf8');
+      if (!content.trim()) return '';
+      return `## Memory index\n${content}`;
+    } catch {
+      return '';
+    }
+  };
+}
+
+function memoryHintInjector(memoryDirFn, memoryTypesFn) {
+  return function () {
+    const memoryDir = memoryDirFn();
+    const types = memoryTypesFn();
+    const typeLines = Object.entries(types)
+      .map(([k, v]) => `- **${k}**: ${v}`)
+      .join('\n');
+    return [
+      '## Memory system',
+      `Memory files live at \`${memoryDir}/\`. Use Write/Read/Edit tools to manage them.`,
+      '',
+      '### Available types',
+      typeLines,
+      '',
+      'You **MUST** load the `using-memory` skill (via the Skill tool with action="load",',
+      'argument="using-memory") BEFORE the first memory write or update in this conversation,',
+      'unless you have already loaded it. The skill defines file format, naming conventions,',
+      'and the MEMORY.md index protocol — you are required to follow it exactly.',
+    ].join('\n');
+  };
+}
+
+async function skillListInjector() {
+  try {
+    await skillRegistry._ensureDiscovered();
+  } catch (err) {
+    logger.warn(`Skill discovery failed: ${err?.message || err}`);
+    return '';
+  }
+  const skills = skillRegistry.skills;
+  if (!skills || skills.size === 0) return '';
+  const lines = [];
+  for (const [name, skill] of skills) {
+    const desc = (skill.description || '').trim();
+    const truncated = desc.length > 120 ? desc.slice(0, 117) + '...' : desc;
+    lines.push(`- ${name} — ${truncated}`);
+  }
+  if (lines.length === 0) return '';
+  return (
+    `## Available skills\n${lines.join('\n')}\n\n` +
+    'When a skill is relevant to your current task, you **MUST** load it via the Skill tool ' +
+    '(action="load", argument=<skill name>) and follow its instructions and conventions exactly. ' +
+    'Do not invent alternative approaches or formats when a skill provides authoritative guidance ' +
+    'for the task at hand. Skill bodies are the source of truth for their respective domains.'
+  );
 }
 
 export default Agent;
