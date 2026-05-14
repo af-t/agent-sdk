@@ -15,6 +15,7 @@ const DEFAULT_MAX_TURNS = 25;
 
 class Agent {
   #apiKey;
+  #instructionCache;
   #envInfo = [
     '',
     '',
@@ -130,6 +131,10 @@ class Agent {
       return msg;
     });
 
+    if (!this.#instructionCache) {
+      this.#instructionCache = this.systemPrompt + this.#envInfo.join('\n');
+    }
+
     const payload = {
       model: this.model,
       messages: [
@@ -138,7 +143,7 @@ class Agent {
           content: [
             {
               type: 'text',
-              text: this.systemPrompt + this.#envInfo.join('\n'),
+              text: this.#instructionCache,
               cache_control: { type: 'ephemeral' },
             },
           ],

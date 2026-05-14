@@ -26,8 +26,8 @@ Minimal SDK for building AI agents connected to the [OpenRouter API](https://ope
 - **Automatic Tool Execution Loop** — The agent automatically calls tools, receives results, and continues the conversation until a final answer is produced.
 - **MCP (Model Context Protocol) Support** — Connect your agent to external tools via stdio-based MCP servers.
 - **Skill Discovery System** — Discover and load skills from SKILL.md files across builtin, project, and user directories.
-- **Built-in Tools** — File operations (Read, Write, Edit, Find, List), shell command execution (Bash), web search (Tavily), web fetch, and subagent delegation.
-- **Safety & Validation** — Tool inputs are validated against their schema (type checks, required fields, enums). Path traversal protection on Read, Write, Edit, List, and Find tools. Dangerous shell command detection.
+- **Built-in Tools** — File operations (Read, Write, Edit, Find, List), shell command execution (Bash with optional **node-pty** support), web search (Tavily), web fetch (using **cheerio**), and subagent delegation.
+- **Safety & Validation** — Tool inputs are validated against their schema (type checks, required fields, enums). Path traversal protection and **.gitignore** compliance on Read, Write, Edit, List, and Find tools. Dangerous shell command detection.
 - **Retry with Exponential Backoff** — Auto-retry with jitter to handle rate limits and transient errors.
 - **Abort Signal Support** — Cancel agent execution at any point.
 - **Ephemeral Caching** — Automatic `cache_control` on system prompt and the last user message.
@@ -106,6 +106,7 @@ cp .env.example .env
 | `OPENROUTER_API_KEY`    | Yes      | Your OpenRouter API key                                        |
 | `OPENROUTER_MODEL`      | No       | Default model (e.g. `inclusionai/ling-2.6-1t:free`)            |
 | `OPENROUTER_MAX_TOKENS` | No       | Maximum output tokens                                          |
+| `OPENROUTER_MAX_TURNS`  | No       | Maximum number of request cycles per `run()` (default: 25)     |
 | `OPENROUTER_ORDER`      | No       | Comma-separated provider priority order                        |
 | `OPENROUTER_ONLY`       | No       | Restrict to specific providers only                            |
 | `TAVILY_API_KEY`        | No       | API key for WebSearch tool (from [Tavily](https://tavily.com)) |
@@ -259,6 +260,7 @@ await agent.tools.connectMcpServer({
 | `Edit`      | File     | Edit a file with find-and-replace                           |
 | `Find`      | File     | Search for files by name or content                         |
 | `List`      | File     | List directory contents (ls alternative)                    |
+| `Todo`      | General  | Manage a todo list (add, list, complete, delete) with persistence |
 | `Bash`      | System   | Execute shell commands (pty with fallback to child_process) |
 | `Delegate`  | System   | Delegate tasks to a sub-agent                               |
 | `Skill`     | System   | Manage and load skills                                      |
