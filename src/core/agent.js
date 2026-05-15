@@ -248,27 +248,6 @@ class Agent {
       return msg;
     });
 
-    // Per-turn injection: payload-only, never persisted to this.messages.
-    const perTurnOut = await this.#runInjectors('per-turn');
-    const perTurnText = perTurnOut.join('\n\n').trim();
-    if (perTurnText.length > 0) {
-      const block = `<system-reminder>\n${perTurnText}\n</system-reminder>`;
-      let injected = false;
-      for (let i = messagesForPayload.length - 1; i >= 0; i--) {
-        const m = messagesForPayload[i];
-        if (m.role === 'user' && Array.isArray(m.content) && m.content.length > 0) {
-          const newContent = [...m.content];
-          newContent.splice(newContent.length - 1, 0, { type: 'text', text: block });
-          messagesForPayload[i] = { ...m, content: newContent };
-          injected = true;
-          break;
-        }
-      }
-      if (!injected) {
-        logger.debug('Per-turn injector output dropped: no user message in payload.');
-      }
-    }
-
     if (!this.#instructionCache) {
       this.#instructionCache = this.systemPrompt + this.#envInfo.join('\n');
     }
@@ -471,6 +450,13 @@ class Agent {
     return output;
   }
 
+  #injectBlock(block) {
+    const lastMsg = this.messages[this.messages.length - 1];
+    if (lastMsg?.role === 'user' && Array.isArray(lastMsg?.content) && lastMsg.content.length > 0) {
+      lastMsg.content.splice(lastMsg.content.length - 1, 0, { type: 'text', text: block });
+    }
+  }
+
   use(tools) {
     if (Array.isArray(tools)) {
       for (const tool of tools) {
@@ -536,21 +522,31 @@ class Agent {
 
       const isFirstTurn = wasFresh && loopCount === 1;
 
-      // First-turn output is the only thing persisted into this.messages.
-      // Per-turn output is added later inside #buildPayload, payload-only.
+      // First-turn output is persisted into this.messages (always visible in history).
       if (isFirstTurn) {
         const firstTurnOut = await this.#runInjectors('first-turn');
         const text = firstTurnOut.join('\n\n').trim();
         if (text.length > 0) {
           const block = `<system-reminder>\n${text}\n</system-reminder>`;
-          const lastMsg = this.messages[this.messages.length - 1];
-          if (lastMsg?.role === 'user' && Array.isArray(lastMsg.content) && lastMsg.content.length > 0) {
-            lastMsg.content.splice(lastMsg.content.length - 1, 0, { type: 'text', text: block });
-          }
+          this.#injectBlock(block);
         }
       }
 
-      // Build payload + run per-turn injectors + onBeforeRequest hooks ONCE per turn.
+      // Per-turn output is also persisted into this.messages so the conversation
+      // history has consistent structure across turns, avoiding cache misses
+      // when the user sends a new prompt in a subsequent run() call.
+      // If the last message is not a user message (e.g. tool result), the block
+      // is silently dropped.
+      {
+        const perTurnOut = await this.#runInjectors('per-turn');
+        const text = perTurnOut.join('\n\n').trim();
+        if (text.length > 0) {
+          const block = `<system-reminder>\n${text}\n</system-reminder>`;
+          this.#injectBlock(block);
+        }
+      }
+
+      // Build payload + onBeforeRequest hooks ONCE per turn.
       // withRetry retries the network call only — injectors and hooks do not re-fire.
       const payload = await this.#buildPayload();
       const response = await withRetry(

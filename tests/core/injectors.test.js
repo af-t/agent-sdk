@@ -291,14 +291,15 @@ describe('Agent — cache_control preservation with injection', () => {
     assert.match(secondToLast.text, /REMINDER_TEXT/);
     assert.equal(secondToLast.cache_control, undefined, 'reminder part should NOT have cache_control');
 
-    // Per-turn injector output must NOT be persisted into this.messages.
+    // Per-turn injector output IS persisted into this.messages (cache consistency).
     const origUser = agent.messages.find((m) => m.role === 'user');
-    assert.equal(origUser.content.length, 1, 'per-turn output must not be persisted in this.messages');
-    assert.doesNotMatch(origUser.content[0].text, /<system-reminder>/, 'per-turn reminder must not leak into this.messages');
+    assert.equal(origUser.content.length, 2, 'per-turn output is persisted in this.messages');
+    assert.match(origUser.content[0].text, /REMINDER_TEXT/);
     assert.equal(origUser.content[0].cache_control, undefined, 'cache_control must not leak into this.messages');
+    assert.equal(origUser.content[1].cache_control, undefined, 'cache_control must not leak into this.messages');
   });
 
-  it('first-turn injector output IS persisted in this.messages; per-turn is not', async () => {
+  it('first-turn and per-turn injectors both persist in this.messages', async () => {
     const fetchStub = captureFetch();
     global.fetch = fetchStub;
 
@@ -312,13 +313,13 @@ describe('Agent — cache_control preservation with injection', () => {
     await agent.run('hello');
 
     const origUser = agent.messages.find((m) => m.role === 'user');
-    // First-turn block + original prompt part = 2 parts in persisted history.
-    assert.equal(origUser.content.length, 2, 'first-turn output must be spliced into this.messages');
-    assert.match(origUser.content[0].text, /<system-reminder>/);
+    // First-turn block + per-turn block + original prompt = 3 parts in persisted history.
+    assert.equal(origUser.content.length, 3, 'both injectors persist in this.messages');
     assert.match(origUser.content[0].text, /FIRST_BODY/);
-    assert.doesNotMatch(origUser.content[0].text, /PER_BODY/, 'per-turn body must not appear in persisted history');
+    assert.match(origUser.content[1].text, /PER_BODY/);
+    assert.equal(origUser.content[2].text, 'hello');
 
-    // Payload sees BOTH blocks (separate parts) — first-turn from history, per-turn freshly spliced.
+    // Payload sees BOTH blocks (separate parts) — both from history now.
     const userMsg = fetchStub.captured[0].messages.find((m) => m.role === 'user');
     const reminderTexts = userMsg.content
       .filter((p) => typeof p.text === 'string' && p.text.startsWith('<system-reminder>'))
@@ -413,7 +414,7 @@ describe('Agent — onBeforeRequest hook', () => {
     globalThis.setTimeout = (fn, _delay, ...args) => realSetTimeout(fn, 1, ...args);
 
     let fetchCalls = 0;
-    global.fetch = async (_url, opts) => {
+    global.fetch = async (_url, _opts) => {
       fetchCalls++;
       if (fetchCalls === 1) {
         // First attempt: retryable 5xx error so withRetry triggers a retry.

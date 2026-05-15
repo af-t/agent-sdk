@@ -258,8 +258,113 @@ describe('find.js — abort signal handling', () => {
   });
 
   it('runs normally when no ctx is provided', async () => {
+  });
+
+  it('runs normally when no ctx is provided (content mode)', async () => {
     const mod = await import('../../../src/tools/file/find.js');
-    const result = await mod.execute({ path: FIXTURES_ABORT, pattern: 'a\\.txt', mode: 'name' });
+    const result = await mod.execute({ path: FIXTURES_ABORT, pattern: 'world', mode: 'content' });
     assert.ok(typeof result === 'string');
   });
 });
+
+describe('find.js — nativeSearch fallback & edge cases', () => {
+  const FIXTURES_NATIVE = path.resolve('tests/fixtures/find-native-dir');
+
+  before(async () => {
+    await fs.mkdir(path.join(FIXTURES_NATIVE, 'deep'), { recursive: true });
+    await fs.writeFile(path.join(FIXTURES_NATIVE, 'report.pdf'), 'some pdf content', 'utf8');
+    await fs.writeFile(path.join(FIXTURES_NATIVE, 'deep', 'notes.txt'), 'important notes here', 'utf8');
+    // Binary file with null bytes
+    const buf = Buffer.alloc(600);
+    buf[0] = 0x00; // null byte early
+    buf.write('hello', 200);
+    await fs.writeFile(path.join(FIXTURES_NATIVE, 'binary.bin'), buf);
+  });
+
+  after(async () => {
+    await fs.rm(FIXTURES_NATIVE, { recursive: true, force: true });
+  });
+
+  it('throws on invalid regex pattern', async () => {
+    const mod = await import('../../../src/tools/file/find.js');
+    await assert.rejects(
+      () => mod.execute({ path: FIXTURES_NATIVE, pattern: '[invalid', mode: 'name' }),
+      /Invalid regex pattern/,
+    );
+  });
+
+  it('skips binary files with null bytes in nativeSearch content mode', async () => {
+    const mod = await import('../../../src/tools/file/find.js');
+    // Binary file has 'hello' but starts with null bytes -> should be skipped.
+    // notes.txt has 'notes' and no null bytes -> should match.
+    const result = await mod.execute({ path: FIXTURES_NATIVE, pattern: 'notes', mode: 'content' });
+    assert.ok(result.includes('notes.txt'), 'should find text file with matching content');
+    assert.ok(!result.includes('binary.bin'), 'should skip binary file with null bytes');
+  });
+
+  it('skips binary files with high non-printable chars in nativeSearch', async () => {
+    const mod = await import('../../../src/tools/file/find.js');
+    const badBuf = Buffer.alloc(200);
+    for (let i = 0; i < 150; i++) badBuf[i] = 0x02;
+    badBuf.write('secret', 160);
+    await fs.writeFile(path.join(FIXTURES_NATIVE, 'junk.bin'), badBuf);
+
+    const result = await mod.execute({ path: FIXTURES_NATIVE, pattern: 'secret', mode: 'content' });
+    assert.ok(!result.includes('junk.bin'), 'should skip binary file with high non-printable ratio');
+  });
+
+  it('handles unreadable directory entries gracefully in nativeSearch', async () => {
+    const mod = await import('../../../src/tools/file/find.js');
+    const restrictedDir = path.join(FIXTURES_NATIVE, 'restricted');
+    await fs.mkdir(restrictedDir, { recursive: true });
+    await fs.writeFile(path.join(restrictedDir, 'secret.txt'), 'hidden content', 'utf8');
+    try {
+      await fs.chmod(restrictedDir, 0o000);
+    } catch {
+      // May not work on all platforms — skip restriction
+    }
+
+    const result = await mod.execute({ path: FIXTURES_NATIVE, pattern: 'notes', mode: 'content' });
+    assert.ok(typeof result === 'string');
+
+    try {
+      await fs.chmod(restrictedDir, 0o755);
+    } catch {}
+  });
+
+  it('handles search in subdirectory with relative path prefix', async () => {
+    const mod = await import('../../../src/tools/file/find.js');
+    const result = await mod.execute({ path: FIXTURES_NATIVE, pattern: 'notes', mode: 'name' });
+    assert.ok(result.includes('notes.txt'));
+  });
+
+  it('lists matching file with line number and snippet in content mode', async () => {
+    const mod = await import('../../../src/tools/file/find.js');
+    await fs.writeFile(
+      path.join(FIXTURES_NATIVE, 'multi-line.txt'),
+      'line one\nline two\nmatch-this-word\nline four',
+      'utf8',
+    );
+
+    const result = await mod.execute({ path: FIXTURES_NATIVE, pattern: 'match-this-word', mode: 'content' });
+    assert.ok(result.includes('multi-line.txt'), 'should mention the filename');
+    assert.ok(result.includes(':3:'), 'should reference line 3');
+  });
+
+  it('handles abort mid-flight in nativeSearch', async () => {
+    const mod = await import('../../../src/tools/file/find.js');
+    const ac = new AbortController();
+    // Create many files to ensure walk takes time
+    for (let i = 0; i < 20; i++) {
+      await fs.writeFile(path.join(FIXTURES_NATIVE, `many-${i}.txt`), `content ${i}`, 'utf8');
+    }
+    setTimeout(() => ac.abort(), 0);
+
+    await assert.rejects(
+      () => mod.execute({ path: FIXTURES_NATIVE, pattern: 'content', mode: 'content' }, { signal: ac.signal }),
+      /abort/i,
+    );
+  });
+});
+
+

@@ -148,6 +148,36 @@ describe('ddgJsonSearch()', () => {
     assert.strictEqual(results[0].title, 'No separator here');
     assert.strictEqual(results[0].snippet, 'No separator here');
   });
+
+  it('skips RelatedTopics without FirstURL', async () => {
+    global.fetch = async () =>
+      makeFetchResponse({
+        AbstractText: '',
+        AbstractURL: '',
+        Heading: '',
+        RelatedTopics: [{ Text: 'Orphan topic without URL' }],
+      });
+
+    const results = await ddgJsonSearch('test', 5);
+    assert.strictEqual(results.length, 0);
+  });
+
+  it('limits results to maxResults even with many RelatedTopics', async () => {
+    const topics = [];
+    for (let i = 0; i < 10; i++) {
+      topics.push({ FirstURL: `https://example${i}.com`, Text: `Topic ${i}` });
+    }
+    global.fetch = async () =>
+      makeFetchResponse({
+        AbstractText: '',
+        AbstractURL: '',
+        Heading: '',
+        RelatedTopics: topics,
+      });
+
+    const results = await ddgJsonSearch('test', 3);
+    assert.strictEqual(results.length, 3);
+  });
 });
 
 describe('ddgHtmlSearch()', () => {
@@ -247,6 +277,34 @@ describe('ddgHtmlSearch()', () => {
     const results = await ddgHtmlSearch('test', 5);
     assert.strictEqual(results.length, 1);
     assert.strictEqual(results[0].snippet, '');
+  });
+
+  it('skips result when URL decode fails', async () => {
+    // Use an invalid percent-encoding that makes decodeURIComponent throw
+    const html = [
+      '<div class="result results_links_deep web-result">',
+      '<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2F%ZZ&rut=x">Broken Link</a>',
+      '<a class="result__snippet">Some snippet</a>',
+      '</div>',
+    ].join('\n');
+    global.fetch = async () => makeFetchResponse(html, { contentType: 'text/html' });
+
+    const results = await ddgHtmlSearch('test', 5);
+    assert.strictEqual(results.length, 0, 'should skip results with undecodable URLs');
+  });
+
+  it('decodes HTML entities in title and snippet', async () => {
+    const html = [
+      '<div class="result results_links_deep web-result">',
+      '<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com&rut=x">Test &amp; Title &lt;3</a>',
+      '<a class="result__snippet">Snippet &amp; &quot;quoted&quot;</a>',
+      '</div>',
+    ].join('\n');
+    global.fetch = async () => makeFetchResponse(html, { contentType: 'text/html' });
+
+    const results = await ddgHtmlSearch('test', 5);
+    assert.strictEqual(results[0].title, 'Test & Title <3');
+    assert.strictEqual(results[0].snippet, 'Snippet & "quoted"');
   });
 });
 
@@ -389,6 +447,173 @@ describe('execute() — fallback when no TAVILY_API_KEY', () => {
   });
 
   it('propagates timeout as a descriptive error', async () => {
+    global.fetch = async () => {
+      const err = new Error('The operation was aborted');
+      err.name = 'AbortError';
+      throw err;
+    };
+
+    await assert.rejects(() => execute({ query: 'test' }), /timed out/);
+  });
+});
+
+describe('execute() — Tavily API path', () => {
+  let execute;
+  let originalFetch;
+  let savedKey;
+
+  before(async () => {
+    const mod = await import('../../../src/tools/web/search.js');
+    execute = mod.execute;
+    originalFetch = global.fetch;
+    savedKey = process.env.TAVILY_API_KEY;
+    process.env.TAVILY_API_KEY = 'tvly-test-key-12345';
+  });
+
+  after(() => {
+    global.fetch = originalFetch;
+    if (savedKey !== undefined) process.env.TAVILY_API_KEY = savedKey;
+    else delete process.env.TAVILY_API_KEY;
+  });
+
+  it('calls Tavily API when TAVILY_API_KEY is set and formats results', async () => {
+    global.fetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        results: [
+          { title: 'Result One', url: 'https://example.com/1', content: 'Content for result one', score: 0.95 },
+          { title: 'Result Two', url: 'https://example.com/2', content: 'Content for result two', score: 0.85 },
+        ],
+        response_time: 1.23,
+      }),
+      text: async () => '',
+    });
+
+    const result = await execute({ query: 'test query' });
+    assert.ok(result.includes('Result One'));
+    assert.ok(result.includes('https://example.com/1'));
+    assert.ok(result.includes('Content for result one'));
+    assert.ok(result.includes('95%'), 'should show relevance score as percentage');
+    assert.ok(result.includes('Response time: 1.23s'), 'should include response time');
+  });
+
+  it('handles Tavily with includeAnswer returning AI answer', async () => {
+    global.fetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        answer: 'AI generated answer about test query.',
+        results: [{ title: 'Some Result', url: 'https://example.com', content: 'Some content', score: 0.9 }],
+        response_time: 0.5,
+      }),
+      text: async () => '',
+    });
+
+    const result = await execute({ query: 'test', includeAnswer: true });
+    assert.ok(result.includes('AI Answer'), 'should include AI answer header');
+    assert.ok(result.includes('AI generated answer'), 'should include answer text');
+    assert.ok(result.includes('Some Result'), 'should still include search results');
+  });
+
+  it('handles Tavily with includeDomains and excludeDomains', async () => {
+    let requestBody;
+    global.fetch = async (url, opts) => {
+      requestBody = JSON.parse(opts.body);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ results: [], response_time: 0.1 }),
+        text: async () => '',
+      };
+    };
+
+    await execute({
+      query: 'test',
+      includeDomains: ['python.org'],
+      excludeDomains: ['wikipedia.org'],
+    });
+
+    assert.deepStrictEqual(requestBody.include_domains, ['python.org']);
+    assert.deepStrictEqual(requestBody.exclude_domains, ['wikipedia.org']);
+  });
+
+  it('handles Tavily with depth=advanced', async () => {
+    let requestBody;
+    global.fetch = async (url, opts) => {
+      requestBody = JSON.parse(opts.body);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ results: [], response_time: 0.1 }),
+        text: async () => '',
+      };
+    };
+
+    await execute({ query: 'test', depth: 'advanced' });
+    assert.strictEqual(requestBody.search_depth, 'advanced');
+  });
+
+  it('handles Tavily error response', async () => {
+    global.fetch = async () => ({
+      ok: false,
+      status: 429,
+      json: async () => {
+        throw new Error('not json');
+      },
+      text: async () => 'Rate limit exceeded',
+    });
+
+    await assert.rejects(
+      () => execute({ query: 'test' }),
+      /Tavily search failed/,
+    );
+  });
+
+  it('handles Tavily empty results', async () => {
+    global.fetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ results: [], response_time: 0.1 }),
+      text: async () => '',
+    });
+
+    const result = await execute({ query: 'xyznonexistent' });
+    assert.ok(result.includes('No results found'));
+  });
+
+  it('handles Tavily results without score', async () => {
+    global.fetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        results: [{ title: 'No Score', url: 'https://example.com', content: 'No score content' }],
+        response_time: 0.1,
+      }),
+      text: async () => '',
+    });
+
+    const result = await execute({ query: 'test' });
+    assert.ok(result.includes('No Score'));
+    assert.ok(!result.includes('Relevance:'), 'should not show relevance when score is absent');
+  });
+
+  it('handles Tavily results without response_time', async () => {
+    global.fetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        results: [{ title: 'No Time', url: 'https://example.com', content: 'Content' }],
+      }),
+      text: async () => '',
+    });
+
+    const result = await execute({ query: 'test' });
+    assert.ok(result.includes('No Time'));
+    assert.ok(!result.includes('Response time:'), 'should not show response time when absent');
+  });
+
+  it('handles Tavily timeout error', async () => {
     global.fetch = async () => {
       const err = new Error('The operation was aborted');
       err.name = 'AbortError';

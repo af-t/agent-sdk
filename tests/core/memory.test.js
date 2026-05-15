@@ -27,7 +27,8 @@ function findReminderText(payload) {
   const userMsg = userMessages[userMessages.length - 1];
   if (!userMsg) return '';
   const parts = userMsg.content.filter(
-    (p) => typeof p.text === 'string' && p.text.startsWith('<system-reminder>') && p.text.endsWith('</system-reminder>'),
+    (p) =>
+      typeof p.text === 'string' && p.text.startsWith('<system-reminder>') && p.text.endsWith('</system-reminder>'),
   );
   return parts.map((p) => p.text).join('\n\n');
 }

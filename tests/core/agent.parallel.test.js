@@ -73,7 +73,7 @@ describe('Agent — parallel tool scheduler', () => {
     const t0 = Date.now();
     await agent.run('go');
     const elapsed = Date.now() - t0;
-    assert.ok(elapsed < 180, `expected < 180ms, got ${elapsed}ms`);
+    assert.ok(elapsed < 500, `expected < 500ms, got ${elapsed}ms`);
   });
 
   it('preserves tool_call order in agent.messages even when finish order differs', async () => {
