@@ -455,6 +455,14 @@ describe('execute() — fallback when no TAVILY_API_KEY', () => {
 
     await assert.rejects(() => execute({ query: 'test' }), /timed out/);
   });
+
+  it('propagates non-abort errors from DDG path as-is', async () => {
+    global.fetch = async () => {
+      throw new Error('network failure');
+    };
+
+    await assert.rejects(() => execute({ query: 'test' }), /network failure/);
+  });
 });
 
 describe('execute() — Tavily API path', () => {
@@ -618,5 +626,26 @@ describe('execute() — Tavily API path', () => {
     };
 
     await assert.rejects(() => execute({ query: 'test' }), /timed out/);
+  });
+
+  it('attaches ctx.signal abort listener in Tavily path', async () => {
+    let listenerAttached = false;
+    const fakeSignal = {
+      aborted: false,
+      addEventListener: (event) => {
+        if (event === 'abort') listenerAttached = true;
+      },
+      removeEventListener: () => {},
+    };
+
+    global.fetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ results: [], response_time: 0.1 }),
+      text: async () => '',
+    });
+
+    await execute({ query: 'test' }, { signal: fakeSignal });
+    assert.ok(listenerAttached, 'abort listener should be attached to ctx.signal');
   });
 });

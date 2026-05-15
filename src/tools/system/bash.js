@@ -135,7 +135,7 @@ function runWithSpawn(command, cwd, env, timeout, signal) {
       reject(new Error(`Execution timed out after ${timeout}ms\n\nPartial Output:\n${output}`));
     }, timeout);
 
-    child.on('exit', (code) => {
+    child.on('close', (code) => {
       clearTimeout(timer);
       clearTimeout(killTimer);
       if (signal) signal.removeEventListener('abort', onAbort);

@@ -1,4 +1,4 @@
-import { describe, it, before } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
 describe('WebFetch tool module', () => {
@@ -218,6 +218,117 @@ describe('WebFetch tool module', () => {
 
     it('should reject data: protocol via URL constructor/SSRF', async () => {
       await assert.rejects(mod.execute({ url: 'data:text/html,<script>alert(1)</script>' }), /Invalid URL|protocol/);
+    });
+  });
+
+  describe('SSRF — public IPv4 and IPv6 literal paths', () => {
+    it('allows a public IPv4 address without DNS resolution', async () => {
+      const { checkSSRF } = mod;
+      // 8.8.8.8 is a public IP, not in any blocked range
+      await assert.doesNotReject(() => checkSSRF('http://8.8.8.8/'));
+    });
+
+    it('blocks a private IPv6 address (fc00::1) via literal check', async () => {
+      const { checkSSRF } = mod;
+      await assert.rejects(() => checkSSRF('http://[fc00::1]/'), /Access denied/);
+    });
+
+    it('allows a public IPv6 address (2001:db8::1) via literal check', async () => {
+      const { checkSSRF } = mod;
+      // 2001:db8::/32 is documentation-only but not in any BLOCKED_IP_RANGES
+      await assert.doesNotReject(() => checkSSRF('http://[2001:db8::1]/'));
+    });
+  });
+
+  describe('response content handling (mocked fetch)', () => {
+    let originalFetch;
+
+    before(() => {
+      originalFetch = global.fetch;
+    });
+
+    after(() => {
+      global.fetch = originalFetch;
+    });
+
+    function mockFetch({ status = 200, contentType = 'text/html', body = '<html><body>hello</body></html>', contentLength = null } = {}) {
+      global.fetch = async () => ({
+        status,
+        headers: {
+          get: (name) => {
+            if (name === 'content-type') return contentType;
+            if (name === 'content-length') return contentLength;
+            if (name === 'location') return null;
+            return null;
+          },
+        },
+        body: null,
+        text: async () => body,
+      });
+    }
+
+    it('returns JSON content with content-type header', async () => {
+      mockFetch({ contentType: 'application/json', body: '{"key":"value"}' });
+      const result = await mod.execute({ url: 'https://example.com/api' });
+      assert.ok(result.includes('application/json'));
+      assert.ok(result.includes('"key"'));
+    });
+
+    it('rejects binary content (non-printable chars > 70%)', async () => {
+      const binaryBody = '\x00\x01\x02\x03\x04\x05\x06\x07'.repeat(100);
+      mockFetch({ contentType: 'application/octet-stream', body: binaryBody });
+      await assert.rejects(() => mod.execute({ url: 'https://example.com/file.bin' }), /Binary content detected/);
+    });
+
+    it('rejects response with content-length exceeding 10MB', async () => {
+      const bigSize = 10 * 1024 * 1024 + 1;
+      mockFetch({ contentLength: String(bigSize) });
+      await assert.rejects(() => mod.execute({ url: 'https://example.com/huge' }), /Response too large/);
+    });
+
+    it('returns unknown content type as plain text', async () => {
+      mockFetch({ contentType: 'application/xml', body: '<root>data</root>' });
+      const result = await mod.execute({ url: 'https://example.com/data.xml' });
+      assert.ok(result.includes('application/xml'));
+      assert.ok(result.includes('<root>'));
+    });
+
+    it('returns raw HTML when useRaw=true', async () => {
+      const html = '<html><body><p>Raw content here</p></body></html>';
+      mockFetch({ contentType: 'text/html', body: html });
+      const result = await mod.execute({ url: 'https://example.com/', useRaw: true });
+      assert.ok(result.includes('text/html'));
+      assert.ok(result.includes('<html>'));
+    });
+
+    it('falls back to $.text() when article/main/body has short text', async () => {
+      // Body with very little text (< 100 chars) triggers the fallback
+      const html = '<html><head><title>T</title></head><body><p>Hi</p></body></html>';
+      mockFetch({ contentType: 'text/html', body: html });
+      const result = await mod.execute({ url: 'https://example.com/' });
+      assert.ok(typeof result === 'string');
+      assert.ok(result.length > 0);
+    });
+
+    it('returns text/plain content directly', async () => {
+      mockFetch({ contentType: 'text/plain', body: 'Plain text response' });
+      const result = await mod.execute({ url: 'https://example.com/readme.txt' });
+      assert.ok(result.includes('text/plain'));
+      assert.ok(result.includes('Plain text response'));
+    });
+
+    it('attaches ctx.signal abort listener to internal controller', async () => {
+      let listenerAttached = false;
+      const fakeSignal = {
+        aborted: false,
+        addEventListener: (event, handler, opts) => {
+          if (event === 'abort') listenerAttached = true;
+        },
+        removeEventListener: () => {},
+      };
+      mockFetch({ body: 'hello' });
+      await mod.execute({ url: 'https://example.com/' }, { signal: fakeSignal });
+      assert.ok(listenerAttached, 'abort listener should be registered on ctx.signal');
     });
   });
 });

@@ -349,4 +349,120 @@ describe('Todo Tool', () => {
     const result = await mod.execute({ action: 'clear', todo_file: testFile });
     assert.ok(result.includes('already empty'));
   });
+
+  it('should reject when MAX_TODOS limit is reached', async () => {
+    await cleanup();
+    const mod = await import('../../../src/tools/general/todo.js');
+    // Write 1000 todos directly to avoid slow loop
+    const todos = Array.from({ length: 1000 }, (_, i) => ({
+      id: `id${i}`,
+      text: `Task ${i}`,
+      priority: 'medium',
+      category: 'general',
+      completed: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      due_date: null,
+    }));
+    await fs.writeFile(testFile, JSON.stringify(todos), 'utf8');
+
+    await assert.rejects(
+      () => mod.execute({ action: 'add', text: 'One more', todo_file: testFile }),
+      /Maximum todo limit reached/,
+    );
+  });
+
+  it('should sort by due_date', async () => {
+    await cleanup();
+    const mod = await import('../../../src/tools/general/todo.js');
+    await mod.execute({ action: 'add', text: 'Later task', due_date: '2030-12-31T00:00:00Z', todo_file: testFile });
+    await mod.execute({ action: 'add', text: 'Earlier task', due_date: '2025-01-01T00:00:00Z', todo_file: testFile });
+    await mod.execute({ action: 'add', text: 'No due date task', todo_file: testFile });
+
+    const result = await mod.execute({ action: 'list', sort_by: 'due_date', todo_file: testFile });
+    const earlierIdx = result.indexOf('Earlier task');
+    const laterIdx = result.indexOf('Later task');
+    assert.ok(earlierIdx < laterIdx, 'earlier due date should appear first');
+  });
+
+  it('should display due_date info when listing todos with due_date', async () => {
+    await cleanup();
+    const mod = await import('../../../src/tools/general/todo.js');
+    await mod.execute({ action: 'add', text: 'Task with due date', due_date: '2030-06-15T00:00:00Z', todo_file: testFile });
+
+    const result = await mod.execute({ action: 'list', todo_file: testFile });
+    assert.ok(result.includes('6/15/2030') || result.includes('2030'), 'should display due date');
+  });
+
+  it('should reject update without id', async () => {
+    await cleanup();
+    const mod = await import('../../../src/tools/general/todo.js');
+    await assert.rejects(
+      () => mod.execute({ action: 'update', text: 'New text', todo_file: testFile }),
+      /Parameter "id" is required/,
+    );
+  });
+
+  it('should reject update with non-existent id', async () => {
+    await cleanup();
+    const mod = await import('../../../src/tools/general/todo.js');
+    await assert.rejects(
+      () => mod.execute({ action: 'update', id: 'nonexistent', text: 'New text', todo_file: testFile }),
+      /not found/,
+    );
+  });
+
+  it('should update todo category', async () => {
+    await cleanup();
+    const mod = await import('../../../src/tools/general/todo.js');
+    await mod.execute({ action: 'add', text: 'Task', todo_file: testFile });
+    const listResult = await mod.execute({ action: 'list', todo_file: testFile });
+    const id = listResult.match(/ID: (\w+)/)[1];
+
+    const result = await mod.execute({ action: 'update', id, category: 'testing', todo_file: testFile });
+    assert.ok(result.includes('Changed: category'));
+    assert.ok(result.includes('TESTING'));
+  });
+
+  it('should update todo due_date', async () => {
+    await cleanup();
+    const mod = await import('../../../src/tools/general/todo.js');
+    await mod.execute({ action: 'add', text: 'Task', todo_file: testFile });
+    const listResult = await mod.execute({ action: 'list', todo_file: testFile });
+    const id = listResult.match(/ID: (\w+)/)[1];
+
+    const result = await mod.execute({ action: 'update', id, due_date: '2030-12-31T00:00:00Z', todo_file: testFile });
+    assert.ok(result.includes('Changed: due date'));
+  });
+
+  it('should return no-changes message when update has no fields', async () => {
+    await cleanup();
+    const mod = await import('../../../src/tools/general/todo.js');
+    await mod.execute({ action: 'add', text: 'Task', todo_file: testFile });
+    const listResult = await mod.execute({ action: 'list', todo_file: testFile });
+    const id = listResult.match(/ID: (\w+)/)[1];
+
+    const result = await mod.execute({ action: 'update', id, todo_file: testFile });
+    assert.ok(result.includes('No changes applied'));
+  });
+
+  it('should display due_date info in update output', async () => {
+    await cleanup();
+    const mod = await import('../../../src/tools/general/todo.js');
+    await mod.execute({ action: 'add', text: 'Task', due_date: '2030-06-15T00:00:00Z', todo_file: testFile });
+    const listResult = await mod.execute({ action: 'list', todo_file: testFile });
+    const id = listResult.match(/ID: (\w+)/)[1];
+
+    const result = await mod.execute({ action: 'update', id, text: 'Updated task', todo_file: testFile });
+    assert.ok(result.includes('2030') || result.includes('6/15'), 'due date should appear in update output');
+  });
+
+  it('should throw for unknown action', async () => {
+    await cleanup();
+    const mod = await import('../../../src/tools/general/todo.js');
+    await assert.rejects(
+      () => mod.execute({ action: 'invalid_action', todo_file: testFile }),
+      /Unknown action/,
+    );
+  });
 });

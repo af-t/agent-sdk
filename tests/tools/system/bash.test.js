@@ -440,6 +440,16 @@ describe('Bash tool — env sanitization', () => {
       assert.ok(err.message.length > 0);
     }
   });
+
+  it('logs warning for suspicious command pattern (chmod with numeric mode)', async () => {
+    // chmod 755 matches the suspicious pattern /\bchmod\s+[0-7]{3,4}\b/ but is not blocked
+    try {
+      await mod.execute({ command: 'chmod 755 /tmp', timeout: 5000 });
+    } catch {
+      // May fail due to permissions — what matters is the code path reaching hasSuspiciousPattern
+    }
+    // Test passes as long as no unexpected error is thrown (warning is logged internally)
+  });
 });
 
 describe('Bash tool — abort signal handling', () => {

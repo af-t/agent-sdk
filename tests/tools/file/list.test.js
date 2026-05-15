@@ -55,4 +55,19 @@ describe('list.js execute', () => {
     const mod = await import('../../../src/tools/file/list.js');
     await assert.rejects(() => mod.execute({ path: 'tests/fixtures/nonexistent-dir-xyz' }), { code: 'ENOENT' });
   });
+
+  it('shows @ suffix for symbolic links', async () => {
+    const symlinkDir = path.join(FIXTURES, 'symlinkdir');
+    await fs.mkdir(symlinkDir, { recursive: true });
+    const target = path.join(symlinkDir, 'real.txt');
+    const link = path.join(symlinkDir, 'link.txt');
+    await fs.writeFile(target, 'real content', 'utf8');
+    await fs.symlink(target, link);
+
+    const mod = await import('../../../src/tools/file/list.js');
+    const result = await mod.execute({ path: symlinkDir });
+    assert.ok(result.includes('link.txt@'), 'symlink should have @ suffix');
+
+    await fs.rm(symlinkDir, { recursive: true, force: true });
+  });
 });
