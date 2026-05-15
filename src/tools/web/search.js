@@ -161,13 +161,13 @@ export const execute = async (
     }
   }
 
-  try {
-    const controller = new AbortController();
-    if (ctx.signal) {
-      ctx.signal.addEventListener('abort', () => controller.abort(), { once: true });
-    }
-    const timeout = setTimeout(() => controller.abort(), CONSTANTS.FETCH_TIMEOUT_MS);
+  const controller = new AbortController();
+  if (ctx.signal) {
+    ctx.signal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+  const timeout = setTimeout(() => controller.abort(), CONSTANTS.FETCH_TIMEOUT_MS);
 
+  try {
     const body = {
       api_key: apiKey,
       query,
@@ -184,8 +184,6 @@ export const execute = async (
       body: JSON.stringify(body),
       signal: controller.signal,
     });
-
-    clearTimeout(timeout);
 
     if (!res.ok) {
       const errText = await res.text().catch(() => 'Unknown error');
@@ -222,5 +220,7 @@ export const execute = async (
       throw new Error('Search request timed out after 15 seconds. Try a more specific query.');
     }
     throw error;
+  } finally {
+    clearTimeout(timeout);
   }
 };

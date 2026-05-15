@@ -564,10 +564,7 @@ describe('execute() — Tavily API path', () => {
       text: async () => 'Rate limit exceeded',
     });
 
-    await assert.rejects(
-      () => execute({ query: 'test' }),
-      /Tavily search failed/,
-    );
+    await assert.rejects(() => execute({ query: 'test' }), /Tavily search failed/);
   });
 
   it('handles Tavily empty results', async () => {

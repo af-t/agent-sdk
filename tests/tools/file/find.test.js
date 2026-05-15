@@ -258,6 +258,9 @@ describe('find.js — abort signal handling', () => {
   });
 
   it('runs normally when no ctx is provided', async () => {
+    const mod = await import('../../../src/tools/file/find.js');
+    const result = await mod.execute({ path: FIXTURES_ABORT, pattern: 'a\\.txt', mode: 'name' });
+    assert.ok(typeof result === 'string');
   });
 
   it('runs normally when no ctx is provided (content mode)', async () => {
@@ -366,5 +369,3 @@ describe('find.js — nativeSearch fallback & edge cases', () => {
     );
   });
 });
-
-

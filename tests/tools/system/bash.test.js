@@ -473,6 +473,8 @@ describe('Bash tool — abort signal handling', () => {
   });
 
   it('runs normally when no signal is provided', async () => {
+    const result = await mod.execute({ command: 'echo hello-no-signal', timeout: 5000 });
+    assert.match(result, /hello-no-signal/);
   });
 });
 
@@ -484,24 +486,15 @@ describe('Bash tool — advanced execution paths', () => {
   });
 
   it('blocks eval on sensitive path', async () => {
-    await assert.rejects(
-      () => mod.execute({ command: 'eval $(cat /etc/passwd)', timeout: 1000 }),
-      /BLOCKED/,
-    );
+    await assert.rejects(() => mod.execute({ command: 'eval $(cat /etc/passwd)', timeout: 1000 }), /BLOCKED/);
   });
 
   it('blocks exec on sensitive path', async () => {
-    await assert.rejects(
-      () => mod.execute({ command: 'exec < /etc/passwd', timeout: 1000 }),
-      /BLOCKED/,
-    );
+    await assert.rejects(() => mod.execute({ command: 'exec < /etc/passwd', timeout: 1000 }), /BLOCKED/);
   });
 
   it('blocks source on .env file', async () => {
-    await assert.rejects(
-      () => mod.execute({ command: 'source .env', timeout: 1000 }),
-      /BLOCKED/,
-    );
+    await assert.rejects(() => mod.execute({ command: 'source .env', timeout: 1000 }), /BLOCKED/);
   });
 
   it('executes command with custom cwd', async () => {
@@ -510,10 +503,7 @@ describe('Bash tool — advanced execution paths', () => {
   });
 
   it('handles timeout error gracefully', async () => {
-    await assert.rejects(
-      () => mod.execute({ command: 'sleep 10', timeout: 100 }),
-      /timed out|timeout/i,
-    );
+    await assert.rejects(() => mod.execute({ command: 'sleep 10', timeout: 100 }), /timed out|timeout/i);
   });
 
   it('handles null bytes in command gracefully', async () => {
@@ -560,5 +550,3 @@ describe('Bash tool — advanced execution paths', () => {
     }
   });
 });
-
-
