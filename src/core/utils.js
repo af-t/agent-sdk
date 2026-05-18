@@ -86,7 +86,7 @@ function tryDecodeURIComponent(str) {
   }
 }
 
-export function ensureSafePath(filePath) {
+export function ensureSafePath(filePath, allowedRoots = new Set()) {
   // 1. Reject null bytes (CVE-2021-3805 style bypass)
   if (filePath.includes('\0')) {
     throw new Error(`Access denied: Path contains null byte`);
@@ -117,8 +117,43 @@ export function ensureSafePath(filePath) {
   const resolvedPath = path.resolve(filePath);
   const relative = path.relative(root, resolvedPath);
 
-  // 4. Must be within project root
+  // 4. Must be within project root or an explicitly trusted root
   if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    for (const allowedRoot of allowedRoots) {
+      if (typeof allowedRoot !== 'string' || !path.isAbsolute(allowedRoot)) continue;
+      // Canonicalize allowedRoot so symlinked ancestors (e.g. macOS /var -> /private/var) don't cause false rejects
+      let canonicalRoot = allowedRoot;
+      try {
+        canonicalRoot = realpathSync(allowedRoot);
+      } catch {
+        // allowedRoot doesn't exist yet — keep as-is
+      }
+      const needle = canonicalRoot.endsWith(path.sep) ? canonicalRoot : canonicalRoot + path.sep;
+      if (resolvedPath === allowedRoot || resolvedPath.startsWith(allowedRoot + path.sep)) {
+        // Resolve symlinks and re-validate — same TOCTOU protection as the project-root branch
+        try {
+          const realPath = realpathSync(resolvedPath);
+          if (realPath !== canonicalRoot && !realPath.startsWith(needle)) {
+            throw new Error(`Access denied: Path '${filePath}' resolves outside trusted root`);
+          }
+          return realPath;
+        } catch (err) {
+          if (err.message.startsWith('Access denied')) throw err;
+          // Path doesn't exist yet — validate parent stays within allowedRoot
+          const dir = path.dirname(resolvedPath);
+          try {
+            const realDir = realpathSync(dir);
+            if (realDir !== canonicalRoot && !realDir.startsWith(needle)) {
+              throw new Error(`Access denied: Path '${filePath}' resolves outside trusted root`);
+            }
+          } catch (dirErr) {
+            if (dirErr.message.startsWith('Access denied')) throw dirErr;
+            // Parent doesn't exist either — allow it, Write tool will create
+          }
+          return resolvedPath;
+        }
+      }
+    }
     throw new Error(`Access denied: Path '${filePath}' is outside project root`);
   }
 

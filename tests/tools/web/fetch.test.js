@@ -251,7 +251,12 @@ describe('WebFetch tool module', () => {
       global.fetch = originalFetch;
     });
 
-    function mockFetch({ status = 200, contentType = 'text/html', body = '<html><body>hello</body></html>', contentLength = null } = {}) {
+    function mockFetch({
+      status = 200,
+      contentType = 'text/html',
+      body = '<html><body>hello</body></html>',
+      contentLength = null,
+    } = {}) {
       global.fetch = async () => ({
         status,
         headers: {
@@ -321,7 +326,7 @@ describe('WebFetch tool module', () => {
       let listenerAttached = false;
       const fakeSignal = {
         aborted: false,
-        addEventListener: (event, handler, opts) => {
+        addEventListener: (event, _handler, _opts) => {
           if (event === 'abort') listenerAttached = true;
         },
         removeEventListener: () => {},

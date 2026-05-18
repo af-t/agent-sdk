@@ -26,7 +26,7 @@ Memory is injected into the LLM's context on every turn via the **injector syste
 ```
 Write/Read/Edit (you)
     ↓
-memory files on disk (.openrouter/memory/)
+memory files on disk (<memoryDir> — see system-reminder for the current path)
     ↓
 memoryIndex injector reads MEMORY.md → first-turn <system-reminder>
 memoryHint injector emits dir + types → first-turn <system-reminder>
@@ -43,9 +43,11 @@ LLM sees index on the very first turn → reads relevant files on demand
 
 ### Memory Directory
 
-Default location: **`.openrouter/memory/`** relative to the project root (which is also `process.cwd()`).
+The memory directory is configured via the `storagePaths.memoryDir` option (or the legacy `memoryDir` option) on the Agent constructor. The path is resolved to an absolute path at construction time, including `~` expansion. Default: **`.openrouter/memory/`** relative to the project root.
 
-The directory is read from `agent._memoryDir` (lazy, resolved at inject time). It can be changed by setting the `memoryDir` option on the Agent constructor, but subagents always get the default.
+The directory is read from `agent._memoryDir` and is always an absolute path. If the configured directory is outside the project root, it is registered in `agent.trustedPaths` so Read/Write/Edit tools can access it normally — you do not need to do anything special to read or write memory files there.
+
+Subagents always get the default directory (`.openrouter/memory/`). If a subagent needs access to a custom memory dir, pass the path explicitly in the delegate prompt.
 
 ---
 
@@ -156,7 +158,8 @@ See [Setup](project_setup.md) for initial configuration steps.
 
 ```markdown
 <!-- Pattern A: Save user preference -->
-Write `.openrouter/memory/feedback_name_sayu.md`
+Write `<memoryDir>/feedback_name_sayu.md`
+(The exact path is shown in the `<system-reminder>` block on the first turn)
 → name: feedback-name-sayu
 → type: feedback
 → Body: "User renamed me to Sayu, prefer this name from now on"
@@ -167,7 +170,7 @@ Then update MEMORY.md:
 
 ```markdown
 <!-- Pattern B: Save a project decision -->
-Write `.openrouter/memory/project_use-pnpm.md`
+Write `<memoryDir>/project_use-pnpm.md`
 → name: project-use-pnpm
 → type: project
 → Body: "Project uses pnpm, not npm. Reason: workspace support."
@@ -209,7 +212,7 @@ Then update MEMORY.md:
 6. **Clean up stale memories** — Outdated info is worse than no info. Review and delete obsolete files periodically.
 7. **Use consistent kebab-case slugs** — `user-preferred-editor`, not `userPreferredEditor` or `User Preferred Editor`.
 8. **Subagents don't inherit custom memory config** — If a subagent needs access to memory, it must use the default directory or you must pass the info explicitly in the delegate prompt.
-9. **File paths go through `ensureSafePath`** — Always use paths relative to project root when reading/writing memory files. The agent infrastructure validates them automatically.
+9. **File paths are validated by `ensureSafePath`** — For memory files within the project root, use relative paths. For files in a configured external `memoryDir`, use absolute paths — they are trusted via `trustedPaths` and accessible through Read/Write/Edit tools without any special handling.
 10. **The index is first-turn only** — MEMORY.md is only injected on the very first turn of a conversation. If you update memories mid-conversation, the LLM won't see the updated index until the next conversation start.
 
 ## How It Works (Technical Details)

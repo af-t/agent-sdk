@@ -370,6 +370,44 @@ The hook returns a disposer. Hooks run in registration order and may be async.
 
 The SDK ships a file-based memory protocol that lets the agent persist knowledge across sessions. There are **no dedicated memory tools** — the LLM reads, writes, and edits memory files using the standard `Read`, `Write`, and `Edit` tools, guided by the `using-memory` skill and the first-turn memory injectors.
 
+### Configurable Storage Paths
+
+Use `storagePaths` to place memory and temporary files outside the project root (e.g. in a user-level config directory):
+
+```js
+const agent = await createAgent({
+  storagePaths: {
+    memoryDir: '~/.config/myapp/workspace/memory', // where memory files live
+    tmpDir: '~/.config/myapp/tmp',                 // where temp files (todos) go
+  },
+});
+```
+
+- `memoryDir` — directory for persistent memory files (`MEMORY.md` + individual memory files). Default: `.openrouter/memory` in the project root.
+- `tmpDir` — directory for temporary files. When set, the todo file is created as `todos-XXXXX.json` inside this directory with a random 5-character suffix per agent instance. Default: `.todos.json` in the project root.
+
+Paths support `~` expansion. Both accept paths inside or outside the project root.
+
+### Cleanup
+
+Call `agent.cleanup()` to delete all files in `tmpDir` (non-recursive; the directory itself is preserved). This is consumer-managed — the SDK does not register any process exit handlers.
+
+Recommended pattern:
+
+```js
+const agent = await createAgent({ storagePaths: { tmpDir: '~/.config/myapp/tmp' } });
+
+process.on('SIGINT', async () => { await agent.cleanup(); process.exit(0); });
+process.on('SIGTERM', async () => { await agent.cleanup(); process.exit(0); });
+
+// Or after a one-shot run:
+try {
+  await agent.run(prompt);
+} finally {
+  await agent.cleanup();
+}
+```
+
 ### File Layout
 
 ```

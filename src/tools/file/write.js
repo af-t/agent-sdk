@@ -17,9 +17,9 @@ export const input_schema = {
   required: ['path', 'content'],
 };
 
-export const execute = async ({ path: filePath, content }) => {
+export const execute = async ({ path: filePath, content }, ctx = {}) => {
   try {
-    const safePath = ensureSafePath(filePath);
+    const safePath = ensureSafePath(filePath, ctx.agent?.trustedPaths);
 
     // Reject oversized writes to prevent disk exhaustion
     const size = Buffer.byteLength(content, 'utf8');

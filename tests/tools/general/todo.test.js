@@ -388,7 +388,12 @@ describe('Todo Tool', () => {
   it('should display due_date info when listing todos with due_date', async () => {
     await cleanup();
     const mod = await import('../../../src/tools/general/todo.js');
-    await mod.execute({ action: 'add', text: 'Task with due date', due_date: '2030-06-15T00:00:00Z', todo_file: testFile });
+    await mod.execute({
+      action: 'add',
+      text: 'Task with due date',
+      due_date: '2030-06-15T00:00:00Z',
+      todo_file: testFile,
+    });
 
     const result = await mod.execute({ action: 'list', todo_file: testFile });
     assert.ok(result.includes('6/15/2030') || result.includes('2030'), 'should display due date');
@@ -460,9 +465,57 @@ describe('Todo Tool', () => {
   it('should throw for unknown action', async () => {
     await cleanup();
     const mod = await import('../../../src/tools/general/todo.js');
-    await assert.rejects(
-      () => mod.execute({ action: 'invalid_action', todo_file: testFile }),
-      /Unknown action/,
-    );
+    await assert.rejects(() => mod.execute({ action: 'invalid_action', todo_file: testFile }), /Unknown action/);
+  });
+
+  it('uses ctx.agent._todoFile when no todo_file param is provided', async () => {
+    const fsP = await import('node:fs/promises');
+    const os_ = await import('node:os');
+    const path_ = await import('node:path');
+    const tmpDir = await fsP.mkdtemp(path_.join(os_.tmpdir(), 'todo-agent-test-'));
+    const agentTodoFile = path_.join(tmpDir, 'todos-abc12.json');
+
+    const mod = await import('../../../src/tools/general/todo.js');
+    const ctx = {
+      agent: {
+        _todoFile: agentTodoFile,
+        trustedPaths: new Set([tmpDir]),
+      },
+    };
+
+    const result = await mod.execute({ action: 'add', text: 'Agent todo' }, ctx);
+    assert.ok(result.includes('Agent todo'));
+
+    const raw = await fsP.readFile(agentTodoFile, 'utf8');
+    const todos = JSON.parse(raw);
+    assert.strictEqual(todos.length, 1);
+    assert.strictEqual(todos[0].text, 'Agent todo');
+
+    await fsP.rm(tmpDir, { recursive: true });
+  });
+
+  it('todo_file param takes precedence over ctx.agent._todoFile', async () => {
+    const fsP = await import('node:fs/promises');
+    const os_ = await import('node:os');
+    const path_ = await import('node:path');
+    const tmpDir = await fsP.mkdtemp(path_.join(os_.tmpdir(), 'todo-agent-test-'));
+    const agentTodoFile = path_.join(tmpDir, 'agent.json');
+    const explicitFile = path_.join(tmpDir, 'explicit.json');
+
+    const mod = await import('../../../src/tools/general/todo.js');
+    const ctx = {
+      agent: {
+        _todoFile: agentTodoFile,
+        trustedPaths: new Set([tmpDir]),
+      },
+    };
+
+    await mod.execute({ action: 'add', text: 'Explicit', todo_file: explicitFile }, ctx);
+
+    const raw = await fsP.readFile(explicitFile, 'utf8');
+    assert.ok(JSON.parse(raw).length === 1);
+    await assert.rejects(() => fsP.stat(agentTodoFile), { code: 'ENOENT' });
+
+    await fsP.rm(tmpDir, { recursive: true });
   });
 });

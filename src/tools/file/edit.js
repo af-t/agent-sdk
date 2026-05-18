@@ -187,10 +187,10 @@ export const input_schema = {
   required: ['path', 'edits'],
 };
 
-export const execute = async ({ path: filePath, edits }) => {
+export const execute = async ({ path: filePath, edits }, ctx = {}) => {
   if (!edits || edits.length === 0) throw new Error('edits must not be empty');
 
-  const safePath = ensureSafePath(filePath);
+  const safePath = ensureSafePath(filePath, ctx.agent?.trustedPaths);
   let content = (await fs.readFile(safePath, 'utf8'))
     .split('\n')
     .map((x) => x.replace(/ +$/, ''))

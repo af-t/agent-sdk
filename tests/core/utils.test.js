@@ -2,6 +2,9 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { ensureSafePath, getIgnoreFilter, stripSecrets, truncateOutput, CONSTANTS } from '../../src/core/utils.js';
 import path from 'node:path';
+import os from 'node:os';
+import fs from 'node:fs';
+import { realpathSync } from 'node:fs';
 
 const projectRoot = process.cwd();
 
@@ -103,6 +106,59 @@ describe('ensureSafePath', () => {
 
   it('rejects protocol handler https://', () => {
     assert.throws(() => ensureSafePath('https://evil.com/payload'), { message: /protocol handler/ });
+  });
+
+  it('accepts path within an explicitly trusted external root', () => {
+    const externalDir = realpathSync(os.tmpdir());
+    const externalFile = path.join(externalDir, 'test.txt');
+    const result = ensureSafePath(externalFile, new Set([externalDir]));
+    assert.ok(result.startsWith(externalDir));
+  });
+
+  it('accepts exact match on trusted root itself', () => {
+    const externalDir = realpathSync(os.tmpdir());
+    const result = ensureSafePath(externalDir, new Set([externalDir]));
+    assert.strictEqual(result, externalDir);
+  });
+
+  it('rejects symlink inside allowedRoot that points outside it', () => {
+    const tmpBase = realpathSync(os.tmpdir());
+    const trustedDir = fs.mkdtempSync(path.join(tmpBase, 'trusted-'));
+    const symlinkPath = path.join(trustedDir, 'escape');
+    try {
+      fs.symlinkSync('/etc', symlinkPath);
+      assert.throws(() => ensureSafePath(symlinkPath, new Set([trustedDir])), {
+        message: /resolves outside trusted root/,
+      });
+    } finally {
+      fs.rmSync(trustedDir, { recursive: true, force: true });
+    }
+  });
+
+  it('still rejects external path when allowedRoots is empty', () => {
+    assert.throws(() => ensureSafePath('/etc/passwd', new Set()), { message: /outside project root/ });
+  });
+
+  it('still rejects external path when allowedRoots does not match', () => {
+    const unrelated = path.join(os.tmpdir(), 'other-trusted');
+    assert.throws(() => ensureSafePath('/etc/passwd', new Set([unrelated])), { message: /outside project root/ });
+  });
+
+  it('ignores relative entries in allowedRoots — only absolute paths are trusted', () => {
+    assert.throws(() => ensureSafePath('/etc/passwd', new Set(['relative/dir'])), { message: /outside project root/ });
+  });
+
+  it('still rejects null bytes even when path matches an allowedRoot', () => {
+    const externalDir = os.tmpdir();
+    assert.throws(() => ensureSafePath(path.join(externalDir, 'file\0.txt'), new Set([externalDir])), {
+      message: /null byte/,
+    });
+  });
+
+  it('default call (no second arg) behaves identically to old API', () => {
+    assert.throws(() => ensureSafePath('/etc/passwd'), { message: /outside project root/ });
+    const result = ensureSafePath('src/index.js');
+    assert.ok(result.endsWith('src/index.js'));
   });
 });
 

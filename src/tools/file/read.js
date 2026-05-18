@@ -18,9 +18,9 @@ export const input_schema = {
   required: ['path'],
 };
 
-export const execute = async ({ path: filePath, start_line = 1, end_line = Infinity, max_lines = 1500 }) => {
+export const execute = async ({ path: filePath, start_line = 1, end_line = Infinity, max_lines = 1500 }, ctx = {}) => {
   try {
-    const safePath = ensureSafePath(filePath);
+    const safePath = ensureSafePath(filePath, ctx.agent?.trustedPaths);
 
     // Check file size before reading to prevent memory exhaustion
     const stat = await fs.stat(safePath);

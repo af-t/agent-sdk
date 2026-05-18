@@ -2,6 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { execSync } from 'node:child_process';
 
 const FIXTURES = path.resolve('tests/fixtures/find-test-dir');
 
@@ -274,6 +275,13 @@ describe('find.js — nativeSearch fallback & edge cases', () => {
   const FIXTURES_NATIVE = path.resolve('tests/fixtures/find-native-dir');
 
   before(async () => {
+    // Clean up any leftover directory from a previous interrupted run
+    // Use execSync for robust cleanup — fs.rm can't delete dirs with 000 permissions
+    try {
+      execSync(`rm -rf ${FIXTURES_NATIVE}`);
+    } catch {
+      /* ignore */
+    }
     await fs.mkdir(path.join(FIXTURES_NATIVE, 'deep'), { recursive: true });
     await fs.writeFile(path.join(FIXTURES_NATIVE, 'report.pdf'), 'some pdf content', 'utf8');
     await fs.writeFile(path.join(FIXTURES_NATIVE, 'deep', 'notes.txt'), 'important notes here', 'utf8');

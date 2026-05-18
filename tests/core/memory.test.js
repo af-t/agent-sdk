@@ -201,11 +201,11 @@ describe('Agent — memoryIndex injector', () => {
     assert.doesNotMatch(text, /Memory index/);
   });
 
-  it('memoryDir resolution respects ensureSafePath (path outside cwd is rejected silently)', async () => {
+  it('memoryIndex injector returns empty when MEMORY.md does not exist in external memoryDir', async () => {
     const fetchStub = captureFetch();
     global.fetch = fetchStub;
 
-    // /etc is outside cwd, ensureSafePath should reject and the injector returns ''.
+    // path is outside cwd — now trusted via trustedPaths, but file does not exist → empty result
     const agent = new Agent({
       apiKey: 'sk-test',
       injectors: { date: false, contextFiles: false, memoryHint: false, skillList: false },

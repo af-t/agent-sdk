@@ -5,9 +5,9 @@ import { ensureSafePath } from '../../core/utils.js';
 // Hard cap to prevent unbounded growth
 const MAX_TODOS = 1000;
 
-const readTodos = async (filePath) => {
+const readTodos = async (filePath, trustedPaths = new Set()) => {
   try {
-    const safePath = ensureSafePath(filePath);
+    const safePath = ensureSafePath(filePath, trustedPaths);
     const data = await fs.readFile(safePath, 'utf8');
     return JSON.parse(data);
   } catch (error) {
@@ -19,8 +19,8 @@ const readTodos = async (filePath) => {
   }
 };
 
-const writeTodos = async (filePath, todos) => {
-  const safePath = ensureSafePath(filePath);
+const writeTodos = async (filePath, todos, trustedPaths = new Set()) => {
+  const safePath = ensureSafePath(filePath, trustedPaths);
   await fs.writeFile(safePath, JSON.stringify(todos, null, 2), 'utf8');
 };
 
@@ -96,11 +96,12 @@ export const execute = async ({
   filter = 'all',
   sort_by = 'created_at',
   todo_file,
-}) => {
-  const todoPath = todo_file || path.join(process.cwd(), '.todos.json');
+}, ctx = {}) => {
+  const trustedPaths = ctx.agent?.trustedPaths;
+  const todoPath = todo_file || ctx.agent?._todoFile || path.join(process.cwd(), '.todos.json');
 
   try {
-    let todos = await readTodos(todoPath);
+    let todos = await readTodos(todoPath, trustedPaths);
 
     switch (action) {
       case 'add': {
@@ -124,7 +125,7 @@ export const execute = async ({
         };
 
         todos.push(newTodo);
-        await writeTodos(todoPath, todos);
+        await writeTodos(todoPath, todos, trustedPaths);
 
         const dueDate = newTodo.due_date ? new Date(newTodo.due_date) : null;
         const dueInfo = dueDate ? ` (Due: ${dueDate.toLocaleDateString('en-US')})` : '';
@@ -214,7 +215,7 @@ export const execute = async ({
 
         todo.completed = true;
         todo.updated_at = new Date().toISOString();
-        await writeTodos(todoPath, todos);
+        await writeTodos(todoPath, todos, trustedPaths);
 
         return `✅ Todo completed:
    "${todo.text}"`;
@@ -231,7 +232,7 @@ export const execute = async ({
         }
 
         const deletedTodo = todos.splice(index, 1)[0];
-        await writeTodos(todoPath, todos);
+        await writeTodos(todoPath, todos, trustedPaths);
 
         return `🗑️ Todo deleted:
    "${deletedTodo.text}"`;
@@ -275,7 +276,7 @@ export const execute = async ({
         }
 
         todo.updated_at = new Date().toISOString();
-        await writeTodos(todoPath, todos);
+        await writeTodos(todoPath, todos, trustedPaths);
 
         if (updates.length === 0) {
           return `ℹ️ No changes applied to todo "${todo.text}".`;
@@ -310,7 +311,7 @@ export const execute = async ({
         }
 
         todos = [];
-        await writeTodos(todoPath, todos);
+        await writeTodos(todoPath, todos, trustedPaths);
 
         return `🧹 All ${count} todos have been cleared.`;
       }

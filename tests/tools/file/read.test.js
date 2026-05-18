@@ -52,4 +52,28 @@ describe('read.js execute', () => {
     const result = await mod.execute({ path: TEST_FILE, start_line: 1, end_line: 5 });
     assert.ok(result.includes('[... truncated]'));
   });
+
+  it('reads a file outside project root when in agent trustedPaths', async () => {
+    const fsP = await import('node:fs/promises');
+    const os = await import('node:os');
+    const pathMod = await import('node:path');
+    const tmpDir = await fsP.mkdtemp(pathMod.join(os.tmpdir(), 'read-tool-test-'));
+    const file = pathMod.join(tmpDir, 'external.txt');
+    await fsP.writeFile(file, 'external file content');
+
+    const mod = await import('../../../src/tools/file/read.js');
+    const ctx = { agent: { trustedPaths: new Set([tmpDir]) } };
+    const result = await mod.execute({ path: file }, ctx);
+
+    assert.ok(result.includes('external file content'));
+    await fsP.rm(tmpDir, { recursive: true });
+  });
+
+  it('rejects file outside project root with empty trustedPaths', async () => {
+    const mod = await import('../../../src/tools/file/read.js');
+    await assert.rejects(
+      () => mod.execute({ path: '/etc/hostname' }, { agent: { trustedPaths: new Set() } }),
+      { message: /outside project root/ },
+    );
+  });
 });

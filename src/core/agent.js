@@ -7,10 +7,16 @@ import skillRegistry from '../registry/skill.js';
 import crypto from 'node:crypto';
 import os from 'node:os';
 import fs from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
 const __dirname = getDirname(import.meta);
+
+function resolveStoragePath(p) {
+  if (!p || typeof p !== 'string') return null;
+  const expanded = p.startsWith('~') ? path.join(os.homedir(), p.slice(1)) : p;
+  return path.resolve(expanded);
+}
 
 const REQUEST_TIMEOUT = 120_000; // 2 minutes
 const DEFAULT_MAX_TURNS = 25;
@@ -47,6 +53,7 @@ class Agent {
       maxToolOutputChars,
       injectors,
       contextFiles,
+      storagePaths,
       memoryDir,
       memoryTypes,
     } = options;
@@ -93,10 +100,31 @@ class Agent {
 
     if (injectors?.contextFiles !== false) {
       const files = Array.isArray(contextFiles) && contextFiles.length > 0 ? contextFiles : ['AGENT.md'];
-      this.registerInjector({ name: 'contextFiles', scope: 'first-turn', fn: contextFilesInjector(files) });
+      this.registerInjector({
+        name: 'contextFiles',
+        scope: 'first-turn',
+        fn: contextFilesInjector(files, () => this.trustedPaths),
+      });
     }
 
-    this._memoryDir = memoryDir || '.openrouter/memory';
+    const resolvedMemoryDir =
+      resolveStoragePath(storagePaths?.memoryDir) ||
+      resolveStoragePath(memoryDir) ||
+      path.resolve('.openrouter/memory');
+    const resolvedTmpDir = resolveStoragePath(storagePaths?.tmpDir) || null;
+
+    this._memoryDir = resolvedMemoryDir;
+    this._storageTmpDir = resolvedTmpDir;
+    this._todoFile = resolvedTmpDir
+      ? path.join(resolvedTmpDir, `todos-${Math.random().toString(36).slice(2, 7)}.json`)
+      : path.join(process.cwd(), '.todos.json');
+
+    const _projectRoot = path.resolve(process.cwd());
+    this.trustedPaths = new Set();
+    for (const dir of [resolvedMemoryDir, resolvedTmpDir].filter(Boolean)) {
+      const rel = path.relative(_projectRoot, dir);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) this.trustedPaths.add(dir);
+    }
 
     this._memoryTypes = {
       user: 'Information about the user — role, goals, knowledge, preferences.',
@@ -110,7 +138,7 @@ class Agent {
       this.registerInjector({
         name: 'memoryIndex',
         scope: 'first-turn',
-        fn: memoryIndexInjector(() => this._memoryDir),
+        fn: memoryIndexInjector(() => this._memoryDir, () => this.trustedPaths),
       });
     }
 
@@ -472,6 +500,24 @@ class Agent {
     this.usage = { cost: 0, tokens: 0 };
   }
 
+  async cleanup() {
+    if (!this._storageTmpDir) return;
+    let entries;
+    try {
+      entries = await readdir(this._storageTmpDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      try {
+        await unlink(path.join(this._storageTmpDir, entry.name));
+      } catch (err) {
+        logger.debug(`cleanup: failed to delete ${entry.name}: ${err.message}`);
+      }
+    }
+  }
+
   async run(prompt, notify = null, options = {}) {
     const { signal } = options;
     const isStreaming = typeof notify === 'function';
@@ -605,13 +651,14 @@ function defaultDateInjector() {
   return `Current date: ${date} ${time} UTC`;
 }
 
-function contextFilesInjector(filePaths) {
+function contextFilesInjector(filePaths, trustedPathsFn) {
   return async function () {
+    const trustedPaths = trustedPathsFn?.() ?? new Set();
     const parts = [];
     for (const filePath of filePaths) {
       let resolved;
       try {
-        resolved = ensureSafePath(filePath);
+        resolved = ensureSafePath(filePath, trustedPaths);
       } catch {
         // Path traversal or outside root — skip silently.
         continue;
@@ -634,12 +681,13 @@ function contextFilesInjector(filePaths) {
   };
 }
 
-function memoryIndexInjector(memoryDirFn) {
+function memoryIndexInjector(memoryDirFn, trustedPathsFn) {
   return async function () {
     const memoryDir = memoryDirFn();
+    const trustedPaths = trustedPathsFn?.() ?? new Set();
     let resolved;
     try {
-      resolved = ensureSafePath(path.join(memoryDir, 'MEMORY.md'));
+      resolved = ensureSafePath(path.join(memoryDir, 'MEMORY.md'), trustedPaths);
     } catch {
       return '';
     }

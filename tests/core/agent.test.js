@@ -1,5 +1,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import os from 'node:os';
+import path from 'node:path';
 import { CONSTANTS } from '../../src/core/utils.js';
 
 function makeSseResponse(lines) {
@@ -457,5 +459,132 @@ describe('run() — message accumulation and reset', () => {
     assert.strictEqual(agent.messages.length, 0);
     assert.strictEqual(agent.usage.cost, 0);
     assert.strictEqual(agent.usage.tokens, 0);
+  });
+});
+
+describe('Agent — storagePaths option', () => {
+  let Agent;
+
+  before(async () => {
+    const mod = await import('../../src/core/agent.js');
+    Agent = mod.default;
+  });
+
+  it('storagePaths.memoryDir sets _memoryDir to resolved absolute path', () => {
+    const agent = new Agent({ apiKey: 'sk-test', storagePaths: { memoryDir: '~/.config/test/memory' } });
+    assert.ok(path.isAbsolute(agent._memoryDir));
+    assert.ok(agent._memoryDir.endsWith(path.join('.config', 'test', 'memory')));
+  });
+
+  it('storagePaths.memoryDir takes precedence over legacy memoryDir option', () => {
+    const agent = new Agent({
+      apiKey: 'sk-test',
+      memoryDir: '.old/memory',
+      storagePaths: { memoryDir: '~/.config/new/memory' },
+    });
+    assert.ok(agent._memoryDir.includes(path.join('.config', 'new', 'memory')));
+  });
+
+  it('legacy memoryDir still works when storagePaths is absent', () => {
+    const agent = new Agent({ apiKey: 'sk-test', memoryDir: '.custom/memory' });
+    assert.ok(agent._memoryDir.endsWith('.custom/memory'));
+  });
+
+  it('default _memoryDir is resolved .openrouter/memory when neither option is provided', () => {
+    const agent = new Agent({ apiKey: 'sk-test' });
+    assert.strictEqual(agent._memoryDir, path.resolve('.openrouter/memory'));
+  });
+
+  it('storagePaths.tmpDir generates _todoFile with todos-XXXXX.json pattern', () => {
+    const agent = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir: '/tmp/lumen-test' } });
+    assert.ok(agent._todoFile.startsWith('/tmp/lumen-test'));
+    assert.match(path.basename(agent._todoFile), /^todos-[a-z0-9]{5}\.json$/);
+  });
+
+  it('two agents with same tmpDir get different _todoFile names', () => {
+    const a = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir: '/tmp/lumen-test' } });
+    const b = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir: '/tmp/lumen-test' } });
+    assert.notStrictEqual(a._todoFile, b._todoFile);
+  });
+
+  it('without tmpDir, _todoFile defaults to .todos.json in process.cwd()', () => {
+    const agent = new Agent({ apiKey: 'sk-test' });
+    assert.strictEqual(agent._todoFile, path.join(process.cwd(), '.todos.json'));
+  });
+
+  it('trustedPaths contains external memoryDir', () => {
+    const externalDir = path.join(os.tmpdir(), 'lumen-memory');
+    const agent = new Agent({ apiKey: 'sk-test', storagePaths: { memoryDir: externalDir } });
+    assert.ok(agent.trustedPaths.has(externalDir));
+  });
+
+  it('trustedPaths contains external tmpDir', () => {
+    const externalTmp = path.join(os.tmpdir(), 'lumen-tmp');
+    const agent = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir: externalTmp } });
+    assert.ok(agent.trustedPaths.has(externalTmp));
+  });
+
+  it('trustedPaths is empty when all paths are within project root', () => {
+    const agent = new Agent({ apiKey: 'sk-test', storagePaths: { memoryDir: '.openrouter/memory' } });
+    assert.strictEqual(agent.trustedPaths.size, 0);
+  });
+});
+
+describe('Agent — cleanup()', () => {
+  let Agent;
+
+  before(async () => {
+    const mod = await import('../../src/core/agent.js');
+    Agent = mod.default;
+  });
+
+  it('is a no-op when _storageTmpDir is not configured', async () => {
+    const agent = new Agent({ apiKey: 'sk-test' });
+    await assert.doesNotReject(() => agent.cleanup());
+  });
+
+  it('deletes files in _storageTmpDir', async () => {
+    const fsP = await import('node:fs/promises');
+    const tmpDir = await fsP.mkdtemp(path.join(os.tmpdir(), 'sdk-cleanup-test-'));
+    await fsP.writeFile(path.join(tmpDir, 'todos-abc12.json'), '[]');
+    await fsP.writeFile(path.join(tmpDir, 'todos-xyz89.json'), '[]');
+
+    const agent = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir } });
+    await agent.cleanup();
+
+    const entries = await fsP.readdir(tmpDir);
+    assert.strictEqual(entries.length, 0);
+    await fsP.rm(tmpDir, { recursive: true });
+  });
+
+  it('does not remove the tmpDir itself', async () => {
+    const fsP = await import('node:fs/promises');
+    const tmpDir = await fsP.mkdtemp(path.join(os.tmpdir(), 'sdk-cleanup-test-'));
+
+    const agent = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir } });
+    await agent.cleanup();
+
+    const stat = await fsP.stat(tmpDir);
+    assert.ok(stat.isDirectory());
+    await fsP.rm(tmpDir, { recursive: true });
+  });
+
+  it('skips subdirectories in tmpDir', async () => {
+    const fsP = await import('node:fs/promises');
+    const tmpDir = await fsP.mkdtemp(path.join(os.tmpdir(), 'sdk-cleanup-test-'));
+    await fsP.mkdir(path.join(tmpDir, 'subdir'));
+
+    const agent = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir } });
+    await agent.cleanup();
+
+    const entries = await fsP.readdir(tmpDir);
+    assert.deepStrictEqual(entries, ['subdir']);
+    await fsP.rm(tmpDir, { recursive: true });
+  });
+
+  it('is a no-op when tmpDir does not exist yet', async () => {
+    const tmpDir = path.join(os.tmpdir(), `sdk-nonexistent-${Date.now()}`);
+    const agent = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir } });
+    await assert.doesNotReject(() => agent.cleanup());
   });
 });

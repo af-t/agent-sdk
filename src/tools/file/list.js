@@ -15,9 +15,9 @@ export const input_schema = {
   required: ['path'],
 };
 
-export const execute = async ({ path: dirPath = '.', depth = 1 }) => {
+export const execute = async ({ path: dirPath = '.', depth = 1 }, ctx = {}) => {
   try {
-    const absPath = ensureSafePath(dirPath);
+    const absPath = ensureSafePath(dirPath, ctx.agent?.trustedPaths);
     const filter = await getIgnoreFilter();
     const results = [];
 
