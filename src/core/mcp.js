@@ -1,16 +1,4 @@
-// MCP concurrency audit (feat/parallel-tool-execution)
-//
-// This implementation is safe for concurrent tool calls:
-// 1. Request-ID uniqueness — this.requestId increments synchronously in
-//    request() before any await, guaranteeing unique IDs per connection.
-// 2. Response correlation — pendingRequests Map is keyed by request ID;
-//    #handleMessage runs synchronously from readline 'line' events.
-// 3. Stdio framing — readline buffers until newline, no partial-read races.
-// 4. Shared state — requestId, pendingRequests, and stdin writes are all
-//    accessed synchronously without interleaved awaits.
-//
-// Result: MCP tools can be marked parallelSafe: true when the server
-// handles concurrent JSON-RPC requests correctly.
+// concurrent-safe: sync request IDs + response Map + no interleaved awaits
 
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
@@ -146,7 +134,7 @@ export class McpNativeClient extends EventEmitter {
     try {
       this.process.stdin.write(JSON.stringify(message) + '\n');
     } catch (err) {
-      console.error(`Failed to send notification ${method}: ${err.message}`);
+      logger.error(`Failed to send notification ${method}: ${err.message}`);
     }
   }
 

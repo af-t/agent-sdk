@@ -79,24 +79,16 @@ export const input_schema = {
     },
     todo_file: {
       type: 'string',
-      description: 'Custom todo file path (optional, default: .todos.json in project root)',
+      description: 'Custom todo file path (optional, default: agent-configured path or .todos.json in project root)',
     },
   },
   required: ['action'],
 };
 
-export const execute = async ({
-  action,
-  text,
-  priority,
-  due_date,
-  category,
-  id,
-  completed,
-  filter = 'all',
-  sort_by = 'created_at',
-  todo_file,
-}, ctx = {}) => {
+export const execute = async (
+  { action, text, priority, due_date, category, id, completed, filter = 'all', sort_by = 'created_at', todo_file },
+  ctx = {},
+) => {
   const trustedPaths = ctx.agent?.trustedPaths;
   const todoPath = todo_file || ctx.agent?._todoFile || path.join(process.cwd(), '.todos.json');
 
@@ -130,10 +122,10 @@ export const execute = async ({
         const dueDate = newTodo.due_date ? new Date(newTodo.due_date) : null;
         const dueInfo = dueDate ? ` (Due: ${dueDate.toLocaleDateString('en-US')})` : '';
 
-        return `✅ Todo added:
-   📝 ${newTodo.text}
-   🎯 Priority: ${newTodo.priority.toUpperCase()}
-   🏷️  Category: ${newTodo.category}${dueInfo}
+        return `Todo added:
+   Text: ${newTodo.text}
+   Priority: ${newTodo.priority.toUpperCase()}
+   Category: ${newTodo.category}${dueInfo}
    ID: ${newTodo.id}`;
       }
 
@@ -164,28 +156,24 @@ export const execute = async ({
         });
 
         if (filteredTodos.length === 0) {
-          return `📭 No tasks${filterLabel}.`;
+          return `No tasks${filterLabel}.`;
         }
 
-        let output = `📋 Task List${filterLabel} - Total: ${filteredTodos.length}\n`;
-        output += `${'─'.repeat(60)}\n`;
+        let output = `Task List${filterLabel} - Total: ${filteredTodos.length}\n`;
+        output += `${'-'.repeat(60)}\n`;
 
         filteredTodos.forEach((todo, index) => {
-          const status = todo.completed ? '✅' : '⏳';
-          const priorityEmoji = {
-            high: '🔴',
-            medium: '🟡',
-            low: '🟢',
-          }[todo.priority];
+          const status = todo.completed ? '[done]' : '[pending]';
+          const priorityLabel = { high: '[high]', medium: '[medium]', low: '[low]' }[todo.priority];
 
           let dueInfo = '';
           if (todo.due_date) {
             const dueDate = new Date(todo.due_date);
             const isOverdue = !todo.completed && dueDate < new Date();
-            dueInfo = ` | ${isOverdue ? '🚨 Overdue' : '📅'} ${dueDate.toLocaleDateString('en-US')}`;
+            dueInfo = ` | ${isOverdue ? '[overdue]' : 'due:'} ${dueDate.toLocaleDateString('en-US')}`;
           }
 
-          output += `${index + 1}. ${status} ${priorityEmoji} ${todo.text}\n`;
+          output += `${index + 1}. ${status} ${priorityLabel} ${todo.text}\n`;
           output += `   ID: ${todo.id} | ${todo.category.toUpperCase()} | Created: ${new Date(todo.created_at).toLocaleDateString('en-US')}${dueInfo}\n`;
         });
 
@@ -193,8 +181,8 @@ export const execute = async ({
         const total = todos.length;
         const completedCount = todos.filter((t) => t.completed).length;
         const pendingCount = total - completedCount;
-        output += `\n${'─'.repeat(60)}\n`;
-        output += `📊 Summary: ${completedCount}/${total} completed | ${pendingCount} pending`;
+        output += `\n${'-'.repeat(60)}\n`;
+        output += `Summary: ${completedCount}/${total} completed | ${pendingCount} pending`;
 
         return output;
       }
@@ -210,15 +198,14 @@ export const execute = async ({
         }
 
         if (todo.completed) {
-          return `⚠️ Todo "${todo.text}" is already completed.`;
+          return `Todo "${todo.text}" is already completed.`;
         }
 
         todo.completed = true;
         todo.updated_at = new Date().toISOString();
         await writeTodos(todoPath, todos, trustedPaths);
 
-        return `✅ Todo completed:
-   "${todo.text}"`;
+        return `Todo completed:\n   "${todo.text}"`;
       }
 
       case 'delete': {
@@ -234,8 +221,7 @@ export const execute = async ({
         const deletedTodo = todos.splice(index, 1)[0];
         await writeTodos(todoPath, todos, trustedPaths);
 
-        return `🗑️ Todo deleted:
-   "${deletedTodo.text}"`;
+        return `Todo deleted:\n   "${deletedTodo.text}"`;
       }
 
       case 'update': {
@@ -279,27 +265,23 @@ export const execute = async ({
         await writeTodos(todoPath, todos, trustedPaths);
 
         if (updates.length === 0) {
-          return `ℹ️ No changes applied to todo "${todo.text}".`;
+          return `No changes applied to todo "${todo.text}".`;
         }
 
-        const statusEmoji = todo.completed ? '✅' : '⏳';
-        const priorityEmoji = {
-          high: '🔴',
-          medium: '🟡',
-          low: '🟢',
-        }[todo.priority];
+        const statusLabel = todo.completed ? '[done]' : '[pending]';
+        const priorityLabel = { high: '[high]', medium: '[medium]', low: '[low]' }[todo.priority];
 
         let dueInfo = '';
         if (todo.due_date) {
           const dueDate = new Date(todo.due_date);
           const isOverdue = !todo.completed && dueDate < new Date();
-          dueInfo = ` | ${isOverdue ? '🚨 Overdue' : '📅'} ${dueDate.toLocaleDateString('en-US')}`;
+          dueInfo = ` | ${isOverdue ? '[overdue]' : 'due:'} ${dueDate.toLocaleDateString('en-US')}`;
         }
 
-        return `🔄 Todo updated:
+        return `Todo updated:
    "${todo.text}"
-   Status: ${statusEmoji} ${todo.completed ? 'Completed' : 'Pending'}
-   Priority: ${priorityEmoji} ${todo.priority.toUpperCase()}
+   Status: ${statusLabel} ${todo.completed ? 'Completed' : 'Pending'}
+   Priority: ${priorityLabel} ${todo.priority.toUpperCase()}
    Category: ${todo.category.toUpperCase()}${dueInfo}
    Changed: ${updates.join(', ')}`;
       }
@@ -307,13 +289,13 @@ export const execute = async ({
       case 'clear': {
         const count = todos.length;
         if (count === 0) {
-          return '📭 Todo list is already empty.';
+          return 'Todo list is already empty.';
         }
 
         todos = [];
         await writeTodos(todoPath, todos, trustedPaths);
 
-        return `🧹 All ${count} todos have been cleared.`;
+        return `Cleared ${count} todos.`;
       }
 
       default:

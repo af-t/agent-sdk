@@ -7,7 +7,7 @@ export class ToolRegistry {
   #mcpClients = [];
   #hooks = { beforeExecute: [], afterExecute: [] };
 
-  // Hook before tool execute — receives { name, input, context }, throw to abort. Returns disposer.
+  // throw to abort; returns disposer
   onBeforeExecute(fn) {
     this.#hooks.beforeExecute.push(fn);
     return () => {
@@ -16,7 +16,7 @@ export class ToolRegistry {
     };
   }
 
-  // Hook after tool execute — receives { name, input, context, result }, throw to discard result. Returns disposer.
+  // throw to discard result; returns disposer
   onAfterExecute(fn) {
     this.#hooks.afterExecute.push(fn);
     return () => {

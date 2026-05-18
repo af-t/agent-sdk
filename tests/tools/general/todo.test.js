@@ -39,7 +39,7 @@ describe('Todo Tool', () => {
       todo_file: testFile,
     });
 
-    assert.ok(result.includes('✅ Todo added'));
+    assert.ok(result.includes('Todo added'));
     assert.ok(result.includes('Learn Unit Testing'));
     assert.ok(result.includes('Priority: HIGH'));
     assert.ok(result.includes('Category: development'));
@@ -156,7 +156,7 @@ describe('Todo Tool', () => {
       todo_file: testFile,
     });
 
-    assert.ok(result.includes('✅ Todo completed'));
+    assert.ok(result.includes('Todo completed'));
     assert.ok(result.includes('Task to be completed'));
 
     // Verify in list
@@ -208,7 +208,7 @@ describe('Todo Tool', () => {
       todo_file: testFile,
     });
 
-    assert.ok(result.includes('🗑️ Todo deleted'));
+    assert.ok(result.includes('Todo deleted'));
     assert.ok(result.includes('Task to delete'));
 
     // Verify list is empty
@@ -243,7 +243,7 @@ describe('Todo Tool', () => {
       todo_file: testFile,
     });
 
-    assert.ok(result.includes('🔄 Todo updated'));
+    assert.ok(result.includes('Todo updated'));
     assert.ok(result.includes('New task'));
     assert.ok(result.includes('Changed: text'));
   });
@@ -285,7 +285,7 @@ describe('Todo Tool', () => {
 
     assert.ok(result.includes('Changed:'));
     assert.ok(result.includes('status'));
-    assert.ok(result.includes('✅ Completed'));
+    assert.ok(result.includes('Completed'));
   });
 
   it('should not change priority when updating other fields (regression)', async () => {
@@ -308,7 +308,7 @@ describe('Todo Tool', () => {
     // Should only have changed text, not priority
     assert.ok(result.includes('Changed: text'));
     assert.ok(!result.includes('Changed: text, priority'));
-    assert.ok(result.includes('Priority: 🔴 HIGH'));
+    assert.ok(result.includes('Priority: [high] HIGH'));
   });
 
   it('should sort by priority', async () => {
@@ -337,7 +337,7 @@ describe('Todo Tool', () => {
     await mod.execute({ action: 'add', text: 'Task 2', todo_file: testFile });
 
     const result = await mod.execute({ action: 'clear', todo_file: testFile });
-    assert.ok(result.includes('All 2 todos have been cleared'));
+    assert.ok(result.includes('Cleared 2 todos'));
 
     const listResult = await mod.execute({ action: 'list', todo_file: testFile });
     assert.ok(listResult.includes('No tasks'));

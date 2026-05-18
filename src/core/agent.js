@@ -138,7 +138,10 @@ class Agent {
       this.registerInjector({
         name: 'memoryIndex',
         scope: 'first-turn',
-        fn: memoryIndexInjector(() => this._memoryDir, () => this.trustedPaths),
+        fn: memoryIndexInjector(
+          () => this._memoryDir,
+          () => this.trustedPaths,
+        ),
       });
     }
 
@@ -556,8 +559,7 @@ class Agent {
       }
       loopCount++;
 
-      // Soft limit: on the very last allowed turn, if we are coming from a tool execution,
-      // inject a warning to encourage a final summary (Subagents only).
+      // subagent turn-limit: nudge final summary on last tool turn
       if (this.isSubagent && this.maxTurns > 0 && loopCount === this.maxTurns) {
         const lastMsg = this.messages[this.messages.length - 1];
         if (lastMsg?.role === 'tool') {

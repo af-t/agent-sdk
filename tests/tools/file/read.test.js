@@ -71,9 +71,8 @@ describe('read.js execute', () => {
 
   it('rejects file outside project root with empty trustedPaths', async () => {
     const mod = await import('../../../src/tools/file/read.js');
-    await assert.rejects(
-      () => mod.execute({ path: '/etc/hostname' }, { agent: { trustedPaths: new Set() } }),
-      { message: /outside project root/ },
-    );
+    await assert.rejects(() => mod.execute({ path: '/etc/hostname' }, { agent: { trustedPaths: new Set() } }), {
+      message: /outside project root/,
+    });
   });
 });

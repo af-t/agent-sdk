@@ -28,7 +28,7 @@ export const execute = async ({ path: filePath, start_line = 1, end_line = Infin
       throw new Error(`File too large (${stat.size} bytes). Maximum readable size is ${MAX_READ_SIZE} bytes (10MB).`);
     }
 
-    // Read entire file content — use fs.readFile instead of spawn('cat') for portability & security
+    // readFile not spawn('cat') — portability + security
     const content = await fs.readFile(safePath, 'utf8');
     const lines = content.split('\n');
     // Remove trailing empty line from split

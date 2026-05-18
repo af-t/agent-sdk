@@ -71,7 +71,7 @@ export class SkillRegistry {
     try {
       await fs.access(dir);
     } catch {
-      /* directory doesn't exist — skip */
+      // directory doesn't exist — skip
       return;
     }
 
