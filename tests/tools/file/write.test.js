@@ -28,17 +28,17 @@ describe('write.js execute', () => {
     assert.equal(content, 'hello world');
   });
 
-  it('overwrites an existing file', async () => {
+  it('overwrites an existing file when overwrite=true', async () => {
     const mod = await import('../../../src/tools/file/write.js');
     await fs.writeFile(TEST_FILE, 'old content');
-    await mod.execute({ path: TEST_FILE, content: 'new content' });
+    await mod.execute({ path: TEST_FILE, content: 'new content', overwrite: true });
     const content = await fs.readFile(TEST_FILE, 'utf8');
     assert.equal(content, 'new content');
   });
 
   it('writes empty content', async () => {
     const mod = await import('../../../src/tools/file/write.js');
-    await mod.execute({ path: TEST_FILE, content: '' });
+    await mod.execute({ path: TEST_FILE, content: '', overwrite: true });
     const content = await fs.readFile(TEST_FILE, 'utf8');
     assert.equal(content, '');
   });
@@ -83,7 +83,7 @@ describe('write.js execute', () => {
     assert.ok(size <= maxSize, `Size ${size} should be <= ${maxSize}`);
     assert.ok(size > maxSize - 10, `Size ${size} should be near ${maxSize}`);
 
-    const result = await mod.execute({ path: LARGE_TEST_FILE, content });
+    const result = await mod.execute({ path: LARGE_TEST_FILE, content, overwrite: true });
     assert.ok(result.includes('File written'));
   });
 
@@ -126,8 +126,77 @@ describe('write.js execute', () => {
 
   it('returns metadata about the written file', async () => {
     const mod = await import('../../../src/tools/file/write.js');
-    const result = await mod.execute({ path: TEST_FILE, content: 'test data' });
+    const result = await mod.execute({ path: TEST_FILE, content: 'test data', overwrite: true });
     assert.ok(result.includes('Absolute path'));
     assert.ok(result.includes('Bytes written'));
+  });
+});
+
+describe('write.js — overwrite guard and fileState', () => {
+  let mod;
+  let hashContent;
+  let tmpDir;
+
+  before(async () => {
+    mod = await import('../../../src/tools/file/write.js');
+    hashContent = (await import('../../../src/core/file-state.js')).hashContent;
+    const fsP = await import('node:fs/promises');
+    const os = await import('node:os');
+    tmpDir = await fsP.mkdtemp(path.join(os.tmpdir(), 'write-state-test-'));
+  });
+
+  after(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  function makeCtx() {
+    return { agent: { fileState: new Map(), currentTurn: 7, trustedPaths: new Set([tmpDir]) } };
+  }
+
+  it('writes a new file without ctx.agent (legacy callers)', async () => {
+    const file = path.join(FIXTURES, 'write-state-legacy.txt');
+    await fs.rm(file, { force: true });
+    try {
+      const result = await mod.execute({ path: file, content: 'hello' });
+      assert.ok(result.includes('File written'));
+      const onDisk = await fs.readFile(file, 'utf8');
+      assert.equal(onDisk, 'hello');
+    } finally {
+      await fs.rm(file, { force: true });
+    }
+  });
+
+  it('writing a new path populates fileState', async () => {
+    const ctx = makeCtx();
+    const file = path.join(tmpDir, 'new.txt');
+    await mod.execute({ path: file, content: 'a\nb\nc' }, ctx);
+    const entry = ctx.agent.fileState.get(file);
+    assert.ok(entry, 'expected fileState entry to be created');
+    assert.equal(entry.hash, hashContent('a\nb\nc'));
+    assert.equal(entry.lastReadTurn, 7);
+    assert.equal(entry.totalLines, 3);
+    assert.deepEqual(entry.rangesRead, [[1, 3]]);
+  });
+
+  it('refuses to overwrite an existing file without overwrite=true', async () => {
+    const ctx = makeCtx();
+    const file = path.join(tmpDir, 'existing.txt');
+    await fs.writeFile(file, 'old', 'utf8');
+    await assert.rejects(() => mod.execute({ path: file, content: 'new' }, ctx), /already exists/);
+    const onDisk = await fs.readFile(file, 'utf8');
+    assert.equal(onDisk, 'old');
+  });
+
+  it('overwrites an existing file when overwrite=true and updates state', async () => {
+    const ctx = makeCtx();
+    const file = path.join(tmpDir, 'overwrite.txt');
+    await fs.writeFile(file, 'old', 'utf8');
+    const result = await mod.execute({ path: file, content: 'new\nlines', overwrite: true }, ctx);
+    assert.ok(result.includes('File written'));
+    const onDisk = await fs.readFile(file, 'utf8');
+    assert.equal(onDisk, 'new\nlines');
+    const entry = ctx.agent.fileState.get(file);
+    assert.equal(entry.hash, hashContent('new\nlines'));
+    assert.equal(entry.totalLines, 2);
   });
 });

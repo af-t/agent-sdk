@@ -70,6 +70,8 @@ class Agent {
     this.maxTokens = parseInt(maxTokens || config.MAX_TOKENS || 0) || undefined;
     this.usage = { cost: 0, tokens: 0 };
     this.subagents = new Map();
+    this.fileState = new Map();
+    this.currentTurn = 0;
     // Max request turns before forcing a break.
     // Set to 0 for unlimited (used by subagents via Delegate).
     if (maxTurns !== undefined) {
@@ -501,6 +503,8 @@ class Agent {
   reset() {
     this.messages = [];
     this.usage = { cost: 0, tokens: 0 };
+    this.fileState.clear();
+    this.currentTurn = 0;
   }
 
   async cleanup() {
@@ -558,6 +562,7 @@ class Agent {
         break;
       }
       loopCount++;
+      this.currentTurn = loopCount;
 
       // subagent turn-limit: nudge final summary on last tool turn
       if (this.isSubagent && this.maxTurns > 0 && loopCount === this.maxTurns) {

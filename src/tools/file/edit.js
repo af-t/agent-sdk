@@ -4,6 +4,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { ensureSafePath } from '../../core/utils.js';
+import { hashContent } from '../../core/file-state.js';
 
 async function diff(file1, file2) {
   const output = [];
@@ -191,7 +192,23 @@ export const execute = async ({ path: filePath, edits }, ctx = {}) => {
   if (!edits || edits.length === 0) throw new Error('edits must not be empty');
 
   const safePath = ensureSafePath(filePath, ctx.agent?.trustedPaths);
-  let content = (await fs.readFile(safePath, 'utf8'))
+  const rawContent = await fs.readFile(safePath, 'utf8');
+  const currentHash = hashContent(rawContent);
+
+  const fileState = ctx.agent?.fileState;
+  if (fileState) {
+    const prev = fileState.get(safePath);
+    if (!prev) {
+      throw new Error(`File ${filePath} has not been read in this session. Call Read first so it enters context.`);
+    }
+    if (prev.hash !== currentHash) {
+      throw new Error(
+        `File ${filePath} was modified since last read (hash mismatch). Call Read again to refresh context before editing.`,
+      );
+    }
+  }
+
+  let content = rawContent
     .split('\n')
     .map((x) => x.replace(/ +$/, ''))
     .join('\n');
@@ -221,6 +238,17 @@ export const execute = async ({ path: filePath, edits }, ctx = {}) => {
   const difference = await diff(safePath, temp);
   await fs.rm(temp, { force: true });
   await fs.writeFile(safePath, content, 'utf8');
+
+  if (fileState) {
+    const newHash = hashContent(content);
+    const totalLines = content.split('\n').length;
+    fileState.set(safePath, {
+      hash: newHash,
+      lastReadTurn: ctx.agent?.currentTurn ?? 0,
+      rangesRead: [[1, totalLines]],
+      totalLines,
+    });
+  }
 
   return difference
     ? `File ${filePath} updated successfully\n\ndiff:\n${difference}`

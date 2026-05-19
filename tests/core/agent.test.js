@@ -168,6 +168,24 @@ describe('Agent', () => {
       assert.deepEqual(agent.usage, { cost: 0, tokens: 0 });
     });
   });
+
+  describe('fileState', () => {
+    it('initializes fileState as an empty Map and currentTurn to 0', () => {
+      const agent = new Agent({ apiKey: 'sk-key' });
+      assert.ok(agent.fileState instanceof Map);
+      assert.equal(agent.fileState.size, 0);
+      assert.equal(agent.currentTurn, 0);
+    });
+
+    it('reset() clears fileState and resets currentTurn', () => {
+      const agent = new Agent({ apiKey: 'sk-key' });
+      agent.fileState.set('/tmp/foo', { hash: 'x', lastReadTurn: 2, rangesRead: [[1, 10]], totalLines: 10 });
+      agent.currentTurn = 4;
+      agent.reset();
+      assert.equal(agent.fileState.size, 0);
+      assert.equal(agent.currentTurn, 0);
+    });
+  });
 });
 
 describe('run() — non-streaming (no notify)', () => {

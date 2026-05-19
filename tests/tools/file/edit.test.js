@@ -465,6 +465,93 @@ describe('Edit — shell metacharacter path resistance', () => {
   });
 });
 
+describe('Edit — fileState read-before-edit guard', () => {
+  let execute;
+  let hashContent;
+  let tmpDir;
+  let tmpFile;
+
+  before(async () => {
+    execute = (await import('../../../src/tools/file/edit.js')).execute;
+    hashContent = (await import('../../../src/core/file-state.js')).hashContent;
+    const fsP = await import('node:fs/promises');
+    const os = await import('node:os');
+    tmpDir = await fsP.mkdtemp(path.join(os.tmpdir(), 'edit-state-test-'));
+    tmpFile = path.join(tmpDir, 'file.txt');
+  });
+
+  after(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  beforeEach(async () => {
+    await fs.writeFile(tmpFile, INITIAL, 'utf8');
+  });
+
+  function makeCtx(state) {
+    return { agent: { fileState: state, currentTurn: 4, trustedPaths: new Set([tmpDir]) } };
+  }
+
+  it('throws when no prior state exists for the path', async () => {
+    const ctx = makeCtx(new Map());
+    await assert.rejects(
+      () => execute({ path: tmpFile, edits: [{ action: 'replace', old_text: 'foo bar', new_text: 'X' }] }, ctx),
+      /has not been read/,
+    );
+  });
+
+  it('succeeds when prior state hash matches current file', async () => {
+    const raw = await fs.readFile(tmpFile, 'utf8');
+    const state = new Map();
+    state.set(tmpFile, { hash: hashContent(raw), lastReadTurn: 1, rangesRead: [[1, 5]], totalLines: 5 });
+    const ctx = makeCtx(state);
+    const result = await execute(
+      { path: tmpFile, edits: [{ action: 'replace', old_text: 'foo bar', new_text: 'X' }] },
+      ctx,
+    );
+    assert.ok(result.includes('updated successfully'));
+  });
+
+  it('throws when file has been modified since last read (hash mismatch)', async () => {
+    const state = new Map();
+    state.set(tmpFile, { hash: 'deadbeef'.repeat(8), lastReadTurn: 1, rangesRead: [[1, 5]], totalLines: 5 });
+    const ctx = makeCtx(state);
+    await assert.rejects(
+      () => execute({ path: tmpFile, edits: [{ action: 'replace', old_text: 'foo bar', new_text: 'X' }] }, ctx),
+      /modified since last read/,
+    );
+  });
+
+  it('updates fileState with new hash after a successful edit', async () => {
+    const raw = await fs.readFile(tmpFile, 'utf8');
+    const initialHash = hashContent(raw);
+    const state = new Map();
+    state.set(tmpFile, { hash: initialHash, lastReadTurn: 1, rangesRead: [[1, 5]], totalLines: 5 });
+    const ctx = makeCtx(state);
+    await execute({ path: tmpFile, edits: [{ action: 'replace', old_text: 'foo bar', new_text: 'FOO BAR' }] }, ctx);
+    const entry = state.get(tmpFile);
+    const finalRaw = await fs.readFile(tmpFile, 'utf8');
+    assert.equal(entry.hash, hashContent(finalRaw));
+    assert.notEqual(entry.hash, initialHash);
+    assert.equal(entry.lastReadTurn, 4);
+    assert.deepEqual(entry.rangesRead, [[1, entry.totalLines]]);
+  });
+
+  it('works without ctx.agent (legacy callers, no state checks)', async () => {
+    const legacyFile = path.join(FIXTURES, 'edit-state-legacy.txt');
+    await fs.writeFile(legacyFile, INITIAL, 'utf8');
+    try {
+      const result = await execute({
+        path: legacyFile,
+        edits: [{ action: 'replace', old_text: 'foo bar', new_text: 'OK' }],
+      });
+      assert.ok(result.includes('updated successfully'));
+    } finally {
+      await fs.rm(legacyFile, { force: true });
+    }
+  });
+});
+
 describe('Edit — error message quality', () => {
   let execute;
   before(async () => {
