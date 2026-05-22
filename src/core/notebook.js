@@ -62,8 +62,7 @@ export function flattenNotebook(jsonText) {
   }
 
   const meta = nb.metadata ?? {};
-  const lang =
-    meta.kernelspec?.language ?? meta.language_info?.name ?? 'unknown';
+  const lang = meta.kernelspec?.language ?? meta.language_info?.name ?? 'unknown';
 
   const cells = nb.cells ?? [];
   const headerLine = `[notebook] ${cells.length} cells, language: ${lang}`;

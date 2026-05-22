@@ -22,8 +22,17 @@ export function detectFileType(sampleBuffer, ext) {
 
 // detect well-known mime from magic bytes
 function magicMime(buf) {
-  if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47 &&
-      buf[4] === 0x0d && buf[5] === 0x0a && buf[6] === 0x1a && buf[7] === 0x0a) {
+  if (
+    buf.length >= 8 &&
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47 &&
+    buf[4] === 0x0d &&
+    buf[5] === 0x0a &&
+    buf[6] === 0x1a &&
+    buf[7] === 0x0a
+  ) {
     return 'image/png';
   }
   if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
@@ -128,18 +137,25 @@ export function humanSize(bytes) {
 
 // guess mime for binary files from magic bytes
 export function magicByteType(sampleBuffer) {
-  if (sampleBuffer.length >= 4 &&
-      sampleBuffer[0] === 0x7f && sampleBuffer[1] === 0x45 &&
-      sampleBuffer[2] === 0x4c && sampleBuffer[3] === 0x46) {
+  if (
+    sampleBuffer.length >= 4 &&
+    sampleBuffer[0] === 0x7f &&
+    sampleBuffer[1] === 0x45 &&
+    sampleBuffer[2] === 0x4c &&
+    sampleBuffer[3] === 0x46
+  ) {
     return 'application/x-elf';
   }
-  if (sampleBuffer.length >= 4 &&
-      sampleBuffer[0] === 0x50 && sampleBuffer[1] === 0x4b &&
-      sampleBuffer[2] === 0x03 && sampleBuffer[3] === 0x04) {
+  if (
+    sampleBuffer.length >= 4 &&
+    sampleBuffer[0] === 0x50 &&
+    sampleBuffer[1] === 0x4b &&
+    sampleBuffer[2] === 0x03 &&
+    sampleBuffer[3] === 0x04
+  ) {
     return 'application/zip';
   }
-  if (sampleBuffer.length >= 2 &&
-      sampleBuffer[0] === 0x1f && sampleBuffer[1] === 0x8b) {
+  if (sampleBuffer.length >= 2 && sampleBuffer[0] === 0x1f && sampleBuffer[1] === 0x8b) {
     return 'application/gzip';
   }
   return 'application/octet-stream';

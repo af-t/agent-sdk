@@ -116,7 +116,10 @@ export const execute = async ({ path: filePath, start_line = 1, end_line = Infin
     const dim = imageDimensions(buf, mime);
     const dataUri = 'data:' + mime + ';base64,' + buf.toString('base64');
     return [
-      { type: 'text', text: `[image] ${baseName} — ${dim ? dim.width + 'x' + dim.height + ' ' : ''}${mime}, ${humanSize(stat.size)}` },
+      {
+        type: 'text',
+        text: `[image] ${baseName} — ${dim ? dim.width + 'x' + dim.height + ' ' : ''}${mime}, ${humanSize(stat.size)}`,
+      },
       { type: 'image_url', image_url: { url: dataUri } },
     ];
   }
