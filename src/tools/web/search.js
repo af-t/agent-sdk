@@ -155,7 +155,7 @@ export const execute = async (
       return formatDdgResults(query, results);
     } catch (error) {
       if (error.name === 'AbortError') {
-        throw new Error('Search request timed out after 15 seconds. Try a more specific query.');
+        throw new Error('Search request timed out after 15 seconds. Try a more specific query.', { cause: error });
       }
       throw error;
     }
@@ -217,7 +217,7 @@ export const execute = async (
     return output.trim();
   } catch (error) {
     if (error.name === 'AbortError') {
-      throw new Error('Search request timed out after 15 seconds. Try a more specific query.');
+      throw new Error('Search request timed out after 15 seconds. Try a more specific query.', { cause: error });
     }
     throw error;
   } finally {

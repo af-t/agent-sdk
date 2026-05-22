@@ -83,6 +83,6 @@ export const execute = async ({ description, prompt, persona, id }, { agent, sig
     const footer = `\n\n---\nSubagent ID: ${resolvedId} (${status})\nTool calls: ${toolCalls}\nDuration: ${duration}`;
     return report + footer;
   } catch (err) {
-    throw new Error(`Delegation failed: ${err.message}`);
+    throw new Error(`Delegation failed: ${err.message}`, { cause: err });
   }
 };

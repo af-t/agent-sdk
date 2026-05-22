@@ -303,7 +303,7 @@ export const execute = async (
     }
   } catch (error) {
     if (error.code === 'ENOENT') {
-      throw new Error(`Todo file is not accessible: ${todoPath}`);
+      throw new Error(`Todo file is not accessible: ${todoPath}`, { cause: error });
     }
     throw error;
   }

@@ -445,7 +445,7 @@ class Agent {
       input = JSON.parse(tc.function.arguments);
     } catch (parseErr) {
       logger.warn(`Agent: failed to parse tool arguments for "${name}": ${parseErr.message}`);
-      throw new Error(`invalid JSON arguments — ${parseErr.message}`);
+      throw new Error(`invalid JSON arguments — ${parseErr.message}`, { cause: parseErr });
     }
 
     if (typeof notify === 'function') {

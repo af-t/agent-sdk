@@ -30,7 +30,7 @@ export const execute = async ({ path: filePath, content, overwrite = false }, ct
     throw new Error(`File too large (${size} bytes). Maximum allowed is ${MAX_WRITE_SIZE} bytes (10MB).`);
   }
 
-  let exists = false;
+  let exists;
   try {
     await fs.access(safePath);
     exists = true;

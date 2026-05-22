@@ -1,34 +1,33 @@
+import js from '@eslint/js';
+import globals from 'globals';
 import configPrettier from 'eslint-config-prettier';
 
 export default [
+  { ignores: ['node_modules/**'] },
+  js.configs.recommended,
   {
+    files: ['src/**/*.js', 'tests/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: { ...globals.node },
+    },
     rules: {
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
       'no-console': 'off',
       'no-undef': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      eqeqeq: ['error', 'smart'],
+      'no-var': 'error',
+      'prefer-const': 'error',
+      'no-throw-literal': 'error',
     },
-    languageOptions: {
-      ecmaVersion: 'latest',
-      sourceType: 'module',
-      globals: {
-        console: 'readonly',
-        process: 'readonly',
-        setTimeout: 'readonly',
-        clearTimeout: 'readonly',
-        setInterval: 'readonly',
-        clearInterval: 'readonly',
-        Buffer: 'readonly',
-        URL: 'readonly',
-        fetch: 'readonly',
-        AbortController: 'readonly',
-        structuredClone: 'readonly',
-        global: 'readonly',
-        globalThis: 'readonly',
-        TextEncoder: 'readonly',
-        TextDecoder: 'readonly',
-        ReadableStream: 'readonly',
-        AbortSignal: 'readonly',
-      },
+  },
+  {
+    // Tests deliberately throw literals to exercise error handling.
+    files: ['tests/**/*.js'],
+    rules: {
+      'no-throw-literal': 'off',
     },
   },
   configPrettier,

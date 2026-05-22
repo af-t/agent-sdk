@@ -144,6 +144,7 @@ export function ensureSafePath(filePath, allowedRoots = new Set()) {
           try {
             const realDir = realpathSync(dir);
             if (realDir !== canonicalRoot && !realDir.startsWith(needle)) {
+              // eslint-disable-next-line preserve-caught-error -- deliberate security rejection, not error propagation
               throw new Error(`Access denied: Path '${filePath}' resolves outside trusted root`);
             }
           } catch (dirErr) {
@@ -190,6 +191,7 @@ export function ensureSafePath(filePath, allowedRoots = new Set()) {
       const safeDir = realpathSync(dir);
       const safeRelative = path.relative(root, safeDir);
       if (safeRelative.startsWith('..') || path.isAbsolute(safeRelative)) {
+        // eslint-disable-next-line preserve-caught-error -- deliberate security rejection, not error propagation
         throw new Error(`Access denied: Path '${filePath}' resolves outside project root`);
       }
     } catch (dirErr) {

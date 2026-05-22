@@ -18,6 +18,7 @@ const BLOCKED_IP_RANGES = [
 
 // Binary if non-printable chars > 70%
 function isBinaryContent(text) {
+  // eslint-disable-next-line no-control-regex -- intentionally matches control chars for binary detection
   const nonPrintable = (text.match(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g) || []).length;
   return nonPrintable / text.length > 0.7;
 }
@@ -115,7 +116,7 @@ async function checkSSRF(urlStr) {
     }
   } catch (err) {
     if (err.message.startsWith('Access denied')) throw err;
-    throw new Error(`Invalid URL: ${err.message}`);
+    throw new Error(`Invalid URL: ${err.message}`, { cause: err });
   }
 }
 
@@ -133,107 +134,99 @@ export const input_schema = {
 };
 
 export const execute = async ({ url, useRaw = false, limit = 20000 }, ctx = {}) => {
-  try {
-    // Validate URL format (throws if invalid)
-    new URL(url);
+  // Validate URL format (throws if invalid)
+  new URL(url);
 
-    // SSRF protection: block internal/private resources
-    await checkSSRF(url);
+  // SSRF protection: block internal/private resources
+  await checkSSRF(url);
 
-    if (ctx.signal?.aborted) throw new Error('Request aborted');
+  if (ctx.signal?.aborted) throw new Error('Request aborted');
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), CONSTANTS.FETCH_TIMEOUT_MS);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), CONSTANTS.FETCH_TIMEOUT_MS);
 
-    if (ctx.signal) {
-      ctx.signal.addEventListener('abort', () => controller.abort(), { once: true });
-    }
-
-    // Redirect hardening: manual mode to re-check each step
-    const res = await fetch(url, {
-      signal: controller.signal,
-      redirect: 'manual',
-    });
-    clearTimeout(timeout);
-
-    // Handle manual redirects to prevent SSRF bypass via redirects
-    if (res.status >= 300 && res.status < 400) {
-      let redirectUrl = res.headers.get('location');
-      if (redirectUrl) {
-        // Strip credentials from redirect URL to prevent leaking
-        const parsed = new URL(redirectUrl, url);
-        parsed.username = '';
-        parsed.password = '';
-        redirectUrl = parsed.toString();
-
-        // SSRF check on the sanitised redirect URL
-        await checkSSRF(redirectUrl);
-        // Release the redirect response body before recursing
-        await res.body?.cancel().catch(() => {});
-        // Recursively call execute for the redirect URL
-        return execute({ url: redirectUrl, useRaw, limit });
-      }
-    }
-
-    // Reject oversized responses
-    const contentLength = res.headers.get('content-length');
-    if (contentLength && parseInt(contentLength) > CONSTANTS.FETCH_MAX_SIZE) {
-      throw new Error(
-        `Response too large (${contentLength} bytes). Maximum allowed is ${CONSTANTS.FETCH_MAX_SIZE} bytes (10MB).`,
-      );
-    }
-
-    const contentType = res.headers.get('content-type') || 'unknown';
-    const raw = await res.text();
-
-    // Reject binary content (non-printable chars > 70%)
-    if (isBinaryContent(raw)) {
-      throw new Error(`Binary content detected (content-type: ${contentType}). WebFetch cannot process binary files.`);
-    }
-
-    if (contentType.includes('application/json')) {
-      return withContentType(contentType, truncateOutput(raw, limit));
-    }
-
-    if (
-      contentType.includes('text/plain') ||
-      contentType.includes('text/csv') ||
-      contentType.includes('text/markdown')
-    ) {
-      return withContentType(contentType, truncateOutput(raw, limit));
-    }
-
-    if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
-      // Unknown type — return as plain text
-      return withContentType(contentType, truncateOutput(raw, limit));
-    }
-
-    // Only HTML reaches cheerio
-    if (useRaw) {
-      return withContentType(contentType, truncateOutput(raw, limit));
-    }
-
-    // Smart Scraper
-    const $ = cheerio.load(raw);
-    $(
-      'script, style, nav, footer, header, noscript, aside, iframe, form, svg, canvas, [aria-hidden="true"], [hidden], .hidden',
-    ).remove();
-
-    let cleanText = $('article, main, body').text();
-    if (!cleanText || cleanText.trim().length < 100) {
-      cleanText = $.text();
-    }
-
-    // Preserve paragraph structure: collapse horizontal whitespace but keep newlines
-    cleanText = cleanText
-      .replace(/[ \t\xa0]+/g, ' ')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
-
-    return truncateOutput(cleanText, limit);
-  } catch (error) {
-    throw error;
+  if (ctx.signal) {
+    ctx.signal.addEventListener('abort', () => controller.abort(), { once: true });
   }
+
+  // Redirect hardening: manual mode to re-check each step
+  const res = await fetch(url, {
+    signal: controller.signal,
+    redirect: 'manual',
+  });
+  clearTimeout(timeout);
+
+  // Handle manual redirects to prevent SSRF bypass via redirects
+  if (res.status >= 300 && res.status < 400) {
+    let redirectUrl = res.headers.get('location');
+    if (redirectUrl) {
+      // Strip credentials from redirect URL to prevent leaking
+      const parsed = new URL(redirectUrl, url);
+      parsed.username = '';
+      parsed.password = '';
+      redirectUrl = parsed.toString();
+
+      // SSRF check on the sanitised redirect URL
+      await checkSSRF(redirectUrl);
+      // Release the redirect response body before recursing
+      await res.body?.cancel().catch(() => {});
+      // Recursively call execute for the redirect URL
+      return execute({ url: redirectUrl, useRaw, limit });
+    }
+  }
+
+  // Reject oversized responses
+  const contentLength = res.headers.get('content-length');
+  if (contentLength && parseInt(contentLength) > CONSTANTS.FETCH_MAX_SIZE) {
+    throw new Error(
+      `Response too large (${contentLength} bytes). Maximum allowed is ${CONSTANTS.FETCH_MAX_SIZE} bytes (10MB).`,
+    );
+  }
+
+  const contentType = res.headers.get('content-type') || 'unknown';
+  const raw = await res.text();
+
+  // Reject binary content (non-printable chars > 70%)
+  if (isBinaryContent(raw)) {
+    throw new Error(`Binary content detected (content-type: ${contentType}). WebFetch cannot process binary files.`);
+  }
+
+  if (contentType.includes('application/json')) {
+    return withContentType(contentType, truncateOutput(raw, limit));
+  }
+
+  if (contentType.includes('text/plain') || contentType.includes('text/csv') || contentType.includes('text/markdown')) {
+    return withContentType(contentType, truncateOutput(raw, limit));
+  }
+
+  if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
+    // Unknown type — return as plain text
+    return withContentType(contentType, truncateOutput(raw, limit));
+  }
+
+  // Only HTML reaches cheerio
+  if (useRaw) {
+    return withContentType(contentType, truncateOutput(raw, limit));
+  }
+
+  // Smart Scraper
+  const $ = cheerio.load(raw);
+  $(
+    'script, style, nav, footer, header, noscript, aside, iframe, form, svg, canvas, [aria-hidden="true"], [hidden], .hidden',
+  ).remove();
+
+  let cleanText = $('article, main, body').text();
+  if (!cleanText || cleanText.trim().length < 100) {
+    cleanText = $.text();
+  }
+
+  // Preserve paragraph structure: collapse horizontal whitespace but keep newlines
+  cleanText = cleanText
+    .replace(/[ \t\xa0]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  return truncateOutput(cleanText, limit);
 };
 
 export { checkSSRF, isBlockedIp };

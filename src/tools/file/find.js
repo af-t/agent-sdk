@@ -120,6 +120,7 @@ async function nativeSearch({ absPath, pattern, mode, cwd, signal }) {
 
           const content = header.toString('utf8');
           // Fallback: reject files with high ratio of non-printable characters
+          // eslint-disable-next-line no-control-regex -- intentionally matches control chars for binary detection
           const nonPrintable = (content.match(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g) || []).length;
           if (nonPrintable / content.length > 0.3) continue;
 
