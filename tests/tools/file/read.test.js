@@ -194,6 +194,34 @@ describe('read.js — pdf branch', () => {
   });
 });
 
+describe('read.js — binary branch', () => {
+  let tmpDir;
+  let binaryFile;
+
+  before(async () => {
+    const os = await import('node:os');
+    tmpDir = await fs.mkdtemp(path.join(os.default.tmpdir(), 'read-binary-test-'));
+
+    // NUL bytes guarantee binary detection
+    const buf = Buffer.from([0x00, 0x01, 0x02, 0xff, 0x00, 0xfe, 0xfd, 0x03]);
+    binaryFile = path.join(tmpDir, 'test.bin');
+    await fs.writeFile(binaryFile, buf);
+  });
+
+  after(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns a string starting with [binary] and containing hex', async () => {
+    const mod = await import('../../../src/tools/file/read.js');
+    const ctx = { agent: { trustedPaths: new Set([tmpDir]) } };
+    const result = await mod.execute({ path: binaryFile }, ctx);
+    assert.ok(typeof result === 'string', 'result should be a string');
+    assert.ok(result.startsWith('[binary]'), 'result should start with [binary]');
+    assert.ok(result.includes('hex'), 'result should contain hex');
+  });
+});
+
 describe('read.js — fileState caching', () => {
   let mod;
   let tmpDir;
