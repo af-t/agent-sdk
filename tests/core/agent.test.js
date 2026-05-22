@@ -606,3 +606,107 @@ describe('Agent — cleanup()', () => {
     await assert.doesNotReject(() => agent.cleanup());
   });
 });
+
+describe('run() — steering / pending requests', () => {
+  let Agent;
+  let originalFetch;
+
+  before(async () => {
+    const mod = await import('../../src/core/agent.js');
+    Agent = mod.default;
+    originalFetch = global.fetch;
+  });
+
+  after(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('steer() returns false when the agent is idle', () => {
+    const agent = new Agent({ apiKey: 'sk-test' });
+    assert.strictEqual(agent.steer('hello'), false);
+    assert.strictEqual(agent.isRunning, false);
+  });
+
+  it('isRunning is true during an active run and steer() is accepted', async () => {
+    let calls = 0;
+    global.fetch = async () => {
+      calls++;
+      if (calls === 1) {
+        return makeJsonResponse({
+          choices: [
+            {
+              message: {
+                content: null,
+                reasoning: null,
+                tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Probe', arguments: '{}' } }],
+              },
+            },
+          ],
+          usage: { cost: 0, total_tokens: 1 },
+        });
+      }
+      return makeJsonResponse({
+        choices: [{ message: { content: 'done', reasoning: null, tool_calls: null } }],
+        usage: { cost: 0, total_tokens: 1 },
+      });
+    };
+    const agent = new Agent({ apiKey: 'sk-test' });
+    let observedRunning;
+    let observedSteer;
+    agent.use({
+      name: 'Probe',
+      description: 'probe',
+      input_schema: { type: 'object', properties: {}, required: [] },
+      execute: async () => {
+        observedRunning = agent.isRunning;
+        observedSteer = agent.steer('mid-flight instruction');
+        return 'ok';
+      },
+    });
+    await agent.run('start');
+    assert.strictEqual(observedRunning, true);
+    assert.strictEqual(observedSteer, true);
+    assert.strictEqual(agent.isRunning, false);
+  });
+
+  it('concurrent run() enqueues instead of starting a second loop and returns the in-flight promise', async () => {
+    let calls = 0;
+    global.fetch = async () => {
+      calls++;
+      if (calls === 1) {
+        return makeJsonResponse({
+          choices: [
+            {
+              message: {
+                content: null,
+                reasoning: null,
+                tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Probe', arguments: '{}' } }],
+              },
+            },
+          ],
+          usage: { cost: 0, total_tokens: 1 },
+        });
+      }
+      return makeJsonResponse({
+        choices: [{ message: { content: 'final', reasoning: null, tool_calls: null } }],
+        usage: { cost: 0, total_tokens: 1 },
+      });
+    };
+    const agent = new Agent({ apiKey: 'sk-test' });
+    let concurrent;
+    agent.use({
+      name: 'Probe',
+      description: 'probe',
+      input_schema: { type: 'object', properties: {}, required: [] },
+      execute: async () => {
+        concurrent = agent.run('concurrent prompt');
+        return 'ok';
+      },
+    });
+    const result = await agent.run('start');
+    assert.strictEqual(calls, 2);
+    assert.strictEqual(await concurrent, result);
+    const userText = JSON.stringify(agent.messages.filter((m) => m.role === 'user'));
+    assert.ok(userText.includes('concurrent prompt'));
+  });
+});

@@ -31,6 +31,9 @@ class Agent {
   #instructionCache;
   #injectors = { 'first-turn': [], 'per-turn': [] };
   #beforeRequestHooks = [];
+  #running = false;
+  #pending = [];
+  #activeRunPromise = null;
   #envInfo = [
     '',
     '',
@@ -170,6 +173,21 @@ class Agent {
   // Read-only API key — used by Delegate tool for sub-agents
   get apiKey() {
     return this.#apiKey;
+  }
+
+  // Whether a run loop is currently active.
+  get isRunning() {
+    return this.#running;
+  }
+
+  // Queue a prompt for the active run loop. Non-blocking; returns false when
+  // idle (no loop to steer) or when the prompt is empty.
+  steer(prompt) {
+    if (!this.#running) return false;
+    if (prompt == null || prompt === '') return false;
+    if (Array.isArray(prompt) && prompt.length === 0) return false;
+    this.#pending.push(normalizePrompt(prompt));
+    return true;
   }
 
   registerInjector({ name, scope, fn } = {}) {
@@ -503,6 +521,21 @@ class Agent {
     }
   }
 
+  // Flush queued steer prompts into messages as a trailing user message.
+  async #drainPending(notify) {
+    if (this.#pending.length === 0) return false;
+    const items = this.#pending.splice(0, this.#pending.length);
+    for (const parts of items) this.#appendUserContent(parts);
+    if (typeof notify === 'function') {
+      try {
+        await notify({ steer_applied: { count: items.length } });
+      } catch (err) {
+        logger.debug('Notify callback error:', err.message);
+      }
+    }
+    return true;
+  }
+
   use(tools) {
     if (Array.isArray(tools)) {
       for (const tool of tools) {
@@ -656,7 +689,24 @@ class Agent {
   }
 
   async run(prompt, notify = null, options = {}) {
-    return this.#runLoop(prompt, notify, options);
+    // Re-entrancy guard: a run() call made while a loop is active enqueues its
+    // prompt for the active loop instead of starting a second one.
+    if (this.#running) {
+      if (prompt != null && prompt !== '') {
+        this.#pending.push(normalizePrompt(prompt));
+      }
+      return this.#activeRunPromise;
+    }
+    this.#running = true;
+    this.#activeRunPromise = this.#runLoop(prompt, notify, options);
+    try {
+      return await this.#activeRunPromise;
+    } finally {
+      this.#running = false;
+      this.#activeRunPromise = null;
+      // Safety net: preserve any prompt queued during an abnormal loop exit.
+      await this.#drainPending(null);
+    }
   }
 }
 
