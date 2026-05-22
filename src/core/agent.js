@@ -1,4 +1,12 @@
-import { withRetry, getDirname, CONSTANTS, groupToolCalls, ensureSafePath } from './utils.js';
+import {
+  withRetry,
+  getDirname,
+  CONSTANTS,
+  groupToolCalls,
+  ensureSafePath,
+  payloadHasMultimodal,
+  degradePayload,
+} from './utils.js';
 import { ToolRegistry } from '../registry/tool.js';
 import { ApiError, ConfigError } from './errors.js';
 import logger from './logger.js';
@@ -34,6 +42,7 @@ class Agent {
   #running = false;
   #pending = [];
   #activeRunPromise = null;
+  #multimodalUnsupported = false;
   #envInfo = [
     '',
     '',
@@ -641,10 +650,25 @@ class Agent {
       // Build payload + onBeforeRequest hooks ONCE per turn.
       // withRetry retries the network call only — injectors and hooks do not re-fire.
       const payload = await this.#buildPayload();
-      const response = await withRetry(
-        () => (isStreaming ? this.#sendStream(notify, payload) : this.#send(payload)),
-        5,
-      );
+      if (this.#multimodalUnsupported) degradePayload(payload);
+      let response;
+      try {
+        response = await withRetry(() => (isStreaming ? this.#sendStream(notify, payload) : this.#send(payload)), 5);
+      } catch (err) {
+        if (
+          err instanceof ApiError &&
+          err.status === 400 &&
+          !this.#multimodalUnsupported &&
+          payloadHasMultimodal(payload)
+        ) {
+          logger.warn('Request rejected (400) with multimodal tool content; degrading and retrying.');
+          this.#multimodalUnsupported = true;
+          degradePayload(payload);
+          response = await withRetry(() => (isStreaming ? this.#sendStream(notify, payload) : this.#send(payload)), 5);
+        } else {
+          throw err;
+        }
+      }
       const message = response.choices?.[0]?.message;
       if (!message) {
         logger.warn('Agent: LLM returned no message in response. Breaking loop.');
