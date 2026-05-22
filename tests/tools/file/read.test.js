@@ -107,6 +107,93 @@ describe('read.js — notebook branch', () => {
   });
 });
 
+describe('read.js — image branch', () => {
+  let tmpDir;
+  let pngFile;
+  let oversizedPngFile;
+
+  before(async () => {
+    const os = await import('node:os');
+    tmpDir = await fs.mkdtemp(path.join(os.default.tmpdir(), 'read-image-test-'));
+
+    // minimal valid PNG: signature(8) + IHDR chunk(4 len + 4 type + 13 data + 4 crc = 25)
+    // width=64 at bytes 16-19, height=32 at bytes 20-23
+    const png = Buffer.alloc(8 + 4 + 4 + 13 + 4);
+    // PNG signature
+    png[0] = 0x89; png[1] = 0x50; png[2] = 0x4e; png[3] = 0x47;
+    png[4] = 0x0d; png[5] = 0x0a; png[6] = 0x1a; png[7] = 0x0a;
+    // IHDR chunk length = 13
+    png.writeUInt32BE(13, 8);
+    // chunk type = IHDR
+    png.write('IHDR', 12, 'ascii');
+    // width = 64
+    png.writeUInt32BE(64, 16);
+    // height = 32
+    png.writeUInt32BE(32, 20);
+
+    pngFile = path.join(tmpDir, 'test.png');
+    await fs.writeFile(pngFile, png);
+
+    // oversized PNG: just over 5MB starting with PNG signature
+    const large = Buffer.alloc(5 * 1024 * 1024 + 1);
+    large[0] = 0x89; large[1] = 0x50; large[2] = 0x4e; large[3] = 0x47;
+    large[4] = 0x0d; large[5] = 0x0a; large[6] = 0x1a; large[7] = 0x0a;
+    oversizedPngFile = path.join(tmpDir, 'large.png');
+    await fs.writeFile(oversizedPngFile, large);
+  });
+
+  after(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns an array with text and image_url for a small PNG', async () => {
+    const mod = await import('../../../src/tools/file/read.js');
+    const ctx = { agent: { trustedPaths: new Set([tmpDir]) } };
+    const result = await mod.execute({ path: pngFile }, ctx);
+    assert.ok(Array.isArray(result), 'result should be an array');
+    assert.equal(result[0].type, 'text');
+    assert.equal(result[1].type, 'image_url');
+    assert.ok(result[1].image_url.url.startsWith('data:image/png;base64,'), 'url should be a PNG data URI');
+  });
+
+  it('returns a string for an oversized PNG', async () => {
+    const mod = await import('../../../src/tools/file/read.js');
+    const ctx = { agent: { trustedPaths: new Set([tmpDir]) } };
+    const result = await mod.execute({ path: oversizedPngFile }, ctx);
+    assert.ok(typeof result === 'string', 'result should be a string');
+    assert.ok(result.includes('too large to inline'), 'result should mention too large to inline');
+  });
+});
+
+describe('read.js — pdf branch', () => {
+  let tmpDir;
+  let pdfFile;
+
+  before(async () => {
+    const os = await import('node:os');
+    tmpDir = await fs.mkdtemp(path.join(os.default.tmpdir(), 'read-pdf-test-'));
+
+    // minimal PDF starting with %PDF-1.4
+    const pdfContent = Buffer.from('%PDF-1.4\n%%EOF\n', 'ascii');
+    pdfFile = path.join(tmpDir, 'test.pdf');
+    await fs.writeFile(pdfFile, pdfContent);
+  });
+
+  after(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns an array with text and file for a small PDF', async () => {
+    const mod = await import('../../../src/tools/file/read.js');
+    const ctx = { agent: { trustedPaths: new Set([tmpDir]) } };
+    const result = await mod.execute({ path: pdfFile }, ctx);
+    assert.ok(Array.isArray(result), 'result should be an array');
+    assert.equal(result[0].type, 'text');
+    assert.equal(result[1].type, 'file');
+    assert.ok(result[1].file.file_data.startsWith('data:application/pdf;base64,'), 'file_data should be a PDF data URI');
+  });
+});
+
 describe('read.js — fileState caching', () => {
   let mod;
   let tmpDir;
