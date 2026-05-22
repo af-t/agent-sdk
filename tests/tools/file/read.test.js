@@ -77,6 +77,36 @@ describe('read.js execute', () => {
   });
 });
 
+describe('read.js — notebook branch', () => {
+  const NOTEBOOK_FILE = path.join(FIXTURES, 'test-notebook.ipynb');
+
+  before(async () => {
+    const nb = {
+      nbformat: 4,
+      nbformat_minor: 5,
+      metadata: { kernelspec: { language: 'python' } },
+      cells: [
+        { cell_type: 'code', source: 'print("hello")', outputs: [], execution_count: null },
+        { cell_type: 'markdown', source: '# Section', outputs: [] },
+      ],
+    };
+    await fs.mkdir(FIXTURES, { recursive: true });
+    await fs.writeFile(NOTEBOOK_FILE, JSON.stringify(nb), 'utf8');
+  });
+
+  after(async () => {
+    await fs.rm(NOTEBOOK_FILE, { force: true });
+  });
+
+  it('reads a .ipynb file and returns notebook content', async () => {
+    const mod = await import('../../../src/tools/file/read.js');
+    const result = await mod.execute({ path: NOTEBOOK_FILE });
+    assert.ok(typeof result === 'string', 'result should be a string');
+    assert.ok(result.includes('[notebook]'), 'result should contain [notebook]');
+    assert.ok(result.includes('# Cell 1'), 'result should contain # Cell 1');
+  });
+});
+
 describe('read.js — fileState caching', () => {
   let mod;
   let tmpDir;
