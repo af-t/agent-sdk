@@ -655,7 +655,11 @@ class Agent {
 
       this.messages.push({ role: 'assistant', reasoning, content, tool_calls });
 
-      if (!tool_calls || tool_calls.length === 0) break;
+      if (!tool_calls || tool_calls.length === 0) {
+        // A steer delivered during the final turn keeps the loop alive.
+        if (await this.#drainPending(notify)) continue;
+        break;
+      }
 
       const groups = groupToolCalls(tool_calls, this.tools);
 
@@ -683,6 +687,9 @@ class Agent {
           throw new Error('Agent run aborted');
         }
       }
+
+      // Flush any steer queued during this turn's tool execution.
+      await this.#drainPending(notify);
     }
 
     return this.messages[this.messages.length - 1].content;

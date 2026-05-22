@@ -710,3 +710,117 @@ describe('run() — steering / pending requests', () => {
     assert.ok(userText.includes('concurrent prompt'));
   });
 });
+
+describe('run() — steering applied in-loop', () => {
+  let Agent;
+  let originalFetch;
+
+  before(async () => {
+    const mod = await import('../../src/core/agent.js');
+    Agent = mod.default;
+    originalFetch = global.fetch;
+  });
+
+  after(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('drains a steer after tool results so the next turn sees it', async () => {
+    const payloads = [];
+    let calls = 0;
+    global.fetch = async (_url, opts) => {
+      payloads.push(JSON.parse(opts.body));
+      calls++;
+      if (calls === 1) {
+        return makeJsonResponse({
+          choices: [
+            {
+              message: {
+                content: null,
+                reasoning: null,
+                tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Probe', arguments: '{}' } }],
+              },
+            },
+          ],
+          usage: { cost: 0, total_tokens: 1 },
+        });
+      }
+      return makeJsonResponse({
+        choices: [{ message: { content: 'final', reasoning: null, tool_calls: null } }],
+        usage: { cost: 0, total_tokens: 1 },
+      });
+    };
+    const agent = new Agent({ apiKey: 'sk-test' });
+    agent.use({
+      name: 'Probe',
+      description: 'probe',
+      input_schema: { type: 'object', properties: {}, required: [] },
+      execute: async () => {
+        agent.steer('steered instruction');
+        return 'ok';
+      },
+    });
+    await agent.run('start');
+    assert.strictEqual(calls, 2);
+    assert.ok(JSON.stringify(payloads[1].messages).includes('steered instruction'));
+    const roles = agent.messages.map((m) => m.role);
+    assert.ok(roles.lastIndexOf('user') > roles.indexOf('tool'), 'steer must follow the tool result');
+  });
+
+  it('emits a steer_applied notify event when a steer is drained', async () => {
+    let calls = 0;
+    global.fetch = async () => {
+      calls++;
+      if (calls === 1) {
+        return makeSseResponse([
+          'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"Probe","arguments":"{}"}}]}}],"usage":null}',
+          'data: [DONE]',
+        ]);
+      }
+      return makeSseResponse(['data: {"choices":[{"delta":{"content":"done"}}],"usage":null}', 'data: [DONE]']);
+    };
+    const agent = new Agent({ apiKey: 'sk-test' });
+    agent.use({
+      name: 'Probe',
+      description: 'probe',
+      input_schema: { type: 'object', properties: {}, required: [] },
+      execute: async () => {
+        agent.steer('steered');
+        return 'ok';
+      },
+    });
+    const events = [];
+    await agent.run('start', (d) => events.push(d));
+    const steerEvent = events.find((e) => e.steer_applied);
+    assert.ok(steerEvent, 'expected a steer_applied notify event');
+    assert.strictEqual(steerEvent.steer_applied.count, 1);
+  });
+
+  it('a steer delivered on a no-tool-call turn keeps the loop running', async () => {
+    let calls = 0;
+    global.fetch = async () => {
+      calls++;
+      if (calls === 1) {
+        return makeJsonResponse({
+          choices: [{ message: { content: 'first', reasoning: null, tool_calls: null } }],
+          usage: { cost: 0, total_tokens: 1 },
+        });
+      }
+      return makeJsonResponse({
+        choices: [{ message: { content: 'second', reasoning: null, tool_calls: null } }],
+        usage: { cost: 0, total_tokens: 1 },
+      });
+    };
+    const agent = new Agent({ apiKey: 'sk-test' });
+    let steered = false;
+    agent.onBeforeRequest(() => {
+      if (!steered) {
+        steered = true;
+        agent.steer('keep going');
+      }
+    });
+    const result = await agent.run('go');
+    assert.strictEqual(calls, 2);
+    assert.strictEqual(result, 'second');
+  });
+});
