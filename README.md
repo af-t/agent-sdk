@@ -81,6 +81,8 @@ Simplified diagram:
                     <-- loop back
 ```
 
+While a loop is running, additional `run()` or `steer()` calls do not start a second loop — their prompts are queued and merged into the conversation after the current turn's tool results. See [Steering a Running Agent](#steering-a-running-agent).
+
 ## Installation
 
 Clone directly from the repository:
@@ -165,6 +167,25 @@ await agent.run('Can you elaborate on that?'); // has context from previous turn
 // Reset conversation
 agent.messages = [];
 ```
+
+### Steering a Running Agent
+
+`run()` is re-entrancy-safe. Calling it again while a loop is in progress — or calling `steer()` — enqueues the prompt instead of starting a second loop. Queued prompts are appended to the conversation after the current turn's tool results, so you can redirect a long-running agent without waiting for it to return:
+
+```javascript
+const runPromise = agent.run('Refactor the whole codebase...');
+
+// Later, from elsewhere in your app — no need to await runPromise first:
+agent.steer('Actually, focus on src/core/ only.');
+
+if (agent.isRunning) {
+  // a run loop is currently active
+}
+
+const result = await runPromise; // resolves after the steered work finishes too
+```
+
+`steer()` returns `true` when the prompt is queued, or `false` when the agent is idle (there is no loop to steer) or the prompt is empty. When a streaming `notify` callback is set, a `{ steer_applied: { count } }` event fires each time queued prompts are drained into the conversation.
 
 ## Integration into Your Project
 
@@ -378,7 +399,7 @@ Use `storagePaths` to place memory and temporary files outside the project root 
 const agent = await createAgent({
   storagePaths: {
     memoryDir: '~/.config/myapp/workspace/memory', // where memory files live
-    tmpDir: '~/.config/myapp/tmp',                 // where temp files (todos) go
+    tmpDir: '~/.config/myapp/tmp', // where temp files (todos) go
   },
 });
 ```
@@ -397,8 +418,14 @@ Recommended pattern:
 ```js
 const agent = await createAgent({ storagePaths: { tmpDir: '~/.config/myapp/tmp' } });
 
-process.on('SIGINT', async () => { await agent.cleanup(); process.exit(0); });
-process.on('SIGTERM', async () => { await agent.cleanup(); process.exit(0); });
+process.on('SIGINT', async () => {
+  await agent.cleanup();
+  process.exit(0);
+});
+process.on('SIGTERM', async () => {
+  await agent.cleanup();
+  process.exit(0);
+});
 
 // Or after a one-shot run:
 try {
@@ -527,26 +554,34 @@ Factory function to create an Agent instance.
 | `notify`  | function        | Callback `({ content, reasoning, tool_calls })` |
 | `options` | object          | `{ signal: AbortSignal }`                       |
 
+Calling `run()` while a loop is already active does not start a second loop: the prompt is enqueued for the running loop and the in-flight run's promise is returned, so `await` still resolves with the final result.
+
+### `agent.steer(prompt)`
+
+Queue a prompt for an already-running loop without waiting for it to finish — see [Steering a Running Agent](#steering-a-running-agent). Synchronous and non-blocking; returns `true` when the prompt is queued, or `false` when the agent is idle (no loop to steer) or the prompt is empty.
+
 ### Agent Properties
 
-| Property       | Type         | Description                        |
-| -------------- | ------------ | ---------------------------------- |
-| `messages`     | array        | Conversation history               |
-| `maxTurns`     | number       | Max LLM request cycles             |
-| `isSubagent`   | boolean      | Whether the agent is a sub-agent   |
-| `tools`        | ToolRegistry | Registry of registered tools       |
-| `usage`        | object       | `{ cost: number, tokens: number }` |
-| `systemPrompt` | string       | System prompt (can be overridden)  |
+| Property       | Type         | Description                            |
+| -------------- | ------------ | -------------------------------------- |
+| `messages`     | array        | Conversation history                   |
+| `maxTurns`     | number       | Max LLM request cycles                 |
+| `isSubagent`   | boolean      | Whether the agent is a sub-agent       |
+| `tools`        | ToolRegistry | Registry of registered tools           |
+| `usage`        | object       | `{ cost: number, tokens: number }`     |
+| `systemPrompt` | string       | System prompt (can be overridden)      |
+| `isRunning`    | boolean      | Whether a run loop is currently active |
 
 ### Agent Methods
 
-| Method                                  | Description                                                             |
-| --------------------------------------- | ----------------------------------------------------------------------- |
-| `use(tool \| tool[])`                   | Register one or more tools after construction.                          |
-| `reset()`                               | Clear messages and reset accumulated usage.                             |
-| `registerInjector({ name, scope, fn })` | Register a context injector. `scope` is `'first-turn'` or `'per-turn'`. |
-| `unregisterInjector(name)`              | Remove a previously registered injector by name.                        |
-| `onBeforeRequest(fn)`                   | Hook the outgoing payload. Returns a disposer.                          |
+| Method                                  | Description                                                                                                  |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `use(tool \| tool[])`                   | Register one or more tools after construction.                                                               |
+| `reset()`                               | Clear messages and reset accumulated usage.                                                                  |
+| `registerInjector({ name, scope, fn })` | Register a context injector. `scope` is `'first-turn'` or `'per-turn'`.                                      |
+| `unregisterInjector(name)`              | Remove a previously registered injector by name.                                                             |
+| `onBeforeRequest(fn)`                   | Hook the outgoing payload. Returns a disposer.                                                               |
+| `steer(prompt)`                         | Queue a prompt for the active run loop (non-blocking). Returns `true` if queued, `false` when idle or empty. |
 
 ### ToolRegistry
 
