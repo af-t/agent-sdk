@@ -21,7 +21,7 @@
   "main": "src/index.js",
   "scripts": {
     "test": "node --test",
-    "lint": "eslint src/ tests/",
+    "lint": "eslint '**/*.js'",
     "format": "prettier --write '**/*.js'"
   },
   "dependencies": {

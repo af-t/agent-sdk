@@ -6,7 +6,6 @@ export default [
   { ignores: ['node_modules/**'] },
   js.configs.recommended,
   {
-    files: ['src/**/*.js', 'tests/**/*.js'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
