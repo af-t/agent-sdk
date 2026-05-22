@@ -120,8 +120,14 @@ describe('read.js — image branch', () => {
     // width=64 at bytes 16-19, height=32 at bytes 20-23
     const png = Buffer.alloc(8 + 4 + 4 + 13 + 4);
     // PNG signature
-    png[0] = 0x89; png[1] = 0x50; png[2] = 0x4e; png[3] = 0x47;
-    png[4] = 0x0d; png[5] = 0x0a; png[6] = 0x1a; png[7] = 0x0a;
+    png[0] = 0x89;
+    png[1] = 0x50;
+    png[2] = 0x4e;
+    png[3] = 0x47;
+    png[4] = 0x0d;
+    png[5] = 0x0a;
+    png[6] = 0x1a;
+    png[7] = 0x0a;
     // IHDR chunk length = 13
     png.writeUInt32BE(13, 8);
     // chunk type = IHDR
@@ -136,8 +142,14 @@ describe('read.js — image branch', () => {
 
     // oversized PNG: just over 5MB starting with PNG signature
     const large = Buffer.alloc(5 * 1024 * 1024 + 1);
-    large[0] = 0x89; large[1] = 0x50; large[2] = 0x4e; large[3] = 0x47;
-    large[4] = 0x0d; large[5] = 0x0a; large[6] = 0x1a; large[7] = 0x0a;
+    large[0] = 0x89;
+    large[1] = 0x50;
+    large[2] = 0x4e;
+    large[3] = 0x47;
+    large[4] = 0x0d;
+    large[5] = 0x0a;
+    large[6] = 0x1a;
+    large[7] = 0x0a;
     oversizedPngFile = path.join(tmpDir, 'large.png');
     await fs.writeFile(oversizedPngFile, large);
   });
@@ -190,7 +202,10 @@ describe('read.js — pdf branch', () => {
     assert.ok(Array.isArray(result), 'result should be an array');
     assert.equal(result[0].type, 'text');
     assert.equal(result[1].type, 'file');
-    assert.ok(result[1].file.file_data.startsWith('data:application/pdf;base64,'), 'file_data should be a PDF data URI');
+    assert.ok(
+      result[1].file.file_data.startsWith('data:application/pdf;base64,'),
+      'file_data should be a PDF data URI',
+    );
   });
 });
 

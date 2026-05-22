@@ -21,11 +21,14 @@ function markdownCell(source) {
 
 describe('flattenNotebook', () => {
   it('throws on invalid JSON', () => {
-    assert.throws(() => flattenNotebook('not json'), (err) => {
-      assert.ok(err instanceof Error);
-      assert.ok(err.message.startsWith('Invalid .ipynb:'), `unexpected message: ${err.message}`);
-      return true;
-    });
+    assert.throws(
+      () => flattenNotebook('not json'),
+      (err) => {
+        assert.ok(err instanceof Error);
+        assert.ok(err.message.startsWith('Invalid .ipynb:'), `unexpected message: ${err.message}`);
+        return true;
+      },
+    );
   });
 
   it('emits header with cell count and language from kernelspec', () => {
@@ -73,18 +76,14 @@ describe('flattenNotebook', () => {
   });
 
   it('renders execute_result with text/plain', () => {
-    const cell = codeCell('1+1', [
-      { output_type: 'execute_result', data: { 'text/plain': '2' } },
-    ]);
+    const cell = codeCell('1+1', [{ output_type: 'execute_result', data: { 'text/plain': '2' } }]);
     const nb = makeNb([cell]);
     const result = flattenNotebook(nb);
     assert.ok(result.includes('--- output ---\n2'));
   });
 
   it('renders display_data with image as placeholder', () => {
-    const cell = codeCell('plot()', [
-      { output_type: 'display_data', data: { 'image/png': 'base64data' } },
-    ]);
+    const cell = codeCell('plot()', [{ output_type: 'display_data', data: { 'image/png': 'base64data' } }]);
     const nb = makeNb([cell]);
     const result = flattenNotebook(nb);
     assert.ok(result.includes('[image output omitted]'));
@@ -134,9 +133,7 @@ describe('flattenNotebook', () => {
   });
 
   it('renders display_data with jpeg as placeholder', () => {
-    const cell = codeCell('img()', [
-      { output_type: 'display_data', data: { 'image/jpeg': 'base64data' } },
-    ]);
+    const cell = codeCell('img()', [{ output_type: 'display_data', data: { 'image/jpeg': 'base64data' } }]);
     const nb = makeNb([cell]);
     const result = flattenNotebook(nb);
     assert.ok(result.includes('[image output omitted]'));
