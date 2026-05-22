@@ -23,6 +23,31 @@ export function truncateOutput(text, maxChars = CONSTANTS.MAX_TOOL_OUTPUT) {
   return text.slice(0, maxChars) + `\n[... truncated: ${text.length - maxChars} characters omitted]`;
 }
 
+// true if any tool-role message has a non-text content part
+export function payloadHasMultimodal(payload) {
+  if (!payload || !Array.isArray(payload.messages)) return false;
+  for (const msg of payload.messages) {
+    if (msg.role !== 'tool') continue;
+    if (!Array.isArray(msg.content)) continue;
+    if (msg.content.some((part) => part.type !== 'text')) return true;
+  }
+  return false;
+}
+
+// strip non-text parts from tool-role messages; mutates payload.messages slots
+export function degradePayload(payload) {
+  if (!payload || !Array.isArray(payload.messages)) return;
+  for (let i = 0; i < payload.messages.length; i++) {
+    const msg = payload.messages[i];
+    if (msg.role !== 'tool') continue;
+    if (!Array.isArray(msg.content)) continue;
+    if (!msg.content.some((part) => part.type !== 'text')) continue;
+    const textParts = msg.content.filter((part) => part.type === 'text');
+    const content = textParts.length > 0 ? textParts.map((p) => p.text).join('\n') : '[non-text content omitted]';
+    payload.messages[i] = { ...msg, content };
+  }
+}
+
 export function getDirname(importMeta) {
   return importMeta.dirname || path.dirname(fileURLToPath(importMeta.url));
 }

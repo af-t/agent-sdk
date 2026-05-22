@@ -1,6 +1,14 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { ensureSafePath, getIgnoreFilter, stripSecrets, truncateOutput, CONSTANTS } from '../../src/core/utils.js';
+import {
+  ensureSafePath,
+  getIgnoreFilter,
+  stripSecrets,
+  truncateOutput,
+  CONSTANTS,
+  payloadHasMultimodal,
+  degradePayload,
+} from '../../src/core/utils.js';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
@@ -492,5 +500,171 @@ describe('truncateOutput', () => {
     const result = truncateOutput(long);
     assert.strictEqual(result.length < long.length, true);
     assert.ok(result.includes('[... truncated:'));
+  });
+});
+
+describe('payloadHasMultimodal', () => {
+  it('returns false for missing payload', () => {
+    assert.strictEqual(payloadHasMultimodal(null), false);
+    assert.strictEqual(payloadHasMultimodal(undefined), false);
+  });
+
+  it('returns false when messages is absent or not an array', () => {
+    assert.strictEqual(payloadHasMultimodal({}), false);
+    assert.strictEqual(payloadHasMultimodal({ messages: null }), false);
+  });
+
+  it('returns false when all tool messages have only text parts', () => {
+    const payload = {
+      messages: [
+        { role: 'user', content: [{ type: 'text', text: 'hi' }] },
+        { role: 'tool', content: [{ type: 'text', text: 'result' }] },
+      ],
+    };
+    assert.strictEqual(payloadHasMultimodal(payload), false);
+  });
+
+  it('returns false when tool message content is a string', () => {
+    const payload = {
+      messages: [{ role: 'tool', content: 'plain string' }],
+    };
+    assert.strictEqual(payloadHasMultimodal(payload), false);
+  });
+
+  it('returns true when a tool message contains an image_url part', () => {
+    const payload = {
+      messages: [
+        {
+          role: 'tool',
+          content: [
+            { type: 'text', text: '[image] x.png' },
+            { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } },
+          ],
+        },
+      ],
+    };
+    assert.strictEqual(payloadHasMultimodal(payload), true);
+  });
+
+  it('returns true when a tool message contains a file part', () => {
+    const payload = {
+      messages: [
+        {
+          role: 'tool',
+          content: [
+            { type: 'text', text: '[pdf] doc.pdf' },
+            { type: 'file', file: { filename: 'doc.pdf', file_data: 'base64data' } },
+          ],
+        },
+      ],
+    };
+    assert.strictEqual(payloadHasMultimodal(payload), true);
+  });
+
+  it('ignores non-tool messages with non-text parts', () => {
+    const payload = {
+      messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } }] }],
+    };
+    assert.strictEqual(payloadHasMultimodal(payload), false);
+  });
+});
+
+describe('degradePayload', () => {
+  it('is a no-op for missing or invalid payload', () => {
+    assert.doesNotThrow(() => degradePayload(null));
+    assert.doesNotThrow(() => degradePayload(undefined));
+    assert.doesNotThrow(() => degradePayload({}));
+    assert.doesNotThrow(() => degradePayload({ messages: null }));
+  });
+
+  it('collapses image_url part and keeps text part as joined string', () => {
+    const payload = {
+      messages: [
+        {
+          role: 'tool',
+          tool_call_id: 'c1',
+          content: [
+            { type: 'text', text: '[image] x.png' },
+            { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } },
+          ],
+        },
+      ],
+    };
+    degradePayload(payload);
+    assert.strictEqual(typeof payload.messages[0].content, 'string');
+    assert.strictEqual(payload.messages[0].content, '[image] x.png');
+  });
+
+  it('uses placeholder when there are no text parts', () => {
+    const payload = {
+      messages: [
+        {
+          role: 'tool',
+          tool_call_id: 'c2',
+          content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } }],
+        },
+      ],
+    };
+    degradePayload(payload);
+    assert.strictEqual(payload.messages[0].content, '[non-text content omitted]');
+  });
+
+  it('joins multiple text parts with newline', () => {
+    const payload = {
+      messages: [
+        {
+          role: 'tool',
+          tool_call_id: 'c3',
+          content: [
+            { type: 'text', text: 'line one' },
+            { type: 'text', text: 'line two' },
+            { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } },
+          ],
+        },
+      ],
+    };
+    degradePayload(payload);
+    assert.strictEqual(payload.messages[0].content, 'line one\nline two');
+  });
+
+  it('leaves string-content tool messages untouched', () => {
+    const payload = {
+      messages: [{ role: 'tool', tool_call_id: 'c4', content: 'already a string' }],
+    };
+    degradePayload(payload);
+    assert.strictEqual(payload.messages[0].content, 'already a string');
+  });
+
+  it('leaves all-text-array tool messages untouched', () => {
+    const payload = {
+      messages: [
+        {
+          role: 'tool',
+          tool_call_id: 'c5',
+          content: [{ type: 'text', text: 'only text' }],
+        },
+      ],
+    };
+    degradePayload(payload);
+    assert.ok(Array.isArray(payload.messages[0].content), 'should still be an array');
+    assert.strictEqual(payload.messages[0].content[0].text, 'only text');
+  });
+
+  it('does not mutate the original message object', () => {
+    const originalContent = [
+      { type: 'text', text: '[image] x.png' },
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } },
+    ];
+    const originalMsg = { role: 'tool', tool_call_id: 'c6', content: originalContent };
+    const payload = { messages: [originalMsg] };
+
+    degradePayload(payload);
+
+    // The slot in payload.messages is replaced but original object is unchanged
+    assert.strictEqual(originalMsg.content, originalContent, 'original message content ref unchanged');
+    assert.ok(Array.isArray(originalMsg.content), 'original content is still an array');
+    assert.strictEqual(originalMsg.content[1].type, 'image_url', 'original still has image_url part');
+    // The new slot is a different object
+    assert.notStrictEqual(payload.messages[0], originalMsg);
   });
 });
