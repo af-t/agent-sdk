@@ -18,6 +18,10 @@ function resolveStoragePath(p) {
   return path.resolve(expanded);
 }
 
+function normalizePrompt(prompt) {
+  return Array.isArray(prompt) ? prompt : [{ type: 'text', text: prompt }];
+}
+
 const REQUEST_TIMEOUT = 120_000; // 2 minutes
 const DEFAULT_MAX_TURNS = 25;
 const VALID_INJECTOR_SCOPES = new Set(['first-turn', 'per-turn']);
@@ -490,6 +494,15 @@ class Agent {
     }
   }
 
+  #appendUserContent(parts) {
+    const last = this.messages[this.messages.length - 1];
+    if (last?.role === 'user' && Array.isArray(last.content)) {
+      last.content.push(...parts);
+    } else {
+      this.messages.push({ role: 'user', content: parts });
+    }
+  }
+
   use(tools) {
     if (Array.isArray(tools)) {
       for (const tool of tools) {
@@ -525,7 +538,7 @@ class Agent {
     }
   }
 
-  async run(prompt, notify = null, options = {}) {
+  async #runLoop(prompt, notify = null, options = {}) {
     const { signal } = options;
     const isStreaming = typeof notify === 'function';
 
@@ -533,14 +546,7 @@ class Agent {
     const wasFresh = this.messages.length < 1;
 
     if (prompt) {
-      const contents = Array.isArray(prompt) ? prompt : [{ type: 'text', text: prompt }];
-      const lastIdx = this.messages.length - 1;
-
-      if (this.messages[lastIdx]?.role === 'user' && Array.isArray(this.messages[lastIdx].content)) {
-        this.messages[lastIdx].content.push(...contents);
-      } else {
-        this.messages.push({ role: 'user', content: contents });
-      }
+      this.#appendUserContent(normalizePrompt(prompt));
     }
 
     let loopCount = 0;
@@ -647,6 +653,10 @@ class Agent {
     }
 
     return this.messages[this.messages.length - 1].content;
+  }
+
+  async run(prompt, notify = null, options = {}) {
+    return this.#runLoop(prompt, notify, options);
   }
 }
 
