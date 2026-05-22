@@ -274,7 +274,7 @@ await agent.tools.connectMcpServer({
 
 | Tool        | Category | Description                                                       |
 | ----------- | -------- | ----------------------------------------------------------------- |
-| `Read`      | File     | Read file contents with pagination & line numbers                 |
+| `Read`      | File     | Read text, notebooks, images, PDFs & binary files                 |
 | `Write`     | File     | Write a new file (overwrite)                                      |
 | `Edit`      | File     | Edit a file with find-and-replace                                 |
 | `Find`      | File     | Search for files by name or content                               |
@@ -285,6 +285,20 @@ await agent.tools.connectMcpServer({
 | `Skill`     | System   | Manage and load skills                                            |
 | `WebSearch` | Web      | Web search via Tavily API                                         |
 | `WebFetch`  | Web      | Extract content from URLs                                         |
+
+### Reading non-text files
+
+`Read` classifies a file by its magic bytes (and the `.ipynb` extension) and adapts its output:
+
+- **Text** — paginated, line-numbered output (unchanged behavior).
+- **Notebooks (`.ipynb`)** — the JSON is flattened into a readable transcript of cells, with code cell outputs (stdout, results, error tracebacks) inlined.
+- **Images (PNG/JPEG/GIF/WebP)** — returned as an `image_url` content part (a base64 data URI) so vision-capable models actually see the image, preceded by a text part with the file name, dimensions, and size.
+- **PDFs** — returned as a `file` content part; models with native document support (such as Claude) read them directly, and OpenRouter can OCR for the rest.
+- **Other binary files** — a metadata summary (detected type, size) plus a hex preview of the first bytes.
+
+Images above 5 MB and PDFs above 10 MB skip the inline content part and return a metadata summary instead, to keep the context window manageable.
+
+**Automatic degradation.** Not every provider accepts non-text content parts inside a `tool`-role message. If a request is rejected with an HTTP 400 because of multimodal tool content, the agent strips the non-text parts (keeping the descriptive text part), retries once, and degrades all subsequent requests for the rest of the session.
 
 ## MCP Server
 
