@@ -48,7 +48,8 @@ describe('Agent', () => {
       assert.equal(agent.usage.cost, 0);
       assert.equal(agent.usage.tokens, 0);
       assert.equal(agent.effort, 'high');
-      assert.equal(agent.maxTurns, 25);
+      const expectedTurns = process.env.OPENROUTER_MAX_TURNS ? parseInt(process.env.OPENROUTER_MAX_TURNS) : 25;
+      assert.equal(agent.maxTurns, expectedTurns);
       assert.ok(Array.isArray(agent.messages));
       assert.equal(agent.messages.length, 0);
     });

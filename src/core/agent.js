@@ -30,7 +30,20 @@ function normalizePrompt(prompt) {
   return Array.isArray(prompt) ? prompt : [{ type: 'text', text: prompt }];
 }
 
-const REQUEST_TIMEOUT = 120_000; // 2 minutes
+const REQUEST_TIMEOUT = 120_000; // 2 minutes idle threshold
+
+function makeIdleTimer(ms, controller) {
+  let timer = setTimeout(() => controller.abort(), ms);
+  return {
+    reset() {
+      clearTimeout(timer);
+      timer = setTimeout(() => controller.abort(), ms);
+    },
+    clear() {
+      clearTimeout(timer);
+    },
+  };
+}
 const DEFAULT_MAX_TURNS = 25;
 const VALID_INJECTOR_SCOPES = new Set(['first-turn', 'per-turn']);
 
@@ -257,7 +270,7 @@ class Agent {
 
   async #request(payload) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+    const idle = makeIdleTimer(REQUEST_TIMEOUT, controller);
     try {
       const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -268,6 +281,9 @@ class Agent {
         body: JSON.stringify({ ...payload, stream: false }),
         signal: controller.signal,
       });
+
+      // connection established — reset idle clock for body read
+      idle.reset();
 
       let responseBody = await res.text();
       try {
@@ -289,7 +305,7 @@ class Agent {
 
       return responseBody;
     } finally {
-      clearTimeout(timer);
+      idle.clear();
     }
   }
 
@@ -360,7 +376,7 @@ class Agent {
 
   async #sendStream(notify, payload) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+    const idle = makeIdleTimer(REQUEST_TIMEOUT, controller);
 
     let res;
     try {
@@ -374,12 +390,15 @@ class Agent {
         signal: controller.signal,
       });
     } catch (err) {
-      clearTimeout(timer);
+      idle.clear();
       throw err;
     }
 
+    // connection established — reset idle clock before stream begins
+    idle.reset();
+
     if (!res.ok) {
-      clearTimeout(timer);
+      idle.clear();
       let body;
       try {
         body = await res.json();
@@ -400,6 +419,7 @@ class Agent {
       outer: while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        idle.reset(); // data arrived — reset idle clock
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop();
@@ -450,7 +470,7 @@ class Agent {
         }
       }
     } finally {
-      clearTimeout(timer);
+      idle.clear();
       reader.releaseLock();
     }
 

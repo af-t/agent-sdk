@@ -82,9 +82,10 @@ describe('createAgent', () => {
     }
   });
 
-  it('should return an agent with default maxTurns of 25', async () => {
+  it('should return an agent with maxTurns from env or default 25', async () => {
     const agent = await createAgent();
-    assert.strictEqual(agent.maxTurns, 25);
+    const expectedTurns = process.env.OPENROUTER_MAX_TURNS ? parseInt(process.env.OPENROUTER_MAX_TURNS) : 25;
+    assert.strictEqual(agent.maxTurns, expectedTurns);
   });
 
   it('should handle being called multiple times independently', async () => {
