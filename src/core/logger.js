@@ -1,13 +1,11 @@
 import config from '../config.js';
 
-const colors = {
-  reset: '\x1b[0m',
-  red: '\x1b[0;31m',
-  yellow: '\x1b[0;33m',
-  dim: '\x1b[2m',
+const PREFIXES = {
+  error: '\x1b[1;31m* [ERROR]\x1b[0m',
+  warn: '\x1b[0;33m* [WARN] \x1b[0m',
+  info: '\x1b[0;36m* [INFO] \x1b[0m',
+  debug: '\x1b[2m* [DEBUG]\x1b[0m',
 };
-
-const prefix = (color) => `${color}*${colors.reset}`;
 
 // Known API key / secret patterns to redact from logs
 // Order matters: more specific patterns first to avoid partial matches
@@ -38,18 +36,18 @@ function redact(msg) {
 
 export const logger = {
   error: (msg, ...args) => {
-    console.error(`${prefix(colors.red)} ${redact(msg)}`, ...args.map(redact));
+    console.error(`${PREFIXES.error} ${redact(msg)}`, ...args.map(redact));
   },
   warn: (msg, ...args) => {
-    console.warn(`${prefix(colors.yellow)} [WARN] ${redact(msg)}`, ...args.map(redact));
+    console.warn(`${PREFIXES.warn} ${redact(msg)}`, ...args.map(redact));
   },
   debug: (msg, ...args) => {
     if (config.DEBUG) {
-      console.log(`${prefix(colors.dim)} [DEBUG] ${redact(msg)}`, ...args.map(redact));
+      console.log(`${PREFIXES.debug} ${redact(msg)}`, ...args.map(redact));
     }
   },
   info: (msg, ...args) => {
-    console.log(`${prefix(colors.dim)} [INFO] ${redact(msg)}`, ...args.map(redact));
+    console.log(`${PREFIXES.info} ${redact(msg)}`, ...args.map(redact));
   },
 };
 
