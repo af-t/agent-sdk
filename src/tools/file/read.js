@@ -32,7 +32,7 @@ async function readText(safePath, filePath, { start_line = 1, end_line = Infinit
   }
 
   const content = await fs.readFile(safePath, 'utf8');
-  const lines = content.split('\n');
+  const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
   if (lines[lines.length - 1] === '') {
     lines.pop();
   }

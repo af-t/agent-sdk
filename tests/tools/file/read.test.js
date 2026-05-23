@@ -77,6 +77,35 @@ describe('read.js execute', () => {
   });
 });
 
+describe('read.js — CRLF line endings', () => {
+  let mod;
+  let crlfFile;
+
+  before(async () => {
+    mod = await import('../../../src/tools/file/read.js');
+    await fs.mkdir(FIXTURES, { recursive: true });
+    crlfFile = path.join(FIXTURES, 'read-crlf.txt');
+    await fs.writeFile(crlfFile, 'Line one\r\nLine two\r\nLine three\r\n', 'utf8');
+  });
+
+  after(() => fs.rm(crlfFile, { force: true }));
+
+  it('strips trailing CR so lines do not end with \\r', async () => {
+    const result = await mod.execute({ path: crlfFile });
+    const lines = result.split('\n');
+    for (const line of lines) {
+      assert.ok(!line.endsWith('\r'), `line ends with \\r: ${JSON.stringify(line)}`);
+    }
+  });
+
+  it('displays correct line content without carriage return', async () => {
+    const result = await mod.execute({ path: crlfFile });
+    assert.ok(result.includes('     1\tLine one'));
+    assert.ok(result.includes('     2\tLine two'));
+    assert.ok(result.includes('     3\tLine three'));
+  });
+});
+
 describe('read.js — notebook branch', () => {
   const NOTEBOOK_FILE = path.join(FIXTURES, 'test-notebook.ipynb');
 

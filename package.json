@@ -1,6 +1,6 @@
 {
   "name": "@af-t/openrouter-agent-sdk",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Minimal SDK to connect to openrouter API",
   "keywords": [
     "openrouter",

@@ -552,6 +552,54 @@ describe('Edit — fileState read-before-edit guard', () => {
   });
 });
 
+describe('Edit — CRLF line endings', () => {
+  let execute;
+  let crlfFile;
+
+  before(async () => {
+    await fs.mkdir(FIXTURES, { recursive: true });
+    execute = (await import('../../../src/tools/file/edit.js')).execute;
+    crlfFile = path.join(FIXTURES, 'edit-crlf.txt');
+  });
+
+  after(() => fs.rm(crlfFile, { force: true }));
+
+  beforeEach(async () => {
+    // write file with Windows CRLF line endings
+    await fs.writeFile(crlfFile, 'Line one: hello world\r\nLine two: foo bar\r\nLine three: baz qux\r\n', 'utf8');
+  });
+
+  it('matches old_text with LF in a CRLF file', async () => {
+    const result = await execute({
+      path: crlfFile,
+      edits: [{ action: 'replace', old_text: 'foo bar', new_text: 'FOO BAR' }],
+    });
+    assert.ok(result.includes('updated successfully'));
+    const content = await fs.readFile(crlfFile, 'utf8');
+    assert.ok(content.includes('FOO BAR'));
+    assert.ok(!content.includes('foo bar'));
+  });
+
+  it('matches multi-line old_text with LF in a CRLF file', async () => {
+    const result = await execute({
+      path: crlfFile,
+      edits: [{ action: 'replace', old_text: 'Line two: foo bar\nLine three: baz qux', new_text: 'REPLACED' }],
+    });
+    assert.ok(result.includes('updated successfully'));
+    const content = await fs.readFile(crlfFile, 'utf8');
+    assert.ok(content.includes('REPLACED'));
+  });
+
+  it('normalizes CRLF to LF in written output', async () => {
+    await execute({
+      path: crlfFile,
+      edits: [{ action: 'replace', old_text: 'foo bar', new_text: 'FOO BAR' }],
+    });
+    const raw = await fs.readFile(crlfFile, 'utf8');
+    assert.ok(!raw.includes('\r\n'), 'written file should not contain CRLF');
+  });
+});
+
 describe('Edit — error message quality', () => {
   let execute;
   before(async () => {

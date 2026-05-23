@@ -209,6 +209,8 @@ export const execute = async ({ path: filePath, edits }, ctx = {}) => {
   }
 
   let content = rawContent
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
     .split('\n')
     .map((x) => x.replace(/ +$/, ''))
     .join('\n');
