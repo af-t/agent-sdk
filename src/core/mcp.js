@@ -23,7 +23,11 @@ export class McpNativeClient extends EventEmitter {
   async connect() {
     this.process = spawn(this.config.command, this.config.args || [], {
       env: { ...stripSecrets(process.env), ...(this.config.env || {}) },
-      stdio: ['pipe', 'pipe', 'ignore'],
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    this.process.stderr.on('data', (data) => {
+      logger.warn(`MCP Server Diagnostic Stderr: ${data.toString().trim()}`);
     });
 
     this.rl = createInterface({
@@ -46,17 +50,22 @@ export class McpNativeClient extends EventEmitter {
       this.#cleanup();
     });
 
-    const response = await this.request('initialize', {
-      protocolVersion: '2024-11-05',
-      capabilities: {},
-      clientInfo: { name: 'mcp-native-client', version: '1.0.0' },
-    });
+    try {
+      const response = await this.request('initialize', {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'mcp-native-client', version: '1.0.0' },
+      });
 
-    this.initialized = true;
-    this.capabilities = response.capabilities;
-    this.serverInfo = response.serverInfo;
+      this.initialized = true;
+      this.capabilities = response.capabilities;
+      this.serverInfo = response.serverInfo;
 
-    await this.notify('notifications/initialized', {});
+      await this.notify('notifications/initialized', {});
+    } catch (err) {
+      await this.close();
+      throw err;
+    }
   }
 
   async request(method, params, timeout) {
@@ -140,8 +149,18 @@ export class McpNativeClient extends EventEmitter {
 
   async close() {
     if (this.process) {
-      this.process.kill();
+      try {
+        this.process.stdin.end();
+      } catch {}
+      const proc = this.process;
       this.#cleanup();
+      setTimeout(() => {
+        try {
+          if (proc.exitCode === null) {
+            proc.kill();
+          }
+        } catch {}
+      }, 1000);
     }
   }
 
@@ -163,6 +182,19 @@ export class McpNativeClient extends EventEmitter {
           pending.reject(message.error);
         } else {
           pending.resolve(message.result);
+        }
+      } else {
+        // Return standard JSON-RPC error response for server-to-client requests to avoid hangs
+        try {
+          this.process?.stdin?.write(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: message.id,
+              error: { code: -32601, message: 'Method not found' },
+            }) + '\n'
+          );
+        } catch (err) {
+          logger.debug('Failed to write JSON-RPC method not found error:', err.message);
         }
       }
     } else if (message.method) {

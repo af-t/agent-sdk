@@ -145,46 +145,56 @@ export const execute = async ({ url, useRaw = false, limit = 20000 }, ctx = {}) 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), CONSTANTS.FETCH_TIMEOUT_MS);
 
+  const onAbort = () => controller.abort();
   if (ctx.signal) {
-    ctx.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    ctx.signal.addEventListener('abort', onAbort, { once: true });
   }
 
-  // Redirect hardening: manual mode to re-check each step
-  const res = await fetch(url, {
-    signal: controller.signal,
-    redirect: 'manual',
-  });
-  clearTimeout(timeout);
+  let res;
+  let raw;
+  let contentType;
+  try {
+    // Redirect hardening: manual mode to re-check each step
+    res = await fetch(url, {
+      signal: controller.signal,
+      redirect: 'manual',
+    });
 
-  // Handle manual redirects to prevent SSRF bypass via redirects
-  if (res.status >= 300 && res.status < 400) {
-    let redirectUrl = res.headers.get('location');
-    if (redirectUrl) {
-      // Strip credentials from redirect URL to prevent leaking
-      const parsed = new URL(redirectUrl, url);
-      parsed.username = '';
-      parsed.password = '';
-      redirectUrl = parsed.toString();
+    // Handle manual redirects to prevent SSRF bypass via redirects
+    if (res.status >= 300 && res.status < 400) {
+      let redirectUrl = res.headers.get('location');
+      if (redirectUrl) {
+        // Strip credentials from redirect URL to prevent leaking
+        const parsed = new URL(redirectUrl, url);
+        parsed.username = '';
+        parsed.password = '';
+        redirectUrl = parsed.toString();
 
-      // SSRF check on the sanitised redirect URL
-      await checkSSRF(redirectUrl);
-      // Release the redirect response body before recursing
-      await res.body?.cancel().catch(() => {});
-      // Recursively call execute for the redirect URL
-      return execute({ url: redirectUrl, useRaw, limit });
+        // SSRF check on the sanitised redirect URL
+        await checkSSRF(redirectUrl);
+        // Release the redirect response body before recursing
+        await res.body?.cancel().catch(() => {});
+        // Recursively call execute for the redirect URL
+        return execute({ url: redirectUrl, useRaw, limit }, ctx);
+      }
+    }
+
+    // Reject oversized responses
+    const contentLength = res.headers.get('content-length');
+    if (contentLength && parseInt(contentLength) > CONSTANTS.FETCH_MAX_SIZE) {
+      throw new Error(
+        `Response too large (${contentLength} bytes). Maximum allowed is ${CONSTANTS.FETCH_MAX_SIZE} bytes (10MB).`,
+      );
+    }
+
+    contentType = res.headers.get('content-type') || 'unknown';
+    raw = await res.text();
+  } finally {
+    clearTimeout(timeout);
+    if (ctx.signal) {
+      ctx.signal.removeEventListener('abort', onAbort);
     }
   }
-
-  // Reject oversized responses
-  const contentLength = res.headers.get('content-length');
-  if (contentLength && parseInt(contentLength) > CONSTANTS.FETCH_MAX_SIZE) {
-    throw new Error(
-      `Response too large (${contentLength} bytes). Maximum allowed is ${CONSTANTS.FETCH_MAX_SIZE} bytes (10MB).`,
-    );
-  }
-
-  const contentType = res.headers.get('content-type') || 'unknown';
-  const raw = await res.text();
 
   // Reject binary content (non-printable chars > 70%)
   if (isBinaryContent(raw)) {

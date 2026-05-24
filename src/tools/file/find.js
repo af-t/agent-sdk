@@ -114,11 +114,19 @@ async function nativeSearch({ absPath, pattern, mode, cwd, signal }) {
           if (stat.size > CONSTANTS.MAX_FILE_SIZE_SEARCH) continue;
 
           // Check first 512 bytes for null bytes before reading entire file
-          const header = await fs.readFile(fullPath);
-          const nullByteCount = header.slice(0, 512).filter((b) => b === 0).length;
-          if (nullByteCount > 0) continue;
+          const handle = await fs.open(fullPath, 'r');
+          let isBinary = false;
+          try {
+            const buf = Buffer.alloc(Math.min(stat.size, 512));
+            await handle.read(buf, 0, buf.length, 0);
+            const nullByteCount = buf.filter((b) => b === 0).length;
+            if (nullByteCount > 0) isBinary = true;
+          } finally {
+            await handle.close();
+          }
+          if (isBinary) continue;
 
-          const content = header.toString('utf8');
+          const content = await fs.readFile(fullPath, 'utf8');
           // Fallback: reject files with high ratio of non-printable characters
           // eslint-disable-next-line no-control-regex -- intentionally matches control chars for binary detection
           const nonPrintable = (content.match(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g) || []).length;
@@ -190,6 +198,7 @@ function shellRgSearch(absPath, pattern, cwd, signal) {
       String(CONSTANTS.MAX_FILE_SIZE_SEARCH),
       '--max-columns',
       '100',
+      '--',
       pattern,
       absPath,
     ],

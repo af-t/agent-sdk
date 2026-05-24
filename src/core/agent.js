@@ -56,6 +56,7 @@ class Agent {
   #pending = [];
   #activeRunPromise = null;
   #multimodalUnsupported = false;
+  #notifyCallbacks = new Set();
   #envInfo = [
     '',
     '',
@@ -75,6 +76,7 @@ class Agent {
       tools,
       order,
       only,
+      provider,
       maxTokens,
       systemPrompt,
       maxTurns,
@@ -85,6 +87,7 @@ class Agent {
       storagePaths,
       memoryDir,
       memoryTypes,
+      isSubagent,
     } = options;
 
     if (!apiKey && !config.API_KEY) {
@@ -92,7 +95,11 @@ class Agent {
     }
     this.#apiKey = apiKey || config.API_KEY;
     this.model = model;
-    this.provider = { order, only };
+    this.isSubagent = !!isSubagent;
+
+    const resolvedOrder = order || provider?.order || config.ORDER;
+    const resolvedOnly = only || provider?.only || config.ONLY;
+    this.provider = { order: resolvedOrder, only: resolvedOnly };
     this.messages = [];
     this.tools = tools || new ToolRegistry();
     this.effort = effort || 'high';
@@ -268,6 +275,24 @@ class Agent {
     return out;
   }
 
+  async #broadcast(event) {
+    const promises = [];
+    for (const notify of this.#notifyCallbacks) {
+      if (typeof notify === 'function') {
+        promises.push(
+          (async () => {
+            try {
+              await notify(event);
+            } catch (err) {
+              logger.debug('Notify callback error:', err.message);
+            }
+          })()
+        );
+      }
+    }
+    await Promise.all(promises);
+  }
+
   async #request(payload) {
     const controller = new AbortController();
     const idle = makeIdleTimer(REQUEST_TIMEOUT, controller);
@@ -277,6 +302,8 @@ class Agent {
         headers: {
           Authorization: `Bearer ${this.#apiKey}`,
           'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://github.com/af-t/openrouter',
+          'X-OpenRouter-Title': 'OpenRouter CLI Agent',
         },
         body: JSON.stringify({ ...payload, stream: false }),
         signal: controller.signal,
@@ -374,7 +401,7 @@ class Agent {
     return response;
   }
 
-  async #sendStream(notify, payload) {
+  async #sendStream(payload) {
     const controller = new AbortController();
     const idle = makeIdleTimer(REQUEST_TIMEOUT, controller);
 
@@ -385,6 +412,8 @@ class Agent {
         headers: {
           Authorization: `Bearer ${this.#apiKey}`,
           'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://github.com/af-t/openrouter',
+          'X-OpenRouter-Title': 'OpenRouter CLI Agent',
         },
         body: JSON.stringify({ ...payload, stream: true }),
         signal: controller.signal,
@@ -415,16 +444,53 @@ class Agent {
     const decoder = new TextDecoder();
     let buffer = '';
 
+    const processChunk = (chunk) => {
+      this.usage.cost += chunk.usage?.cost || 0;
+      this.usage.tokens += chunk.usage?.total_tokens || 0;
+
+      const delta = chunk.choices?.[0]?.delta;
+      if (!delta) return;
+
+      const cd = delta.content || '';
+      const rd = delta.reasoning || '';
+      if (cd) content += cd;
+      if (rd) reasoning += rd;
+
+      for (const tc of delta.tool_calls || []) {
+        if (!tcMap[tc.index]) {
+          tcMap[tc.index] = { id: tc.id, type: 'function', function: { name: '', arguments: '' } };
+        }
+        if (tc.function?.name) tcMap[tc.index].function.name += tc.function.name;
+        if (tc.function?.arguments) tcMap[tc.index].function.arguments += tc.function.arguments;
+      }
+    };
+
     try {
       outer: while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          if (buffer) {
+            const line = buffer.trim();
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6).trim();
+              if (data !== '[DONE]') {
+                try {
+                  const chunk = JSON.parse(data);
+                  processChunk(chunk);
+                } catch {}
+              }
+            }
+          }
+          break;
+        }
         idle.reset(); // data arrived — reset idle clock
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
 
-        for (const line of lines) {
+        let newlineIdx;
+        while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.slice(0, newlineIdx).trim();
+          buffer = buffer.slice(newlineIdx + 1);
+
           if (!line.startsWith('data: ')) continue;
           const data = line.slice(6).trim();
           if (data === '[DONE]') break outer;
@@ -436,35 +502,19 @@ class Agent {
             continue;
           }
 
-          this.usage.cost += chunk.usage?.cost || 0;
-          this.usage.tokens += chunk.usage?.total_tokens || 0;
+          processChunk(chunk);
 
           const delta = chunk.choices?.[0]?.delta;
-          if (!delta) continue;
-
-          const cd = delta.content || '';
-          const rd = delta.reasoning || '';
-          if (cd) content += cd;
-          if (rd) reasoning += rd;
-
-          for (const tc of delta.tool_calls || []) {
-            if (!tcMap[tc.index]) {
-              tcMap[tc.index] = { id: tc.id, type: 'function', function: { name: '', arguments: '' } };
-            }
-            if (tc.function?.name) tcMap[tc.index].function.name += tc.function.name;
-            if (tc.function?.arguments) tcMap[tc.index].function.arguments += tc.function.arguments;
-          }
-
-          if (cd || rd) {
-            try {
-              await notify({
+          if (delta) {
+            const cd = delta.content || '';
+            const rd = delta.reasoning || '';
+            if (cd || rd) {
+              await this.#broadcast({
                 content_delta: cd || null,
                 content: content || null,
                 reasoning_delta: rd || null,
                 reasoning: reasoning || null,
               });
-            } catch (err) {
-              logger.debug('Notify callback error:', err.message);
             }
           }
         }
@@ -472,15 +522,12 @@ class Agent {
     } finally {
       idle.clear();
       reader.releaseLock();
+      controller.abort();
     }
 
     const tool_calls = Object.keys(tcMap).length ? Object.values(tcMap) : undefined;
     if (tool_calls) {
-      try {
-        await notify({ tool_calls });
-      } catch (err) {
-        logger.debug('Notify callback error:', err.message);
-      }
+      await this.#broadcast({ tool_calls });
     }
 
     return {
@@ -488,7 +535,7 @@ class Agent {
     };
   }
 
-  async #executeOneToolCall(tc, signal, notify) {
+  async #executeOneToolCall(tc, signal) {
     const name = tc.function.name;
     const tool_call_id = tc.id || `call_${crypto.randomUUID()}`;
     let input;
@@ -499,13 +546,7 @@ class Agent {
       throw new Error(`invalid JSON arguments — ${parseErr.message}`, { cause: parseErr });
     }
 
-    if (typeof notify === 'function') {
-      try {
-        await notify({ tool_start: { tool_call_id, name, input } });
-      } catch (err) {
-        logger.debug('Notify callback error:', err.message);
-      }
-    }
+    await this.#broadcast({ tool_start: { tool_call_id, name, input } });
 
     logger.debug('Agent: Executing tool:', name);
     const started = Date.now();
@@ -519,16 +560,11 @@ class Agent {
     }
     const duration_ms = Date.now() - started;
 
-    if (typeof notify === 'function') {
-      const payload = { tool_call_id, name, duration_ms };
-      if (toolError) payload.error = toolError.message;
-      else payload.output = output;
-      try {
-        await notify({ tool_end: payload });
-      } catch (err) {
-        logger.debug('Notify callback error:', err.message);
-      }
-    }
+    const payload = { tool_call_id, name, duration_ms };
+    if (toolError) payload.error = toolError.message;
+    else payload.output = output;
+
+    await this.#broadcast({ tool_end: payload });
 
     if (toolError) throw toolError;
     return output;
@@ -551,17 +587,11 @@ class Agent {
   }
 
   // Flush queued steer prompts into messages as a trailing user message.
-  async #drainPending(notify) {
+  async #drainPending() {
     if (this.#pending.length === 0) return false;
     const items = this.#pending.splice(0, this.#pending.length);
     for (const parts of items) this.#appendUserContent(parts);
-    if (typeof notify === 'function') {
-      try {
-        await notify({ steer_applied: { count: items.length } });
-      } catch (err) {
-        logger.debug('Notify callback error:', err.message);
-      }
-    }
+    await this.#broadcast({ steer_applied: { count: items.length } });
     return true;
   }
 
@@ -583,160 +613,184 @@ class Agent {
   }
 
   async cleanup() {
-    if (!this._storageTmpDir) return;
-    let entries;
-    try {
-      entries = await readdir(this._storageTmpDir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      if (!entry.isFile()) continue;
+    if (this._storageTmpDir) {
+      let entries;
       try {
-        await unlink(path.join(this._storageTmpDir, entry.name));
-      } catch (err) {
-        logger.debug(`cleanup: failed to delete ${entry.name}: ${err.message}`);
+        entries = await readdir(this._storageTmpDir, { withFileTypes: true });
+      } catch {
+        entries = [];
       }
+      for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        try {
+          await unlink(path.join(this._storageTmpDir, entry.name));
+        } catch (err) {
+          logger.debug(`cleanup: failed to delete ${entry.name}: ${err.message}`);
+        }
+      }
+    }
+
+    if (this.tools && typeof this.tools.cleanup === 'function') {
+      try {
+        await this.tools.cleanup();
+      } catch (err) {
+        logger.warn(`Failed to cleanup tools registry: ${err.message}`);
+      }
+    }
+
+    if (this.subagents) {
+      for (const [id, subagent] of this.subagents) {
+        try {
+          await subagent.cleanup();
+        } catch (err) {
+          logger.warn(`Failed to cleanup subagent ${id}: ${err.message}`);
+        }
+      }
+      this.subagents.clear();
     }
   }
 
-  async #runLoop(prompt, notify = null, options = {}) {
-    const { signal } = options;
-    const isStreaming = typeof notify === 'function';
+  async #runLoop(prompt, options = {}) {
+    try {
+      const { signal } = options;
+      const isStreaming = this.#notifyCallbacks.size > 0;
 
-    // freeze before prompt append
-    const wasFresh = this.messages.length < 1;
+      // freeze before prompt append
+      const wasFresh = this.messages.length < 1;
 
-    if (prompt) {
-      this.#appendUserContent(normalizePrompt(prompt));
-    }
-
-    let loopCount = 0;
-
-    while (true) {
-      // Check abort signal
-      if (signal?.aborted) {
-        throw new Error('Agent run aborted');
+      if (prompt) {
+        this.#appendUserContent(normalizePrompt(prompt));
       }
 
-      if (this.maxTurns > 0 && loopCount >= this.maxTurns) {
-        logger.warn(`Agent: max request turns reached (${this.maxTurns}), forcing break.`);
-        if (this.isSubagent) {
-          const lastMsg = this.messages[this.messages.length - 1];
-          if (lastMsg?.role === 'tool') {
-            return `[LIMIT_REACHED] The agent reached its maximum turn limit (${this.maxTurns}). \nLast tool result: ${lastMsg.content}`;
-          }
-        }
-        break;
-      }
-      loopCount++;
-      this.currentTurn = loopCount;
+      let loopCount = 0;
 
-      // subagent turn-limit: nudge final summary on last tool turn
-      if (this.isSubagent && this.maxTurns > 0 && loopCount === this.maxTurns) {
-        const lastMsg = this.messages[this.messages.length - 1];
-        if (lastMsg?.role === 'tool') {
-          lastMsg.content +=
-            '\n\n[SYSTEM] You have reached the maximum allowed request turns. Please provide a final summary of your work now and stop calling tools.';
-        }
-      }
-
-      const isFirstTurn = wasFresh && loopCount === 1;
-
-      // First-turn output is persisted into this.messages (always visible in history).
-      if (isFirstTurn) {
-        const firstTurnOut = await this.#runInjectors('first-turn');
-        const text = firstTurnOut.join('\n\n').trim();
-        if (text.length > 0) {
-          const block = `<system-reminder>\n${text}\n</system-reminder>`;
-          this.#injectBlock(block);
-        }
-      }
-
-      // Per-turn output is also persisted into this.messages so the conversation
-      // history has consistent structure across turns, avoiding cache misses
-      // when the user sends a new prompt in a subsequent run() call.
-      // If the last message is not a user message (e.g. tool result), the block
-      // is silently dropped.
-      {
-        const perTurnOut = await this.#runInjectors('per-turn');
-        const text = perTurnOut.join('\n\n').trim();
-        if (text.length > 0) {
-          const block = `<system-reminder>\n${text}\n</system-reminder>`;
-          this.#injectBlock(block);
-        }
-      }
-
-      // Build payload + onBeforeRequest hooks ONCE per turn.
-      // withRetry retries the network call only — injectors and hooks do not re-fire.
-      const payload = await this.#buildPayload();
-      if (this.#multimodalUnsupported) degradePayload(payload);
-      let response;
-      try {
-        response = await withRetry(() => (isStreaming ? this.#sendStream(notify, payload) : this.#send(payload)), 5);
-      } catch (err) {
-        if (
-          err instanceof ApiError &&
-          err.status === 400 &&
-          !this.#multimodalUnsupported &&
-          payloadHasMultimodal(payload)
-        ) {
-          logger.warn('Request rejected (400) with multimodal tool content; degrading and retrying.');
-          this.#multimodalUnsupported = true;
-          degradePayload(payload);
-          response = await withRetry(() => (isStreaming ? this.#sendStream(notify, payload) : this.#send(payload)), 5);
-        } else {
-          throw err;
-        }
-      }
-      const message = response.choices?.[0]?.message;
-      if (!message) {
-        logger.warn('Agent: LLM returned no message in response. Breaking loop.');
-        break;
-      }
-
-      const { content, reasoning, tool_calls } = message;
-
-      this.messages.push({ role: 'assistant', reasoning, content, tool_calls });
-
-      if (!tool_calls || tool_calls.length === 0) {
-        // A steer delivered during the final turn keeps the loop alive.
-        if (await this.#drainPending(notify)) continue;
-        break;
-      }
-
-      const groups = groupToolCalls(tool_calls, this.tools);
-
-      for (const group of groups) {
-        const settled = await Promise.allSettled(group.map((tc) => this.#executeOneToolCall(tc, signal, notify)));
-
-        for (let i = 0; i < group.length; i++) {
-          const tc = group[i];
-          const r = settled[i];
-          const tool_call_id = tc.id || `call_${crypto.randomUUID()}`;
-          if (r.status === 'fulfilled') {
-            this.messages.push({ role: 'tool', content: r.value, tool_call_id });
-          } else {
-            const summary = (r.reason?.message || '').split('\n')[0];
-            logger.warn(`Tool ${tc.function.name} failed: ${summary}`);
-            this.messages.push({
-              role: 'tool',
-              content: `Error: ${r.reason?.message ?? r.reason}`,
-              tool_call_id,
-            });
-          }
-        }
-
+      while (true) {
+        // Check abort signal
         if (signal?.aborted) {
           throw new Error('Agent run aborted');
         }
+
+        if (this.maxTurns > 0 && loopCount >= this.maxTurns) {
+          logger.warn(`Agent: max request turns reached (${this.maxTurns}), forcing break.`);
+          if (this.isSubagent) {
+            const lastMsg = this.messages[this.messages.length - 1];
+            if (lastMsg?.role === 'tool') {
+              return `[LIMIT_REACHED] The agent reached its maximum turn limit (${this.maxTurns}). \nLast tool result: ${lastMsg.content}`;
+            }
+          }
+          break;
+        }
+        loopCount++;
+        this.currentTurn = loopCount;
+
+        // subagent turn-limit: nudge final summary on last tool turn
+        if (this.isSubagent && this.maxTurns > 0 && loopCount === this.maxTurns) {
+          const lastMsg = this.messages[this.messages.length - 1];
+          if (lastMsg?.role === 'tool') {
+            lastMsg.content +=
+              '\n\n[SYSTEM] You have reached the maximum allowed request turns. Please provide a final summary of your work now and stop calling tools.';
+          }
+        }
+
+        const isFirstTurn = wasFresh && loopCount === 1;
+
+        // First-turn output is persisted into this.messages (always visible in history).
+        if (isFirstTurn) {
+          const firstTurnOut = await this.#runInjectors('first-turn');
+          const text = firstTurnOut.join('\n\n').trim();
+          if (text.length > 0) {
+            const block = `<system-reminder>\n${text}\n</system-reminder>`;
+            this.#injectBlock(block);
+          }
+        }
+
+        // Per-turn output is also persisted into this.messages so the conversation
+        // history has consistent structure across turns, avoiding cache misses
+        // when the user sends a new prompt in a subsequent run() call.
+        // If the last message is not a user message (e.g. tool result), the block
+        // is silently dropped.
+        {
+          const perTurnOut = await this.#runInjectors('per-turn');
+          const text = perTurnOut.join('\n\n').trim();
+          if (text.length > 0) {
+            const block = `<system-reminder>\n${text}\n</system-reminder>`;
+            this.#injectBlock(block);
+          }
+        }
+
+        // Build payload + onBeforeRequest hooks ONCE per turn.
+        // withRetry retries the network call only — injectors and hooks do not re-fire.
+        const payload = await this.#buildPayload();
+        if (this.#multimodalUnsupported) degradePayload(payload);
+        let response;
+        try {
+          response = await withRetry(() => (isStreaming ? this.#sendStream(payload) : this.#send(payload)), 5);
+        } catch (err) {
+          if (
+            err instanceof ApiError &&
+            err.status === 400 &&
+            !this.#multimodalUnsupported &&
+            payloadHasMultimodal(payload)
+          ) {
+            logger.warn('Request rejected (400) with multimodal tool content; degrading and retrying.');
+            this.#multimodalUnsupported = true;
+            degradePayload(payload);
+            response = await withRetry(() => (isStreaming ? this.#sendStream(payload) : this.#send(payload)), 5);
+          } else {
+            throw err;
+          }
+        }
+        const message = response.choices?.[0]?.message;
+        if (!message) {
+          logger.warn('Agent: LLM returned no message in response. Breaking loop.');
+          break;
+        }
+
+        const { content, reasoning, tool_calls } = message;
+
+        this.messages.push({ role: 'assistant', reasoning, content, tool_calls });
+
+        if (!tool_calls || tool_calls.length === 0) {
+          // A steer delivered during the final turn keeps the loop alive.
+          if (await this.#drainPending()) continue;
+          break;
+        }
+
+        const groups = groupToolCalls(tool_calls, this.tools);
+
+        for (const group of groups) {
+          const settled = await Promise.allSettled(group.map((tc) => this.#executeOneToolCall(tc, signal)));
+
+          for (let i = 0; i < group.length; i++) {
+            const tc = group[i];
+            const r = settled[i];
+            const tool_call_id = tc.id || `call_${crypto.randomUUID()}`;
+            if (r.status === 'fulfilled') {
+              this.messages.push({ role: 'tool', content: r.value, tool_call_id });
+            } else {
+              const summary = (r.reason?.message || '').split('\n')[0];
+              logger.warn(`Tool ${tc.function.name} failed: ${summary}`);
+              this.messages.push({
+                role: 'tool',
+                content: `Error: ${r.reason?.message ?? r.reason}`,
+                tool_call_id,
+              });
+            }
+          }
+
+          if (signal?.aborted) {
+            throw new Error('Agent run aborted');
+          }
+        }
+
+        // Flush any steer queued during this turn's tool execution.
+        await this.#drainPending();
       }
 
-      // Flush any steer queued during this turn's tool execution.
-      await this.#drainPending(notify);
+      return this.messages[this.messages.length - 1].content;
+    } finally {
+      this.#running = false;
     }
-
-    return this.messages[this.messages.length - 1].content;
   }
 
   async run(prompt, notify = null, options = {}) {
@@ -746,17 +800,24 @@ class Agent {
       if (prompt != null && prompt !== '') {
         this.#pending.push(normalizePrompt(prompt));
       }
+      if (notify) {
+        this.#notifyCallbacks.add(notify);
+      }
       return this.#activeRunPromise;
     }
     this.#running = true;
-    this.#activeRunPromise = this.#runLoop(prompt, notify, options);
+    if (notify) {
+      this.#notifyCallbacks.add(notify);
+    }
+    this.#activeRunPromise = this.#runLoop(prompt, options);
     try {
       return await this.#activeRunPromise;
     } finally {
       this.#running = false;
       this.#activeRunPromise = null;
+      this.#notifyCallbacks.clear();
       // Safety net: preserve any prompt queued during an abnormal loop exit.
-      await this.#drainPending(null);
+      await this.#drainPending();
     }
   }
 }

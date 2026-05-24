@@ -62,7 +62,7 @@ export async function getIgnoreFilter() {
   const gitignorePath = path.join(cwd, '.gitignore');
   let mtime = 0;
   try {
-    mtime = statSync(gitignorePath).mtimeMs;
+    mtime = (await fs.stat(gitignorePath)).mtimeMs;
   } catch {}
 
   // Invalidate cache if cwd changed or .gitignore was modified
@@ -82,11 +82,11 @@ export async function getIgnoreFilter() {
 
   _ignoreFilterCache = {
     test: (filePath) => {
-      const relPath = path.relative(cwd, ensureSafePath(filePath));
+      const relPath = path.relative(cwd, path.resolve(filePath));
       return ig.test(relPath);
     },
     ignores: (filePath) => {
-      const relPath = path.relative(cwd, ensureSafePath(filePath));
+      const relPath = path.relative(cwd, path.resolve(filePath));
       return ig.ignores(relPath);
     },
     add: (content) => ig.add(content),
@@ -112,119 +112,159 @@ function tryDecodeURIComponent(str) {
 }
 
 export function ensureSafePath(filePath, allowedRoots = new Set()) {
-  // 1. Reject null bytes (CVE-2021-3805 style bypass)
+  // 1. Reject null bytes
   if (filePath.includes('\0')) {
-    throw new Error(`Access denied: Path contains null byte`);
+    throw new Error('Access denied: Path contains null byte');
   }
 
-  // 2. Reject URL-encoded path traversal (double encoding attacks)
+  // 2. Reject URL-encoded path traversal
   let decoded = filePath;
   let iterations = 0;
   while (decoded.includes('%') && iterations < 3) {
     decoded = tryDecodeURIComponent(decoded);
     iterations++;
   }
-
   if (
     /%2e%2e|%2f|%5c/i.test(filePath) ||
     decoded.includes('..') ||
     (filePath.includes('%') && (decoded.includes('/') || decoded.includes('\\')))
   ) {
-    throw new Error(`Access denied: Path contains URL-encoded traversal characters`);
+    throw new Error('Access denied: Path contains URL-encoded traversal characters');
   }
 
-  // 3. Reject protocol handlers (file://, etc.)
+  // 3. Reject protocol handlers
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(filePath.trim())) {
-    throw new Error(`Access denied: Path uses a protocol handler`);
+    throw new Error('Access denied: Path uses a protocol handler');
   }
 
-  const root = path.resolve(process.cwd());
-  const resolvedPath = path.resolve(filePath);
-  const relative = path.relative(root, resolvedPath);
+  // 4. Resolve path to absolute string representation
+  const resolvedTarget = path.resolve(filePath);
 
-  // 4. Must be within project root or an explicitly trusted root
-  if (relative.startsWith('..') || path.isAbsolute(relative)) {
-    for (const allowedRoot of allowedRoots) {
-      if (typeof allowedRoot !== 'string' || !path.isAbsolute(allowedRoot)) continue;
-      // Canonicalize allowedRoot so symlinked ancestors (e.g. macOS /var -> /private/var) don't cause false rejects
-      let canonicalRoot = allowedRoot;
-      try {
-        canonicalRoot = realpathSync(allowedRoot);
-      } catch {
-        // allowedRoot doesn't exist yet — keep as-is
+  // 5. Traverse up component-by-component to find the closest existing ancestor (guarantees symlink resolution)
+  let current = resolvedTarget;
+  let existingAncestor = null;
+  let nonExistentSuffix = '';
+
+  while (true) {
+    try {
+      existingAncestor = realpathSync(current);
+      break;
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) {
+        break; // Reached system root
       }
-      const needle = canonicalRoot.endsWith(path.sep) ? canonicalRoot : canonicalRoot + path.sep;
-      if (resolvedPath === allowedRoot || resolvedPath.startsWith(allowedRoot + path.sep)) {
-        // Resolve symlinks and re-validate — same TOCTOU protection as the project-root branch
+      nonExistentSuffix = path.join(path.basename(current), nonExistentSuffix);
+      current = parent;
+    }
+  }
+
+  if (!existingAncestor) {
+    throw new Error('Access denied: Could not resolve path ancestor');
+  }
+
+  // Helper to safely verify containment
+  const isContained = (canonicalTarget, canonicalRoot) => {
+    const isWindows = process.platform === 'win32';
+    let t = canonicalTarget.normalize('NFC');
+    let r = canonicalRoot.normalize('NFC');
+    if (isWindows) {
+      t = t.toLowerCase();
+      r = r.toLowerCase();
+    }
+    const needle = r.endsWith(path.sep) ? r : r + path.sep;
+    return t === r || t.startsWith(needle);
+  };
+
+  const canonicalProjectRoot = realpathSync(process.cwd());
+
+  // Check if the next component after existingAncestor is a symlink (broken or not)
+  const parts = nonExistentSuffix.split(path.sep).filter(Boolean);
+  let isSymlinkBypass = false;
+  let symlinkError = null;
+  if (parts.length > 0) {
+    const nextComponentPath = path.join(existingAncestor, parts[0]);
+    try {
+      const stats = lstatSync(nextComponentPath);
+      if (stats.isSymbolicLink()) {
+        let realTarget;
         try {
-          const realPath = realpathSync(resolvedPath);
-          if (realPath !== canonicalRoot && !realPath.startsWith(needle)) {
-            throw new Error(`Access denied: Path '${filePath}' resolves outside trusted root`);
+          realTarget = realpathSync(nextComponentPath);
+        } catch {
+          const rawTarget = readlinkSync(nextComponentPath);
+          realTarget = path.resolve(existingAncestor, rawTarget);
+        }
+        if (!isContained(realTarget, canonicalProjectRoot)) {
+          let allowed = false;
+          for (const allowedRoot of allowedRoots) {
+            if (typeof allowedRoot !== 'string' || !path.isAbsolute(allowedRoot)) continue;
+            try {
+              const canonicalAllowed = realpathSync(allowedRoot);
+              if (isContained(realTarget, canonicalAllowed)) {
+                allowed = true;
+                break;
+              }
+            } catch {}
           }
-          return realPath;
-        } catch (err) {
-          if (err.message.startsWith('Access denied')) throw err;
-          // Path doesn't exist yet — validate parent stays within allowedRoot
-          const dir = path.dirname(resolvedPath);
-          try {
-            const realDir = realpathSync(dir);
-            if (realDir !== canonicalRoot && !realDir.startsWith(needle)) {
-              // eslint-disable-next-line preserve-caught-error -- deliberate security rejection, not error propagation
-              throw new Error(`Access denied: Path '${filePath}' resolves outside trusted root`);
+          if (!allowed) {
+            isSymlinkBypass = true;
+            // Determine if it was inside a trusted root to throw correct error type
+            for (const allowedRoot of allowedRoots) {
+              if (typeof allowedRoot !== 'string' || !path.isAbsolute(allowedRoot)) continue;
+              try {
+                const canonicalAllowed = realpathSync(allowedRoot);
+                if (isContained(nextComponentPath, canonicalAllowed)) {
+                  symlinkError = new Error(`Access denied: Path '${filePath}' resolves outside trusted root`);
+                }
+              } catch {}
             }
-          } catch (dirErr) {
-            if (dirErr.message.startsWith('Access denied')) throw dirErr;
-            // Parent doesn't exist either — allow it, Write tool will create
+            if (!symlinkError) {
+              symlinkError = new Error(`Access denied: Path '${filePath}' is outside project root`);
+            }
           }
-          return resolvedPath;
         }
       }
+    } catch {
+      // Safe, doesn't exist
+    }
+  }
+  if (isSymlinkBypass && symlinkError) {
+    throw symlinkError;
+  }
+
+  // 6. Verify containment against canonical project root
+  const isTargetInProject = isContained(resolvedTarget, canonicalProjectRoot);
+  let isSafe = isContained(existingAncestor, canonicalProjectRoot);
+
+  // 7. Verify containment against canonical allowed roots
+  let isTargetInAllowed = false;
+  if (!isSafe) {
+    for (const allowedRoot of allowedRoots) {
+      if (typeof allowedRoot !== 'string' || !path.isAbsolute(allowedRoot)) continue;
+      try {
+        const canonicalAllowed = realpathSync(allowedRoot);
+        if (isContained(resolvedTarget, canonicalAllowed)) {
+          isTargetInAllowed = true;
+        }
+        if (isContained(existingAncestor, canonicalAllowed)) {
+          isSafe = true;
+          break;
+        }
+      } catch {
+        // Allowed root doesn't exist, ignore
+      }
+    }
+  }
+
+  if (!isSafe) {
+    if (isTargetInAllowed && !isTargetInProject) {
+      throw new Error(`Access denied: Path '${filePath}' resolves outside trusted root`);
     }
     throw new Error(`Access denied: Path '${filePath}' is outside project root`);
   }
 
-  // 5. Resolve symlinks to prevent TOCTOU (time-of-check-time-of-use)
-  try {
-    const stats = lstatSync(resolvedPath);
-    if (stats.isSymbolicLink()) {
-      let realPath;
-      try {
-        realPath = realpathSync(resolvedPath);
-      } catch {
-        // Broken symlink — check its raw target
-        const target = readlinkSync(resolvedPath);
-        realPath = path.resolve(path.dirname(resolvedPath), target);
-      }
-      const relativeReal = path.relative(root, realPath);
-      if (relativeReal.startsWith('..') || path.isAbsolute(relativeReal)) {
-        throw new Error(`Access denied: Path '${filePath}' resolves outside project root`);
-      }
-      return realPath;
-    }
-    // Not a symlink, but realpathSync still helps normalize things like /./ or //
-    const realPath = realpathSync(resolvedPath);
-    const relativeReal = path.relative(root, realPath);
-    if (relativeReal.startsWith('..') || path.isAbsolute(relativeReal)) {
-      throw new Error(`Access denied: Path '${filePath}' resolves outside project root`);
-    }
-    return realPath;
-  } catch (err) {
-    if (err.message.startsWith('Access denied')) throw err;
-    // Path doesn't exist yet (valid for Write tool); validate parent directory
-    const dir = path.dirname(resolvedPath);
-    try {
-      const safeDir = realpathSync(dir);
-      const safeRelative = path.relative(root, safeDir);
-      if (safeRelative.startsWith('..') || path.isAbsolute(safeRelative)) {
-        // eslint-disable-next-line preserve-caught-error -- deliberate security rejection, not error propagation
-        throw new Error(`Access denied: Path '${filePath}' resolves outside project root`);
-      }
-    } catch (dirErr) {
-      if (dirErr.message.startsWith('Access denied')) throw dirErr;
-      // Directory doesn't exist either — allow it, will be created by Write tool
-    }
-    return resolvedPath;
-  }
+  // Return the secure, resolved path
+  return path.join(existingAncestor, nonExistentSuffix);
 }
 
 // Sensitive env var substrings (case-insensitive) — stripped from child process environments
@@ -267,7 +307,6 @@ export function formatSize(bytes) {
 export async function withRetry(func, count = config.MAX_RETRIES, callback) {
   let delay = CONSTANTS.RETRY_BASE_DELAY_MS;
   let lastError;
-  const NON_RETRYABLE = [401, 403, 400, 404];
   const MAX_DELAY = 60_000; // 1 minute cap
 
   for (let i = 0; i < count; i++) {
@@ -275,8 +314,14 @@ export async function withRetry(func, count = config.MAX_RETRIES, callback) {
       const res = await func();
       return res;
     } catch (err) {
-      // Do not retry client errors (4xx except 429)
-      if (err?.status && NON_RETRYABLE.includes(err.status)) {
+      // Do not retry client errors (4xx except 429 and 408)
+      if (
+        err?.status &&
+        err.status >= 400 &&
+        err.status < 500 &&
+        err.status !== 429 &&
+        err.status !== 408
+      ) {
         throw err;
       }
       // Add jitter: ±20% random variation to prevent thundering herd
@@ -294,10 +339,15 @@ export async function withRetry(func, count = config.MAX_RETRIES, callback) {
       const callbackPromise = callback();
       // If callback returns a promise, guard it with a timeout
       if (callbackPromise && typeof callbackPromise.then === 'function') {
-        await Promise.race([
-          callbackPromise,
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Callback timed out')), 5000)),
-        ]);
+        let timerId;
+        const timeoutPromise = new Promise((_, reject) => {
+          timerId = setTimeout(() => reject(new Error('Callback timed out')), 5000);
+        });
+        try {
+          await Promise.race([callbackPromise, timeoutPromise]);
+        } finally {
+          clearTimeout(timerId);
+        }
       }
     } catch (err) {
       logger.warn('withRetry failure callback failed:', err.message);
@@ -350,10 +400,14 @@ export async function* loadTools(dirPath) {
 // Tools with parallelSafe=false each form their own run.
 // Returns an array of arrays; the inner arrays partition toolCalls in original order.
 export function groupToolCalls(toolCalls, registry) {
+  if (!Array.isArray(toolCalls)) return [];
   const groups = [];
   let current = null;
   for (const tc of toolCalls) {
-    const safe = registry.isParallelSafe(tc.function.name);
+    if (!tc?.function?.name) continue;
+    const safe = typeof registry?.isParallelSafe === 'function'
+      ? registry.isParallelSafe(tc.function.name)
+      : false;
     if (safe) {
       if (current && current.safe) {
         current.list.push(tc);

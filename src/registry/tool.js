@@ -156,32 +156,41 @@ export class ToolRegistry {
 
   async connectMcpServer({ name, command, args, env, parallelSafe = false }) {
     const client = new McpClientWrapper({ command, args, env });
-    const remoteTools = await client.connectAndGetTools();
+    try {
+      const remoteTools = await client.connectAndGetTools();
 
-    for (const remoteTool of remoteTools) {
-      const toolName = `${name}_${remoteTool.name}`;
+      for (const remoteTool of remoteTools) {
+        const toolName = `${name}_${remoteTool.name}`;
 
-      this.register({
-        name: toolName,
-        description: remoteTool.description || `Tool ${remoteTool.name} from ${name}`,
-        input_schema: remoteTool.inputSchema || { type: 'object', properties: {} },
-        parallelSafe,
-        execute: async (input) => {
-          const result = await client.executeTool(remoteTool.name, input);
-          if (result.isError) {
-            throw new Error(result.content.map((c) => c.text).join('\n'));
-          }
-          return result.content
-            .map((c) => {
-              if (c.type === 'text') return c.text;
-              if (c.type === 'resource') return `[Resource: ${c.resource.uri}]`;
-              return JSON.stringify(c);
-            })
-            .join('\n');
-        },
-      });
+        this.register({
+          name: toolName,
+          description: remoteTool.description || `Tool ${remoteTool.name} from ${name}`,
+          input_schema: remoteTool.inputSchema || { type: 'object', properties: {} },
+          parallelSafe,
+          execute: async (input) => {
+            const result = await client.executeTool(remoteTool.name, input);
+            if (result.isError) {
+              throw new Error(result.content.map((c) => c.text).join('\n'));
+            }
+            return result.content
+              .map((c) => {
+                if (c.type === 'text') return c.text;
+                if (c.type === 'resource') return `[Resource: ${c.resource.uri}]`;
+                return JSON.stringify(c);
+              })
+              .join('\n');
+          },
+        });
+      }
+      this.#mcpClients.push(client);
+    } catch (err) {
+      try {
+        await client.close();
+      } catch (closeErr) {
+        logger.warn(`Failed to close MCP client after connection failure: ${closeErr.message}`);
+      }
+      throw err;
     }
-    this.#mcpClients.push(client);
   }
 
   async cleanup() {
