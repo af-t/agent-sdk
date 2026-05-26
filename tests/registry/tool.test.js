@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test';
+import { describe, it, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ToolRegistry } from '../../src/registry/tool.js';
 
@@ -392,49 +392,6 @@ describe('ToolRegistry', () => {
     assert.deepEqual(results.sort(), ['a', 'b']);
   });
 
-  it('default parallelSafe is false when not specified', () => {
-    const registry = new ToolRegistry();
-    registry.register({
-      name: 'ps_default',
-      description: 'd',
-      input_schema: {},
-      execute: async () => 'ok',
-    });
-    assert.equal(registry.isParallelSafe('ps_default'), false);
-  });
-
-  it('register accepts parallelSafe: true', () => {
-    const registry = new ToolRegistry();
-    registry.register({
-      name: 'ps_true',
-      description: 'd',
-      input_schema: {},
-      execute: async () => 'ok',
-      parallelSafe: true,
-    });
-    assert.equal(registry.isParallelSafe('ps_true'), true);
-  });
-
-  it('register rejects non-boolean parallelSafe with clear error', () => {
-    const registry = new ToolRegistry();
-    assert.throws(
-      () =>
-        registry.register({
-          name: 'bad',
-          description: 'd',
-          input_schema: {},
-          execute: async () => 'ok',
-          parallelSafe: 'yes',
-        }),
-      /parallelSafe must be boolean/,
-    );
-  });
-
-  it('isParallelSafe returns false for unknown tool', () => {
-    const registry = new ToolRegistry();
-    assert.equal(registry.isParallelSafe('ghost'), false);
-  });
-
   it('hook context includes signal field', async () => {
     const registry = new ToolRegistry();
     let beforeCtx, afterCtx;
@@ -469,38 +426,21 @@ describe('ToolRegistry', () => {
     await registry.execute('t', {}, { signal: controller.signal });
     assert.ok(toolSignal instanceof AbortSignal);
   });
+});
 
-  it('loadTools propagates parallelSafe from module exports', async () => {
-    const { loadTools } = await import('../../src/core/utils.js');
-    const fs = await import('node:fs/promises');
-    const path = await import('node:path');
-    const os = await import('node:os');
+test('ToolRegistry no longer exposes isParallelSafe', () => {
+  const reg = new ToolRegistry();
+  assert.equal(typeof reg.isParallelSafe, 'undefined');
+});
 
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tools-ps-'));
-    await fs.writeFile(
-      path.join(tmpDir, 'safe.js'),
-      `export const name = 'SafeTool';
-     export const description = 'd';
-     export const input_schema = { type: 'object', properties: {} };
-     export const execute = async () => 'ok';
-     export const parallelSafe = true;`,
-    );
-    await fs.writeFile(
-      path.join(tmpDir, 'unsafe.js'),
-      `export const name = 'UnsafeTool';
-     export const description = 'd';
-     export const input_schema = { type: 'object', properties: {} };
-     export const execute = async () => 'ok';`,
-    );
-
-    const registry = new ToolRegistry();
-    for await (const tool of loadTools(tmpDir)) {
-      registry.register(tool);
-    }
-
-    assert.equal(registry.isParallelSafe('SafeTool'), true);
-    assert.equal(registry.isParallelSafe('UnsafeTool'), false);
-
-    await fs.rm(tmpDir, { recursive: true, force: true });
+test('register() ignores legacy parallelSafe field without throwing', () => {
+  const reg = new ToolRegistry();
+  reg.register({
+    name: 'noop',
+    description: 'd',
+    input_schema: { type: 'object', properties: {} },
+    execute: async () => 'ok',
+    parallelSafe: false,
   });
+  assert.ok(reg.getDefinitions().find((t) => t.function.name === 'noop'));
 });

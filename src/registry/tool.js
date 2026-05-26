@@ -71,16 +71,11 @@ export class ToolRegistry {
     return tools;
   }
 
-  register({ name, description, input_schema, execute, parallelSafe = false }) {
+  register({ name, description, input_schema, execute }) {
     if (name == null || typeof name !== 'string') throw Error('Tool must have a name');
     if (description == null || typeof description !== 'string') throw Error('Tool must have a description');
     if (typeof execute !== 'function') throw Error('Tool must have an execute function');
-    if (typeof parallelSafe !== 'boolean') throw Error(`Tool '${name}': parallelSafe must be boolean`);
-    this.#tools.set(name, { description, input_schema, execute, parallelSafe });
-  }
-
-  isParallelSafe(name) {
-    return this.#tools.get(name)?.parallelSafe ?? false;
+    this.#tools.set(name, { description, input_schema, execute });
   }
 
   unregister(name) {
@@ -154,7 +149,7 @@ export class ToolRegistry {
     return truncateOutput(result, limit);
   }
 
-  async connectMcpServer({ name, command, args, env, parallelSafe = false }) {
+  async connectMcpServer({ name, command, args, env }) {
     const client = new McpClientWrapper({ command, args, env });
     try {
       const remoteTools = await client.connectAndGetTools();
@@ -166,7 +161,6 @@ export class ToolRegistry {
           name: toolName,
           description: remoteTool.description || `Tool ${remoteTool.name} from ${name}`,
           input_schema: remoteTool.inputSchema || { type: 'object', properties: {} },
-          parallelSafe,
           execute: async (input) => {
             const result = await client.executeTool(remoteTool.name, input);
             if (result.isError) {
