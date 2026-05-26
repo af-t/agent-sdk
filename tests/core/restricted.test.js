@@ -3,21 +3,21 @@ import assert from 'node:assert/strict';
 import createAgent from '../../src/index.js';
 import { ToolRegistry } from '../../src/registry/tool.js';
 
-test('agent.restricted defaults to true', () => {
-  const agent = createAgent({ apiKey: 'sk-test' });
+test('agent.restricted defaults to true', async () => {
+  const agent = await createAgent({ apiKey: 'sk-test' });
   assert.equal(agent.restricted, true);
 });
 
-test('agent.restricted respects constructor option', () => {
-  const agent = createAgent({ apiKey: 'sk-test', restricted: false });
+test('agent.restricted respects constructor option', async () => {
+  const agent = await createAgent({ apiKey: 'sk-test', restricted: false });
   assert.equal(agent.restricted, false);
 });
 
 test('ctx.agent.restricted is exposed to tools at execute time', async () => {
-  const agent = createAgent({ apiKey: 'sk-test', restricted: false });
+  const agent = await createAgent({ apiKey: 'sk-test', restricted: false });
   let seen;
   agent.use({
-    name: 'probe',
+    name: 'probe_restricted',
     description: 'd',
     input_schema: { type: 'object', properties: {} },
     execute: async (_input, ctx) => {
@@ -25,11 +25,11 @@ test('ctx.agent.restricted is exposed to tools at execute time', async () => {
       return 'ok';
     },
   });
-  await agent.tools.execute('probe', {}, { agent });
+  await agent.tools.execute('probe_restricted', {}, { agent });
   assert.equal(seen, false);
 });
 
-test('restricted=false emits a warning at construction', () => {
+test('restricted=false emits a warning at construction', async () => {
   const origWrite = process.stderr.write.bind(process.stderr);
   let captured = '';
   process.stderr.write = (chunk) => {
@@ -37,7 +37,7 @@ test('restricted=false emits a warning at construction', () => {
     return true;
   };
   try {
-    createAgent({ apiKey: 'sk-test', restricted: false });
+    await createAgent({ apiKey: 'sk-test', restricted: false });
   } finally {
     process.stderr.write = origWrite;
   }
@@ -53,9 +53,9 @@ test('ToolRegistry stores restricted flag (default true)', () => {
   assert.equal(r3.restricted, false);
 });
 
-test('Agent forwards restricted to its ToolRegistry', () => {
-  const a = createAgent({ apiKey: 'sk-test', restricted: false });
+test('createAgent forwards restricted to its ToolRegistry', async () => {
+  const a = await createAgent({ apiKey: 'sk-test', restricted: false });
   assert.equal(a.tools.restricted, false);
-  const b = createAgent({ apiKey: 'sk-test' });
+  const b = await createAgent({ apiKey: 'sk-test' });
   assert.equal(b.tools.restricted, true);
 });

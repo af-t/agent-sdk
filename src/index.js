@@ -8,7 +8,8 @@ import { loadTools } from './core/utils.js';
 const __dirname = getDirname(import.meta);
 
 async function createAgent(options = {}) {
-  const tools = new ToolRegistry();
+  const restricted = options.restricted !== false;
+  const tools = new ToolRegistry({ restricted });
   for await (const tool of loadTools(path.join(__dirname, 'tools'))) {
     tools.register(tool);
   }
