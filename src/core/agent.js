@@ -80,7 +80,15 @@ class Agent {
       memoryDir,
       memoryTypes,
       isSubagent,
+      restricted,
     } = options;
+
+    this.restricted = restricted !== false;
+    if (this.restricted === false) {
+      logger.warn(
+        'Agent constructed with restricted=false — security checks disabled (project-root boundary, Bash blocked-command list, env-var filtering). Use only in trusted contexts.',
+      );
+    }
 
     if (!apiKey && !config.API_KEY) {
       throw new ConfigError('OPENROUTER_API_KEY is required. Set it in .env or pass it as an option.');
@@ -93,7 +101,7 @@ class Agent {
     const resolvedOnly = only || provider?.only || config.ONLY;
     this.provider = { order: resolvedOrder, only: resolvedOnly };
     this.messages = [];
-    this.tools = tools || new ToolRegistry();
+    this.tools = tools || new ToolRegistry({ restricted: this.restricted });
     this.effort = effort || 'high';
     this.maxTokens = parseInt(maxTokens || config.MAX_TOKENS || 0) || undefined;
     this.usage = { cost: 0, tokens: 0 };

@@ -7,6 +7,10 @@ export class ToolRegistry {
   #mcpClients = [];
   #hooks = { beforeExecute: [], afterExecute: [] };
 
+  constructor(options = {}) {
+    this.restricted = options.restricted !== false;
+  }
+
   // throw to abort; returns disposer
   onBeforeExecute(fn) {
     this.#hooks.beforeExecute.push(fn);
