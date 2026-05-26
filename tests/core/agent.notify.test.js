@@ -45,7 +45,6 @@ describe('Agent — tool_start / tool_end notify events', () => {
       description: 'echo',
       input_schema: { type: 'object', properties: { msg: { type: 'string' } } },
       execute: async ({ msg }) => msg,
-      parallelSafe: true,
     });
 
     const updates = [];
@@ -87,7 +86,6 @@ describe('Agent — tool_start / tool_end notify events', () => {
       execute: async () => {
         throw new Error('kaboom');
       },
-      parallelSafe: true,
     });
 
     const updates = [];
@@ -117,7 +115,6 @@ describe('Agent — tool_start / tool_end notify events', () => {
       description: 'd',
       input_schema: {},
       execute: async () => 'ok',
-      parallelSafe: true,
     });
 
     const result = await agent.run('go', () => {

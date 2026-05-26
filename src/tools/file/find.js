@@ -4,7 +4,6 @@ import path from 'node:path';
 import { CONSTANTS, ensureSafePath } from '../../core/utils.js';
 
 export const name = 'Find';
-export const parallelSafe = true;
 export const description =
   'Search for files by name or content within a directory.  Prioritize using this tool over using commands like `find -iname` or `grep -R` for portability reasons.';
 export const input_schema = {

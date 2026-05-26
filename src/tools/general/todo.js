@@ -29,7 +29,6 @@ const generateId = () => {
 };
 
 export const name = 'Todo';
-export const parallelSafe = false;
 
 export const description =
   'Manage a todo list to track tasks and activities. Supports add, list, complete, delete, update, and clear actions with filtering, sorting, priority, category, and due date support. Data is persisted to a JSON file.';

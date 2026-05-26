@@ -14,7 +14,6 @@ function stripTags(str) {
 }
 
 export const name = 'WebSearch';
-export const parallelSafe = true;
 export const description =
   'Search the web. Uses Tavily when TAVILY_API_KEY is configured, otherwise falls back to DuckDuckGo. Use to find current information, research topics, or answer questions that require up-to-date web data. Returns results with snippets and source URLs.';
 export const input_schema = {

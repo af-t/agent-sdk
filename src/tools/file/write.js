@@ -6,9 +6,8 @@ import { hashContent } from '../../core/file-state.js';
 const MAX_WRITE_SIZE = 10 * 1024 * 1024; // 10MB limit to prevent disk exhaustion
 
 export const name = 'Write';
-export const parallelSafe = false;
 export const description =
-  'Create a new file, or overwrite an existing one by passing overwrite=true. Prefer Edit for partial changes. This tool will automatically create any missing parent directories.';
+  'Create a new file, or overwrite an existing one by passing overwrite=true. Prefer Edit for partial changes. This tool will automatically create any missing parent directories. Side effect: writes/overwrites the target file. Do not issue parallel Write or Edit calls against the same path.';
 export const input_schema = {
   type: 'object',
   properties: {

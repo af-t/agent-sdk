@@ -135,14 +135,13 @@ function applyEdit(content, edit, i, lineOffset) {
 }
 
 export const name = 'Edit';
-export const parallelSafe = false;
 export const description =
   'Surgically update a file with one or more sequential actions (replace, insert, delete). ' +
   'Actions are applied top-to-bottom; the file is only written if every action succeeds. ' +
   'Prefer old_text over line numbers — old_text is content-anchored and immune to shifting. ' +
   'When using line-based edits in a multi-edit call, line numbers are automatically adjusted ' +
   'for insertions and deletions made by earlier actions in the same call. ' +
-  'Line-based edits must be specified in top-to-bottom order (ascending start_line).';
+  'Line-based edits must be specified in top-to-bottom order (ascending start_line). Side effect: mutates the target file. Do not issue parallel Edit/Write calls against the same path.';
 
 export const input_schema = {
   type: 'object',

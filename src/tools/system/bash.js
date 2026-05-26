@@ -231,9 +231,8 @@ function runWithPty(command, cwd, env, timeout, signal) {
 }
 
 export const name = 'Bash';
-export const parallelSafe = false;
 export const description =
-  'Execute a shell command. Use this for system operations that do not have a specialized tool, such as running tests, performing builds, or using complex CLI utilities.';
+  'Execute a shell command. Use this for system operations that do not have a specialized tool, such as running tests, performing builds, or using complex CLI utilities. Side effect: executes arbitrary shell commands. The agent may issue multiple tool calls in one turn that run concurrently — do not request parallel calls that mutate the same files or processes.';
 export const input_schema = {
   type: 'object',
   properties: {

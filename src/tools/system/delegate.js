@@ -3,9 +3,8 @@ import { CONSTANTS } from '../../core/utils.js';
 import logger from '../../core/logger.js';
 
 export const name = 'Delegate';
-export const parallelSafe = false;
 export const description =
-  'Delegate a specific task to a specialized sub-agent. Use this for complex research, repetitive operations, or tasks with high-volume output to keep the main session history clean.';
+  'Delegate a specific task to a specialized sub-agent. Use this for complex research, repetitive operations, or tasks with high-volume output to keep the main session history clean. Side effect: spawns a subagent that may itself touch the filesystem and shell. Avoid parallel Delegate calls targeting overlapping work.';
 export const input_schema = {
   type: 'object',
   properties: {

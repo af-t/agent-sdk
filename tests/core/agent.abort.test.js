@@ -53,7 +53,6 @@ describe('Agent — abort propagation', () => {
         observed = ctx.signal;
         return 'ok';
       },
-      parallelSafe: true,
     });
     await agent.run('go');
     assert.ok(observed instanceof AbortSignal);
@@ -94,7 +93,6 @@ describe('Agent — abort propagation', () => {
         new Promise((_, rej) => {
           ctx.signal.addEventListener('abort', () => rej(new Error('aborted by signal')));
         }),
-      parallelSafe: true,
     });
 
     setTimeout(() => ctrl.abort(), 30);
@@ -135,7 +133,6 @@ describe('Agent — abort propagation', () => {
         await new Promise((r) => setTimeout(r, 100));
         return 'completed';
       },
-      parallelSafe: true,
     });
 
     setTimeout(() => ctrl.abort(), 30);
