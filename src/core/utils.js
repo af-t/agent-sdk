@@ -315,13 +315,7 @@ export async function withRetry(func, count = config.MAX_RETRIES, callback) {
       return res;
     } catch (err) {
       // Do not retry client errors (4xx except 429 and 408)
-      if (
-        err?.status &&
-        err.status >= 400 &&
-        err.status < 500 &&
-        err.status !== 429 &&
-        err.status !== 408
-      ) {
+      if (err?.status && err.status >= 400 && err.status < 500 && err.status !== 429 && err.status !== 408) {
         throw err;
       }
       // Add jitter: ±20% random variation to prevent thundering herd
@@ -381,7 +375,6 @@ export async function* loadTools(dirPath) {
         description: mod.description || mod.default?.description,
         input_schema: mod.input_schema || mod.default?.input_schema,
         execute: mod.execute || mod.default?.execute,
-        parallelSafe: mod.parallelSafe ?? mod.default?.parallelSafe ?? false,
       };
 
       if (!tool.name || !tool.input_schema || !tool.execute) {
@@ -394,31 +387,4 @@ export async function* loadTools(dirPath) {
       logger.error(`Failed to load tool from ${entry.name}: ${err.message}`);
     }
   }
-}
-
-// Group consecutive tool_calls with parallelSafe=true into runs.
-// Tools with parallelSafe=false each form their own run.
-// Returns an array of arrays; the inner arrays partition toolCalls in original order.
-export function groupToolCalls(toolCalls, registry) {
-  if (!Array.isArray(toolCalls)) return [];
-  const groups = [];
-  let current = null;
-  for (const tc of toolCalls) {
-    if (!tc?.function?.name) continue;
-    const safe = typeof registry?.isParallelSafe === 'function'
-      ? registry.isParallelSafe(tc.function.name)
-      : false;
-    if (safe) {
-      if (current && current.safe) {
-        current.list.push(tc);
-      } else {
-        current = { safe: true, list: [tc] };
-        groups.push(current.list);
-      }
-    } else {
-      current = { safe: false, list: [tc] };
-      groups.push(current.list);
-    }
-  }
-  return groups;
 }

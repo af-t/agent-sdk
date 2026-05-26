@@ -1,12 +1,4 @@
-import {
-  withRetry,
-  getDirname,
-  CONSTANTS,
-  groupToolCalls,
-  ensureSafePath,
-  payloadHasMultimodal,
-  degradePayload,
-} from './utils.js';
+import { withRetry, getDirname, CONSTANTS, ensureSafePath, payloadHasMultimodal, degradePayload } from './utils.js';
 import { ToolRegistry } from '../registry/tool.js';
 import { ApiError, ConfigError } from './errors.js';
 import logger from './logger.js';
@@ -286,7 +278,7 @@ class Agent {
             } catch (err) {
               logger.debug('Notify callback error:', err.message);
             }
-          })()
+          })(),
         );
       }
     }
@@ -391,6 +383,12 @@ class Agent {
   }
 
   async #send(payload) {
+    if (typeof this._sendForTest === 'function') {
+      const stub = await this._sendForTest(payload);
+      this.usage.cost += stub.usage?.cost || 0;
+      this.usage.tokens += stub.usage?.total_tokens || 0;
+      return stub;
+    }
     logger.debug(`Sending request to LLM (${this.model})...`);
     const response = await this.#request(payload);
     logger.debug(`Received response from LLM.`);
@@ -402,6 +400,12 @@ class Agent {
   }
 
   async #sendStream(payload) {
+    if (typeof this._sendForTest === 'function') {
+      const stub = await this._sendForTest(payload);
+      this.usage.cost += stub.usage?.cost || 0;
+      this.usage.tokens += stub.usage?.total_tokens || 0;
+      return stub;
+    }
     const controller = new AbortController();
     const idle = makeIdleTimer(REQUEST_TIMEOUT, controller);
 
@@ -756,31 +760,27 @@ class Agent {
           break;
         }
 
-        const groups = groupToolCalls(tool_calls, this.tools);
+        const settled = await Promise.allSettled(tool_calls.map((tc) => this.#executeOneToolCall(tc, signal)));
 
-        for (const group of groups) {
-          const settled = await Promise.allSettled(group.map((tc) => this.#executeOneToolCall(tc, signal)));
-
-          for (let i = 0; i < group.length; i++) {
-            const tc = group[i];
-            const r = settled[i];
-            const tool_call_id = tc.id || `call_${crypto.randomUUID()}`;
-            if (r.status === 'fulfilled') {
-              this.messages.push({ role: 'tool', content: r.value, tool_call_id });
-            } else {
-              const summary = (r.reason?.message || '').split('\n')[0];
-              logger.warn(`Tool ${tc.function.name} failed: ${summary}`);
-              this.messages.push({
-                role: 'tool',
-                content: `Error: ${r.reason?.message ?? r.reason}`,
-                tool_call_id,
-              });
-            }
+        for (let i = 0; i < tool_calls.length; i++) {
+          const tc = tool_calls[i];
+          const r = settled[i];
+          const tool_call_id = tc.id || `call_${crypto.randomUUID()}`;
+          if (r.status === 'fulfilled') {
+            this.messages.push({ role: 'tool', content: r.value, tool_call_id });
+          } else {
+            const summary = (r.reason?.message || '').split('\n')[0];
+            logger.warn(`Tool ${tc.function.name} failed: ${summary}`);
+            this.messages.push({
+              role: 'tool',
+              content: `Error: ${r.reason?.message ?? r.reason}`,
+              tool_call_id,
+            });
           }
+        }
 
-          if (signal?.aborted) {
-            throw new Error('Agent run aborted');
-          }
+        if (signal?.aborted) {
+          throw new Error('Agent run aborted');
         }
 
         // Flush any steer queued during this turn's tool execution.

@@ -67,7 +67,6 @@ describe('Agent — parallel tool scheduler', () => {
         await new Promise((r) => setTimeout(r, 100));
         return `r${id}`;
       },
-      parallelSafe: true,
     });
 
     const t0 = Date.now();
@@ -98,7 +97,6 @@ describe('Agent — parallel tool scheduler', () => {
         await new Promise((r) => setTimeout(r, delay));
         return label;
       },
-      parallelSafe: true,
     });
 
     await agent.run('go');
@@ -110,25 +108,24 @@ describe('Agent — parallel tool scheduler', () => {
     assert.equal(toolMsgs[1].content, 'second');
   });
 
-  it('serializes when an unsafe tool sits between safe tools', async () => {
+  it('runs every tool in one turn concurrently regardless of safety hints (parallel-by-default)', async () => {
     global.fetch = llmStubReturning(
       [
-        { id: 'a', name: 'Safe100', arguments: '{}' },
-        { id: 'b', name: 'Unsafe100', arguments: '{}' },
-        { id: 'c', name: 'Safe100', arguments: '{}' },
+        { id: 'a', name: 'Sleeper', arguments: '{"id":1}' },
+        { id: 'b', name: 'Sleeper', arguments: '{"id":2}' },
+        { id: 'c', name: 'Sleeper', arguments: '{"id":3}' },
       ],
       'done',
     );
 
     const agent = new Agent({ apiKey: 'sk-test' });
     const sleep = () => new Promise((r) => setTimeout(r, 100));
-    agent.use({ name: 'Safe100', description: 'd', input_schema: {}, execute: sleep, parallelSafe: true });
-    agent.use({ name: 'Unsafe100', description: 'd', input_schema: {}, execute: sleep });
+    agent.use({ name: 'Sleeper', description: 'd', input_schema: {}, execute: sleep });
 
     const t0 = Date.now();
     await agent.run('go');
     const elapsed = Date.now() - t0;
-    assert.ok(elapsed >= 280 && elapsed < 400, `expected ~300ms (serial), got ${elapsed}ms`);
+    assert.ok(elapsed < 400, `expected concurrent (< 400ms), got ${elapsed}ms`);
   });
 
   it('one throwing tool in a parallel batch yields error tool_message for that call, others succeed', async () => {
@@ -150,7 +147,6 @@ describe('Agent — parallel tool scheduler', () => {
         if (shouldThrow) throw new Error('boom');
         return 'fine';
       },
-      parallelSafe: true,
     });
 
     await agent.run('go');
