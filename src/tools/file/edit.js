@@ -190,7 +190,7 @@ export const input_schema = {
 export const execute = async ({ path: filePath, edits }, ctx = {}) => {
   if (!edits || edits.length === 0) throw new Error('edits must not be empty');
 
-  const safePath = ensureSafePath(filePath, ctx.agent?.trustedPaths);
+  const safePath = ensureSafePath(filePath, ctx.agent?.trustedPaths, { restricted: ctx.agent?.restricted !== false });
   const rawContent = await fs.readFile(safePath, 'utf8');
   const currentHash = hashContent(rawContent);
 

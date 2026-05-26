@@ -72,7 +72,7 @@ async function readText(safePath, filePath, { start_line = 1, end_line = Infinit
 }
 
 export const execute = async ({ path: filePath, start_line = 1, end_line = Infinity, max_lines = 1500 }, ctx = {}) => {
-  const safePath = ensureSafePath(filePath, ctx.agent?.trustedPaths);
+  const safePath = ensureSafePath(filePath, ctx.agent?.trustedPaths, { restricted: ctx.agent?.restricted !== false });
 
   const stat = await fs.stat(safePath);
 

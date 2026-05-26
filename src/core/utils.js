@@ -111,7 +111,9 @@ function tryDecodeURIComponent(str) {
   }
 }
 
-export function ensureSafePath(filePath, allowedRoots = new Set()) {
+export function ensureSafePath(filePath, allowedRoots = new Set(), options = {}) {
+  const restricted = options.restricted !== false;
+
   // 1. Reject null bytes
   if (filePath.includes('\0')) {
     throw new Error('Access denied: Path contains null byte');
@@ -163,104 +165,108 @@ export function ensureSafePath(filePath, allowedRoots = new Set()) {
     throw new Error('Access denied: Could not resolve path ancestor');
   }
 
-  // Helper to safely verify containment
-  const isContained = (canonicalTarget, canonicalRoot) => {
-    const isWindows = process.platform === 'win32';
-    let t = canonicalTarget.normalize('NFC');
-    let r = canonicalRoot.normalize('NFC');
-    if (isWindows) {
-      t = t.toLowerCase();
-      r = r.toLowerCase();
-    }
-    const needle = r.endsWith(path.sep) ? r : r + path.sep;
-    return t === r || t.startsWith(needle);
-  };
+  if (restricted) {
+    const safeAllowedRoots = allowedRoots || new Set();
 
-  const canonicalProjectRoot = realpathSync(process.cwd());
+    // Helper to safely verify containment
+    const isContained = (canonicalTarget, canonicalRoot) => {
+      const isWindows = process.platform === 'win32';
+      let t = canonicalTarget.normalize('NFC');
+      let r = canonicalRoot.normalize('NFC');
+      if (isWindows) {
+        t = t.toLowerCase();
+        r = r.toLowerCase();
+      }
+      const needle = r.endsWith(path.sep) ? r : r + path.sep;
+      return t === r || t.startsWith(needle);
+    };
 
-  // Check if the next component after existingAncestor is a symlink (broken or not)
-  const parts = nonExistentSuffix.split(path.sep).filter(Boolean);
-  let isSymlinkBypass = false;
-  let symlinkError = null;
-  if (parts.length > 0) {
-    const nextComponentPath = path.join(existingAncestor, parts[0]);
-    try {
-      const stats = lstatSync(nextComponentPath);
-      if (stats.isSymbolicLink()) {
-        let realTarget;
-        try {
-          realTarget = realpathSync(nextComponentPath);
-        } catch {
-          const rawTarget = readlinkSync(nextComponentPath);
-          realTarget = path.resolve(existingAncestor, rawTarget);
-        }
-        if (!isContained(realTarget, canonicalProjectRoot)) {
-          let allowed = false;
-          for (const allowedRoot of allowedRoots) {
-            if (typeof allowedRoot !== 'string' || !path.isAbsolute(allowedRoot)) continue;
-            try {
-              const canonicalAllowed = realpathSync(allowedRoot);
-              if (isContained(realTarget, canonicalAllowed)) {
-                allowed = true;
-                break;
-              }
-            } catch {}
+    const canonicalProjectRoot = realpathSync(process.cwd());
+
+    // Check if the next component after existingAncestor is a symlink (broken or not)
+    const parts = nonExistentSuffix.split(path.sep).filter(Boolean);
+    let isSymlinkBypass = false;
+    let symlinkError = null;
+    if (parts.length > 0) {
+      const nextComponentPath = path.join(existingAncestor, parts[0]);
+      try {
+        const stats = lstatSync(nextComponentPath);
+        if (stats.isSymbolicLink()) {
+          let realTarget;
+          try {
+            realTarget = realpathSync(nextComponentPath);
+          } catch {
+            const rawTarget = readlinkSync(nextComponentPath);
+            realTarget = path.resolve(existingAncestor, rawTarget);
           }
-          if (!allowed) {
-            isSymlinkBypass = true;
-            // Determine if it was inside a trusted root to throw correct error type
-            for (const allowedRoot of allowedRoots) {
+          if (!isContained(realTarget, canonicalProjectRoot)) {
+            let allowed = false;
+            for (const allowedRoot of safeAllowedRoots) {
               if (typeof allowedRoot !== 'string' || !path.isAbsolute(allowedRoot)) continue;
               try {
                 const canonicalAllowed = realpathSync(allowedRoot);
-                if (isContained(nextComponentPath, canonicalAllowed)) {
-                  symlinkError = new Error(`Access denied: Path '${filePath}' resolves outside trusted root`);
+                if (isContained(realTarget, canonicalAllowed)) {
+                  allowed = true;
+                  break;
                 }
               } catch {}
             }
-            if (!symlinkError) {
-              symlinkError = new Error(`Access denied: Path '${filePath}' is outside project root`);
+            if (!allowed) {
+              isSymlinkBypass = true;
+              // Determine if it was inside a trusted root to throw correct error type
+              for (const allowedRoot of safeAllowedRoots) {
+                if (typeof allowedRoot !== 'string' || !path.isAbsolute(allowedRoot)) continue;
+                try {
+                  const canonicalAllowed = realpathSync(allowedRoot);
+                  if (isContained(nextComponentPath, canonicalAllowed)) {
+                    symlinkError = new Error(`Access denied: Path '${filePath}' resolves outside trusted root`);
+                  }
+                } catch {}
+              }
+              if (!symlinkError) {
+                symlinkError = new Error(`Access denied: Path '${filePath}' is outside project root`);
+              }
             }
           }
         }
-      }
-    } catch {
-      // Safe, doesn't exist
-    }
-  }
-  if (isSymlinkBypass && symlinkError) {
-    throw symlinkError;
-  }
-
-  // 6. Verify containment against canonical project root
-  const isTargetInProject = isContained(resolvedTarget, canonicalProjectRoot);
-  let isSafe = isContained(existingAncestor, canonicalProjectRoot);
-
-  // 7. Verify containment against canonical allowed roots
-  let isTargetInAllowed = false;
-  if (!isSafe) {
-    for (const allowedRoot of allowedRoots) {
-      if (typeof allowedRoot !== 'string' || !path.isAbsolute(allowedRoot)) continue;
-      try {
-        const canonicalAllowed = realpathSync(allowedRoot);
-        if (isContained(resolvedTarget, canonicalAllowed)) {
-          isTargetInAllowed = true;
-        }
-        if (isContained(existingAncestor, canonicalAllowed)) {
-          isSafe = true;
-          break;
-        }
       } catch {
-        // Allowed root doesn't exist, ignore
+        // Safe, doesn't exist
       }
     }
-  }
-
-  if (!isSafe) {
-    if (isTargetInAllowed && !isTargetInProject) {
-      throw new Error(`Access denied: Path '${filePath}' resolves outside trusted root`);
+    if (isSymlinkBypass && symlinkError) {
+      throw symlinkError;
     }
-    throw new Error(`Access denied: Path '${filePath}' is outside project root`);
+
+    // 6. Verify containment against canonical project root
+    const isTargetInProject = isContained(resolvedTarget, canonicalProjectRoot);
+    let isSafe = isContained(existingAncestor, canonicalProjectRoot);
+
+    // 7. Verify containment against canonical allowed roots
+    let isTargetInAllowed = false;
+    if (!isSafe) {
+      for (const allowedRoot of safeAllowedRoots) {
+        if (typeof allowedRoot !== 'string' || !path.isAbsolute(allowedRoot)) continue;
+        try {
+          const canonicalAllowed = realpathSync(allowedRoot);
+          if (isContained(resolvedTarget, canonicalAllowed)) {
+            isTargetInAllowed = true;
+          }
+          if (isContained(existingAncestor, canonicalAllowed)) {
+            isSafe = true;
+            break;
+          }
+        } catch {
+          // Allowed root doesn't exist, ignore
+        }
+      }
+    }
+
+    if (!isSafe) {
+      if (isTargetInAllowed && !isTargetInProject) {
+        throw new Error(`Access denied: Path '${filePath}' resolves outside trusted root`);
+      }
+      throw new Error(`Access denied: Path '${filePath}' is outside project root`);
+    }
   }
 
   // Return the secure, resolved path

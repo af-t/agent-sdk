@@ -168,6 +168,31 @@ describe('ensureSafePath', () => {
     const result = ensureSafePath('src/index.js');
     assert.ok(result.endsWith('src/index.js'));
   });
+
+  it('rejects null byte regardless of restricted=false', () => {
+    assert.throws(() => ensureSafePath('foo\x00bar', null, { restricted: false }), /null byte/i);
+  });
+
+  it('rejects URL-encoded traversal regardless of restricted=false', () => {
+    assert.throws(() => ensureSafePath('a/%2e%2e/etc/passwd', null, { restricted: false }), /encoded|traversal/i);
+  });
+
+  it('rejects protocol handlers regardless of restricted=false', () => {
+    assert.throws(() => ensureSafePath('file:///etc/passwd', null, { restricted: false }), /protocol|file:/i);
+  });
+
+  it('blocks /etc/passwd when restricted=true (default)', () => {
+    assert.throws(() => ensureSafePath('/etc/passwd'), /outside|boundary/i);
+  });
+
+  it('permits absolute external paths when restricted=false', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'esp-'));
+    const f = path.join(tmp, 'a.txt');
+    fs.writeFileSync(f, 'hi');
+    const result = ensureSafePath(f, null, { restricted: false });
+    assert.equal(result, fs.realpathSync(f));
+    fs.rmSync(tmp, { recursive: true });
+  });
 });
 
 describe('withRetry', () => {

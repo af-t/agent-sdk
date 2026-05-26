@@ -227,7 +227,7 @@ export const execute = async ({ path: dirPath = '.', pattern, mode }, ctx = {}) 
     throw new Error('Find aborted before start');
   }
 
-  const absPath = ensureSafePath(dirPath, ctx.agent?.trustedPaths);
+  const absPath = ensureSafePath(dirPath, ctx.agent?.trustedPaths, { restricted: ctx.agent?.restricted !== false });
   const cwd = process.cwd();
 
   try {
