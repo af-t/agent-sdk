@@ -49,6 +49,8 @@ class Agent {
   #activeRunPromise = null;
   #multimodalUnsupported = false;
   #notifyCallbacks = new Set();
+  #bgExitListeners;
+  #pendingBgDrains;
   #envInfo = [
     '',
     '',
@@ -107,6 +109,9 @@ class Agent {
     this.usage = { cost: 0, tokens: 0 };
     this.subagents = new Map();
     this.fileState = new Map();
+    this.backgroundJobs = new Map();
+    this.#bgExitListeners = new Set();
+    this.#pendingBgDrains = [];
     this.currentTurn = 0;
     // Max request turns before forcing a break.
     // Set to 0 for unlimited (used by subagents via Delegate).
@@ -217,6 +222,26 @@ class Agent {
     if (Array.isArray(prompt) && prompt.length === 0) return false;
     this.#pending.push(normalizePrompt(prompt));
     return true;
+  }
+
+  onBackgroundExit(fn) {
+    if (typeof fn !== 'function') throw new TypeError('onBackgroundExit expects a function');
+    this.#bgExitListeners.add(fn);
+    return () => this.#bgExitListeners.delete(fn);
+  }
+
+  _fireBackgroundExit(event) {
+    if (this.isRunning) {
+      this.#pendingBgDrains.push(event);
+    } else {
+      for (const fn of this.#bgExitListeners) {
+        try {
+          fn(event);
+        } catch (err) {
+          logger.warn(`onBackgroundExit listener threw: ${err.message}`);
+        }
+      }
+    }
   }
 
   registerInjector({ name, scope, fn } = {}) {
