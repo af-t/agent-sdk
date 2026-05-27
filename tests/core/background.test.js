@@ -59,3 +59,54 @@ test('background log dir falls back to os.tmpdir/openrouter-<pid> when unconfigu
   assert.ok(fs.existsSync(dir));
   assert.ok(agent.trustedPaths.has(dir));
 });
+
+test('pending bg exits drain into messages as a system-reminder after tool group', async () => {
+  const agent = await createAgent({ apiKey: 'x' });
+  agent.use({
+    name: 'noop',
+    description: 'd',
+    input_schema: { type: 'object', properties: {} },
+    execute: async () => {
+      // Simulate a bg exit happening during the tool call.
+      // _fireBackgroundExit queues into #pendingBgDrains while loop is active.
+      agent._fireBackgroundExit({
+        id: 'bg-xyz',
+        kind: 'bash',
+        exitCode: 0,
+        durationMs: 123,
+        logPath: '/tmp/x.log',
+        status: 'exited',
+      });
+      return 'ok';
+    },
+  });
+
+  let call = 0;
+  agent._sendForTest = async () => {
+    call += 1;
+    if (call === 1) {
+      return {
+        choices: [
+          {
+            message: {
+              content: '',
+              reasoning: null,
+              tool_calls: [{ id: 'a', function: { name: 'noop', arguments: '{}' } }],
+            },
+          },
+        ],
+        usage: { cost: 0, total_tokens: 0 },
+      };
+    }
+    return {
+      choices: [{ message: { content: 'final', reasoning: null, tool_calls: null } }],
+      usage: { cost: 0, total_tokens: 0 },
+    };
+  };
+
+  await agent.run('go');
+
+  const drained = agent.messages.find((m) => m.role === 'user' && JSON.stringify(m.content).includes('bg-xyz'));
+  assert.ok(drained, 'bg exit should drain into a user message');
+  assert.match(JSON.stringify(drained.content), /system-reminder/);
+});

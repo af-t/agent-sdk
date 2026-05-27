@@ -623,6 +623,18 @@ class Agent {
     }
   }
 
+  // Fold queued bg-exit events into a single trailing user message.
+  #drainBgExits() {
+    if (this.#pendingBgDrains.length === 0) return;
+    const events = this.#pendingBgDrains.splice(0);
+    const lines = events.map(
+      (e) =>
+        `- ${e.id} (${e.kind}): ${e.status}, exit ${e.exitCode}, ${Math.round(e.durationMs / 100) / 10}s, log: ${e.logPath}`,
+    );
+    const text = `<system-reminder>\nBackground job(s) exited:\n${lines.join('\n')}\n</system-reminder>`;
+    this.messages.push({ role: 'user', content: [{ type: 'text', text }] });
+  }
+
   // Flush queued steer prompts into messages as a trailing user message.
   async #drainPending() {
     if (this.#pending.length === 0) return false;
@@ -805,6 +817,8 @@ class Agent {
         if (!tool_calls || tool_calls.length === 0) {
           // A steer delivered during the final turn keeps the loop alive.
           if (await this.#drainPending()) continue;
+          // Fold any late bg exits into messages before terminating.
+          this.#drainBgExits();
           break;
         }
 
@@ -831,6 +845,8 @@ class Agent {
           throw new Error('Agent run aborted');
         }
 
+        // Fold bg exits that arrived during tool execution into messages.
+        this.#drainBgExits();
         // Flush any steer queued during this turn's tool execution.
         await this.#drainPending();
       }
