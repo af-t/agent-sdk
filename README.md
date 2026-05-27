@@ -9,6 +9,7 @@ Minimal SDK for building AI agents connected to the [OpenRouter API](https://ope
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Basic Usage](#basic-usage)
+- [Background Jobs](#background-jobs)
 - [Integration into Your Project](#integration-into-your-project)
 - [Available Tools](#available-tools)
 - [MCP Server](#mcp-server)
@@ -93,6 +94,8 @@ cd openrouter
 npm install
 ```
 
+> **Node.js ≥22 required** — the SDK uses `process.loadEnvFile()` (native in Node 22+). Earlier versions will fail to load `.env`.
+
 ## Configuration
 
 Copy `.env.example` to `.env` and fill in your values:
@@ -164,8 +167,8 @@ The agent preserves message history automatically. Call `run()` repeatedly for m
 await agent.run('Hello, who are you?');
 await agent.run('Can you elaborate on that?'); // has context from previous turn
 
-// Reset conversation
-agent.messages = [];
+// Reset conversation and accumulated usage counters
+agent.reset();
 ```
 
 ### Steering a Running Agent
@@ -186,6 +189,38 @@ const result = await runPromise; // resolves after the steered work finishes too
 ```
 
 `steer()` returns `true` when the prompt is queued, or `false` when the agent is idle (there is no loop to steer) or the prompt is empty. When a streaming `notify` callback is set, a `{ steer_applied: { count } }` event fires each time queued prompts are drained into the conversation.
+
+## Background Jobs
+
+Bash commands and Delegate subagents can run detached from the current turn. The agent returns immediately with a job ID and log path, and delivers a `<system-reminder>` to the run loop when the job finishes.
+
+```javascript
+// Detach a shell command
+const jobInfo = await agent.run('Run the test suite in the background.');
+// The Bash tool was called with background:true — agent got a job ID and log path back.
+
+// Delegate a subagent in fire-and-forget mode
+// (Delegate tool called with background:true inside the agent's tool loop)
+```
+
+The `Remind` tool complements background jobs — it pauses the run loop until a duration elapses or a specific time is reached, optionally short-circuiting when any watched background job exits:
+
+```
+Remind({ wait_ms: 30000 })              // wait 30 s
+Remind({ until: '2026-01-01T00:00:00Z' }) // wait until a timestamp
+Remind({ wait_ms: 60000, watch: ['bg-a1b2c'] }) // wake early if job finishes
+```
+
+Register a listener for background-job completion from outside the run loop:
+
+```javascript
+const disposer = agent.onBackgroundExit(({ id, exitCode, log }) => {
+  console.log(`Job ${id} finished (exit ${exitCode}). Log: ${log}`);
+});
+// disposer() to unsubscribe
+```
+
+Active background jobs are tracked in `agent.backgroundJobs` (`Map<id, BgJob>`). All running jobs receive `SIGTERM` (then `SIGKILL` after 2 s) during `agent.cleanup()`.
 
 ## Integration into Your Project
 
@@ -272,19 +307,20 @@ await agent.tools.connectMcpServer({
 
 ## Available Tools
 
-| Tool        | Category | Description                                                       |
-| ----------- | -------- | ----------------------------------------------------------------- |
-| `Read`      | File     | Read text, notebooks, images, PDFs & binary files                 |
-| `Write`     | File     | Write a new file (overwrite)                                      |
-| `Edit`      | File     | Edit a file with find-and-replace                                 |
-| `Find`      | File     | Search for files by name or content                               |
-| `List`      | File     | List directory contents (ls alternative)                          |
-| `Todo`      | General  | Manage a todo list (add, list, complete, delete) with persistence |
-| `Bash`      | System   | Execute shell commands (pty with fallback to child_process)       |
-| `Delegate`  | System   | Delegate tasks to a sub-agent                                     |
-| `Skill`     | System   | Manage and load skills                                            |
-| `WebSearch` | Web      | Web search via Tavily API                                         |
-| `WebFetch`  | Web      | Extract content from URLs                                         |
+| Tool        | Category | Description                                                                      |
+| ----------- | -------- | -------------------------------------------------------------------------------- |
+| `Read`      | File     | Read text, notebooks, images, PDFs & binary files                                |
+| `Write`     | File     | Write a new file (overwrite)                                                     |
+| `Edit`      | File     | Edit a file with find-and-replace                                                |
+| `Find`      | File     | Search for files by name or content                                              |
+| `List`      | File     | List directory contents (ls alternative)                                         |
+| `Todo`      | General  | Manage a todo list (add, list, complete, delete, update, clear) with persistence |
+| `Bash`      | System   | Execute shell commands (pty with fallback to child_process); supports background mode |
+| `Delegate`  | System   | Delegate tasks to a sub-agent; supports background mode                          |
+| `Remind`    | System   | Pause execution until a duration elapses or an absolute time is reached          |
+| `Skill`     | System   | Manage and load skills                                                           |
+| `WebSearch` | Web      | Web search via Tavily API                                                        |
+| `WebFetch`  | Web      | Extract content from URLs                                                        |
 
 ### Reading non-text files
 
@@ -524,13 +560,16 @@ openrouter/
 │   │   ├── logger.js      # Colored console logger (debug/info/warn/error)
 │   │   ├── errors.js      # Custom error classes (ApiError, ToolError, ConfigError)
 │   │   ├── mcp.js         # MCP client (native stdio-based JSON-RPC)
+│   │   ├── file-type.js   # Magic-byte detection for the Read tool
+│   │   ├── file-state.js  # File content cache (line-number stability)
+│   │   └── notebook.js    # .ipynb flattener for the Read tool
 │   ├── registry/
 │   │   ├── tool.js        # ToolRegistry — register, execute, hooks, MCP
 │   │   └── skill.js       # SkillRegistry — discover & load SKILL.md
 │   └── tools/
 │       ├── file/          # Read, Write, Edit, Find, List
 │       ├── general/       # Todo
-│       ├── system/        # Bash, Delegate, Skill
+│       ├── system/        # Bash, Delegate, Remind, Skill
 │       └── web/           # Search (Tavily), Fetch
 ├── CONTRIBUTING.md        # Contribution guidelines
 ├── LICENSE                # MIT License
@@ -555,8 +594,10 @@ Factory function to create an Agent instance.
 | `maxTokens`          | number   | Maximum output tokens per request.                                                    |
 | `effort`             | string   | Reasoning effort: `'low'`, `'medium'`, `'high'`. Default `'high'`.                    |
 | `maxToolOutputChars` | number   | Cap (in chars) for tool output before truncation. Default `50_000`.                   |
+| `restricted`         | boolean  | Security mode. Default `true`. Set `false` to lift path-boundary checks, env filtering, and shell command blocks (logs a warning). |
+| `storagePaths`       | object   | `{ memoryDir?, tmpDir? }`. Paths support `~` expansion. External dirs are auto-added to `trustedPaths`. |
 | `contextFiles`       | string[] | Files to inject on the first turn. Default `['AGENT.md']`. Missing files are skipped. |
-| `memoryDir`          | string   | Memory directory (relative to cwd). Default `.openrouter/memory`.                     |
+| `memoryDir`          | string   | Legacy alias for `storagePaths.memoryDir`. `storagePaths.memoryDir` takes precedence. |
 | `memoryTypes`        | object   | Custom memory type descriptions; merged over the four built-in types.                 |
 | `injectors`          | object   | Disable built-in injectors by name, e.g. `{ date: false, skillList: false }`.         |
 
@@ -576,15 +617,18 @@ Queue a prompt for an already-running loop without waiting for it to finish — 
 
 ### Agent Properties
 
-| Property       | Type         | Description                            |
-| -------------- | ------------ | -------------------------------------- |
-| `messages`     | array        | Conversation history                   |
-| `maxTurns`     | number       | Max LLM request cycles                 |
-| `isSubagent`   | boolean      | Whether the agent is a sub-agent       |
-| `tools`        | ToolRegistry | Registry of registered tools           |
-| `usage`        | object       | `{ cost: number, tokens: number }`     |
-| `systemPrompt` | string       | System prompt (can be overridden)      |
-| `isRunning`    | boolean      | Whether a run loop is currently active |
+| Property         | Type         | Description                                                      |
+| ---------------- | ------------ | ---------------------------------------------------------------- |
+| `messages`       | array        | Conversation history                                             |
+| `maxTurns`       | number       | Max LLM request cycles                                           |
+| `isSubagent`     | boolean      | Whether the agent is a sub-agent                                 |
+| `restricted`     | boolean      | Security mode flag (set at construction)                         |
+| `tools`          | ToolRegistry | Registry of registered tools                                     |
+| `usage`          | object       | `{ cost: number, tokens: number }`                               |
+| `systemPrompt`   | string       | System prompt (can be overridden)                                |
+| `isRunning`      | boolean      | Whether a run loop is currently active                           |
+| `backgroundJobs` | Map          | Active background jobs keyed by job ID (`bg-<5-hex>`)            |
+| `subagents`      | Map          | Named subagent instances keyed by ID (scoped to this agent)      |
 
 ### Agent Methods
 
@@ -595,7 +639,9 @@ Queue a prompt for an already-running loop without waiting for it to finish — 
 | `registerInjector({ name, scope, fn })` | Register a context injector. `scope` is `'first-turn'` or `'per-turn'`.                                      |
 | `unregisterInjector(name)`              | Remove a previously registered injector by name.                                                             |
 | `onBeforeRequest(fn)`                   | Hook the outgoing payload. Returns a disposer.                                                               |
+| `onBackgroundExit(fn)`                  | Register a listener for background-job completion (fired when idle). Returns a disposer.                     |
 | `steer(prompt)`                         | Queue a prompt for the active run loop (non-blocking). Returns `true` if queued, `false` when idle or empty. |
+| `cleanup()`                             | Kill running background jobs, delete tmpDir files, and shut down MCP child processes.                        |
 
 ### ToolRegistry
 

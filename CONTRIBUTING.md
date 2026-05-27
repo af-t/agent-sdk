@@ -19,7 +19,7 @@ Thanks for your interest in contributing!
 
 - Use ES modules (`import`/`export`)
 - Prefer `async`/`await` over raw promises
-- Add JSDoc comments for public APIs
+- Use `//` line comments (3–5 words); no JSDoc
 - Keep tools self-contained in their own files
 
 ## Submitting Changes
