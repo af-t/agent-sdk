@@ -101,16 +101,17 @@ const SIGKILL_GRACE_MS = 2000;
 
 // spawn fallback (used when node-pty is unavailable)
 
-function runWithSpawn(command, cwd, env, timeout, signal) {
+function runWithSpawn(command, cwd, env, timeout, signal, onTimeout, agent) {
   return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
     const child = spawn('bash', ['-c', 'exec 2>&1; ' + command], {
       cwd,
       env,
-      timeout,
     });
     let output = '';
     let aborted = false;
     let killTimer;
+    let detachedToBackground = false;
 
     const onAbort = () => {
       aborted = true;
@@ -134,11 +135,62 @@ function runWithSpawn(command, cwd, env, timeout, signal) {
     });
 
     const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error(`Execution timed out after ${timeout}ms\n\nPartial Output:\n${output}`));
+      if (onTimeout === 'background' && agent) {
+        detachedToBackground = true;
+        const id = generateJobId();
+        const dir = agent._resolveBackgroundLogDir();
+        const logPath = path.join(dir, `background-${id}.log`);
+        const stream = fs.createWriteStream(logPath, { flags: 'a' });
+        stream.write(output);
+        child.stdout.removeAllListeners('data');
+        child.stdout.pause();
+        if (child.stderr) child.stderr.removeAllListeners('data');
+        if (child.stderr) child.stderr.pause();
+        // pipe with { end: false } so that the earlier-closing stderr does not end the shared stream
+        if (child.stderr) child.stderr.pipe(stream, { end: false });
+        child.stdout.pipe(stream);
+        const job = {
+          id,
+          kind: 'bash',
+          child,
+          logPath,
+          startedAt,
+          endedAt: null,
+          exitCode: null,
+          status: 'running',
+          reason: 'timeout',
+        };
+        agent.backgroundJobs.set(id, job);
+        child.on('close', (code) => {
+          stream.end();
+          job.endedAt = Date.now();
+          job.exitCode = code;
+          job.status = code === 0 ? 'exited' : code === null ? 'killed' : 'crashed';
+          agent._fireBackgroundExit({
+            id,
+            kind: 'bash',
+            exitCode: code,
+            durationMs: job.endedAt - job.startedAt,
+            status: job.status,
+            logPath,
+          });
+        });
+        resolve(
+          `Command exceeded timeout (${timeout}ms) — transitioned to background.\n` +
+            `Job ID: ${id}\nLog: ${logPath}\n` +
+            `Output so far (first 4KB):\n${output.slice(0, 4096)}`,
+        );
+      } else {
+        if (onTimeout === 'background' && !agent) {
+          logger.warn('on_timeout=background requires ctx.agent; falling back to kill behavior');
+        }
+        child.kill();
+        reject(new Error(`Execution timed out after ${timeout}ms\n\nPartial Output:\n${output}`));
+      }
     }, timeout);
 
     child.on('close', (code) => {
+      if (detachedToBackground) return;
       clearTimeout(timer);
       clearTimeout(killTimer);
       if (signal) signal.removeEventListener('abort', onAbort);
@@ -157,6 +209,7 @@ function runWithSpawn(command, cwd, env, timeout, signal) {
     });
 
     child.on('error', (err) => {
+      if (detachedToBackground) return;
       clearTimeout(timer);
       clearTimeout(killTimer);
       if (signal) signal.removeEventListener('abort', onAbort);
@@ -167,8 +220,9 @@ function runWithSpawn(command, cwd, env, timeout, signal) {
 
 // PTY mode (primary, uses node-pty)
 
-function runWithPty(command, cwd, env, timeout, signal) {
+function runWithPty(command, cwd, env, timeout, signal, onTimeout, agent) {
   return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
     let ptyProcess;
     try {
       ptyProcess = _ptyModule.spawn('bash', ['-c', command], {
@@ -186,6 +240,7 @@ function runWithPty(command, cwd, env, timeout, signal) {
     let output = '';
     let aborted = false;
     let killTimer;
+    let detachedToBackground = false;
 
     const onAbort = () => {
       aborted = true;
@@ -205,15 +260,62 @@ function runWithPty(command, cwd, env, timeout, signal) {
     }
 
     const timer = setTimeout(() => {
-      ptyProcess.kill();
-      reject(new Error(`Execution timed out after ${timeout}ms\n\nPartial Output:\n${output}`));
+      if (onTimeout === 'background' && agent) {
+        detachedToBackground = true;
+        const id = generateJobId();
+        const dir = agent._resolveBackgroundLogDir();
+        const logPath = path.join(dir, `background-${id}.log`);
+        const stream = fs.createWriteStream(logPath, { flags: 'a' });
+        stream.write(output);
+        // Stop accumulating into output; pipe remaining data to the log stream.
+        dataDisposer.dispose();
+        ptyProcess.onData((d) => stream.write(d));
+        const job = {
+          id,
+          kind: 'bash',
+          child: ptyProcess,
+          logPath,
+          startedAt,
+          endedAt: null,
+          exitCode: null,
+          status: 'running',
+          reason: 'timeout',
+        };
+        agent.backgroundJobs.set(id, job);
+        ptyProcess.onExit(({ exitCode, signal: sig }) => {
+          stream.end();
+          job.endedAt = Date.now();
+          job.exitCode = exitCode;
+          job.status = exitCode === 0 ? 'exited' : sig ? 'killed' : 'crashed';
+          agent._fireBackgroundExit({
+            id,
+            kind: 'bash',
+            exitCode,
+            durationMs: job.endedAt - job.startedAt,
+            status: job.status,
+            logPath,
+          });
+        });
+        resolve(
+          `Command exceeded timeout (${timeout}ms) — transitioned to background.\n` +
+            `Job ID: ${id}\nLog: ${logPath}\n` +
+            `Output so far (first 4KB):\n${output.slice(0, 4096)}`,
+        );
+      } else {
+        if (onTimeout === 'background' && !agent) {
+          logger.warn('on_timeout=background requires ctx.agent; falling back to kill behavior');
+        }
+        ptyProcess.kill();
+        reject(new Error(`Execution timed out after ${timeout}ms\n\nPartial Output:\n${output}`));
+      }
     }, timeout);
 
-    ptyProcess.onData((data) => {
+    const dataDisposer = ptyProcess.onData((data) => {
       output += data;
     });
 
     ptyProcess.onExit(({ exitCode, signal: exitSignal }) => {
+      if (detachedToBackground) return;
       clearTimeout(timer);
       clearTimeout(killTimer);
       if (signal) signal.removeEventListener('abort', onAbort);
@@ -455,9 +557,9 @@ export const execute = async (
   }
 
   if (ptyMod) {
-    return runWithPty(command, cwd, safeEnv, timeout, signal);
+    return runWithPty(command, cwd, safeEnv, timeout, signal, _on_timeout, ctx.agent);
   }
 
   logger.debug('node-pty unavailable, falling back to spawn');
-  return runWithSpawn(command, cwd, safeEnv, timeout, signal);
+  return runWithSpawn(command, cwd, safeEnv, timeout, signal, _on_timeout, ctx.agent);
 };
