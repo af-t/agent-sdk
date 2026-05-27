@@ -2,7 +2,6 @@ import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-
 import createAgent from '../../src/index.js';
 import Agent from '../../src/core/agent.js';
 
