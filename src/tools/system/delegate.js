@@ -1,3 +1,6 @@
+import crypto from 'node:crypto';
+import path from 'node:path';
+import fs from 'node:fs';
 import Agent from '../../core/agent.js';
 import { CONSTANTS } from '../../core/utils.js';
 import logger from '../../core/logger.js';
@@ -20,11 +23,16 @@ export const input_schema = {
       description:
         'Subagent ID. If provided and already exists, the same subagent is reused (history preserved). If omitted, a short random ID is auto-generated.',
     },
+    background: {
+      type: 'boolean',
+      description:
+        'Run the subagent in the background. Returns immediately with a job ID and log path; the parent receives an exit notification when the subagent finishes.',
+    },
   },
   required: ['prompt', 'description'],
 };
 
-export const execute = async ({ description, prompt, persona, id }, { agent, signal }) => {
+export const execute = async ({ description, prompt, persona, id, background = false }, { agent, signal }) => {
   if (signal?.aborted) {
     throw new Error('Delegate aborted');
   }
@@ -57,12 +65,88 @@ export const execute = async ({ description, prompt, persona, id }, { agent, sig
       restricted: agent.restricted,
       storagePaths: agent._storagePaths ?? undefined,
     });
+    if (typeof agent._sendForTest === 'function') {
+      subagent._sendForTest = agent._sendForTest;
+    }
     agent.subagents.set(resolvedId, subagent);
   } else {
     subagent = agent.subagents.get(resolvedId);
   }
 
   logger.info('Spawning subagent for:', description);
+
+  if (background) {
+    if (!agent) {
+      throw new Error('Delegate background mode requires ctx.agent (an Agent instance).');
+    }
+    const bgId = 'bg-' + crypto.randomBytes(4).toString('hex').slice(0, 5);
+    const dir = agent._resolveBackgroundLogDir();
+    const logPath = path.join(dir, `background-${bgId}.log`);
+    const startedAt = Date.now();
+    const snapshotBefore = {
+      cost: subagent.usage.cost,
+      tokens: subagent.usage.tokens,
+    };
+
+    const job = {
+      id: bgId,
+      kind: 'delegate',
+      subagent,
+      child: null,
+      logPath,
+      startedAt,
+      endedAt: null,
+      exitCode: null,
+      status: 'running',
+      reason: 'explicit',
+    };
+    agent.backgroundJobs.set(bgId, job);
+
+    // Fire-and-forget the subagent loop.
+    (async () => {
+      let report;
+      let crashed = false;
+      try {
+        report = await subagent.run(prompt, null, { signal });
+      } catch (err) {
+        crashed = true;
+        report = `Error: ${err.message}`;
+      }
+      job.endedAt = Date.now();
+      job.exitCode = crashed ? -1 : 0;
+      job.status = crashed ? 'crashed' : 'exited';
+
+      const costDelta = subagent.usage.cost - snapshotBefore.cost;
+      const tokensDelta = subagent.usage.tokens - snapshotBefore.tokens;
+      agent.usage.cost += costDelta;
+      agent.usage.tokens += tokensDelta;
+
+      const footer =
+        `\n\n---\n` +
+        `Subagent ID: ${resolvedId} (${isNew ? 'new' : 'reused'})\n` +
+        `Duration: ${((job.endedAt - job.startedAt) / 1000).toFixed(2)}s\n` +
+        `Usage delta: cost=$${costDelta.toFixed(6)}, tokens=${tokensDelta}\n` +
+        `Status: ${job.status}`;
+      fs.writeFileSync(logPath, report + footer);
+
+      agent._fireBackgroundExit({
+        id: bgId,
+        kind: 'delegate',
+        exitCode: job.exitCode,
+        durationMs: job.endedAt - job.startedAt,
+        status: job.status,
+        logPath,
+      });
+    })();
+
+    return (
+      `Subagent started in background.\n` +
+      `Job ID: ${bgId} (kind: delegate)\n` +
+      `Subagent ID: ${resolvedId} (${isNew ? 'new' : 'reused'})\n` +
+      `Log: ${logPath}\n` +
+      `Use Remind({ wait_ms, watch: ['${bgId}'] }) to wait/peek, or Read the log.`
+    );
+  }
 
   try {
     const usageBefore = { cost: subagent.usage.cost, tokens: subagent.usage.tokens };

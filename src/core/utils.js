@@ -1,6 +1,6 @@
 import config from '../config.js';
 import fs from 'node:fs/promises';
-import { realpathSync, statSync, lstatSync, readlinkSync } from 'node:fs';
+import { realpathSync, lstatSync, readlinkSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import ignore from 'ignore';
