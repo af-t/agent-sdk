@@ -50,6 +50,7 @@ class Agent {
   #multimodalUnsupported = false;
   #notifyCallbacks = new Set();
   #bgExitListeners;
+  #bgRawListeners;
   #pendingBgDrains;
   #envInfo = [
     '',
@@ -111,6 +112,7 @@ class Agent {
     this.fileState = new Map();
     this.backgroundJobs = new Map();
     this.#bgExitListeners = new Set();
+    this.#bgRawListeners = new Set();
     this.#pendingBgDrains = [];
     this.currentTurn = 0;
     // Max request turns before forcing a break.
@@ -232,6 +234,13 @@ class Agent {
   }
 
   _fireBackgroundExit(event) {
+    for (const fn of this.#bgRawListeners) {
+      try {
+        fn(event);
+      } catch (err) {
+        logger.warn(`raw bg listener threw: ${err.message}`);
+      }
+    }
     if (this.isRunning) {
       this.#pendingBgDrains.push(event);
     } else {
@@ -243,6 +252,12 @@ class Agent {
         }
       }
     }
+  }
+
+  _onBackgroundExitRaw(fn) {
+    if (typeof fn !== 'function') throw new TypeError('_onBackgroundExitRaw expects a function');
+    this.#bgRawListeners.add(fn);
+    return () => this.#bgRawListeners.delete(fn);
   }
 
   registerInjector({ name, scope, fn } = {}) {
