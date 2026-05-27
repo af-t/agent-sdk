@@ -649,6 +649,21 @@ class Agent {
     this.currentTurn = 0;
   }
 
+  _resolveBackgroundLogDir() {
+    if (this._bgLogDir) return this._bgLogDir;
+    let dir;
+    if (this._storageTmpDir) {
+      dir = this._storageTmpDir;
+    } else {
+      dir = path.join(os.tmpdir(), `openrouter-${process.pid}`);
+    }
+    fs.mkdirSync(dir, { recursive: true });
+    const real = fs.realpathSync(dir);
+    if (!this.trustedPaths.has(real)) this.trustedPaths.add(real);
+    this._bgLogDir = real;
+    return real;
+  }
+
   async cleanup() {
     if (this._storageTmpDir) {
       let entries;

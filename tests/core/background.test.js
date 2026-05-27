@@ -39,3 +39,23 @@ test('onBackgroundExit throws on non-function', async () => {
   const agent = await createAgent({ apiKey: 'x' });
   assert.throws(() => agent.onBackgroundExit('not a fn'), TypeError);
 });
+import path from 'node:path';
+import os from 'node:os';
+import fs from 'node:fs';
+
+test('background log dir uses storagePaths.tmpDir when configured', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'or-bg-'));
+  const agent = await createAgent({ apiKey: 'x', storagePaths: { tmpDir: tmp } });
+  const dir = agent._resolveBackgroundLogDir();
+  assert.equal(dir, fs.realpathSync(tmp));
+  fs.rmSync(tmp, { recursive: true });
+});
+
+test('background log dir falls back to os.tmpdir/openrouter-<pid> when unconfigured', async () => {
+  const agent = await createAgent({ apiKey: 'x' });
+  const dir = agent._resolveBackgroundLogDir();
+  const expected = path.join(os.tmpdir(), `openrouter-${process.pid}`);
+  assert.equal(dir, fs.realpathSync(expected));
+  assert.ok(fs.existsSync(dir));
+  assert.ok(agent.trustedPaths.has(dir));
+});
