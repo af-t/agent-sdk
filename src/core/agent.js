@@ -677,6 +677,36 @@ class Agent {
   }
 
   async cleanup() {
+    const SIGKILL_GRACE_MS = 2000;
+    const killing = [];
+    for (const job of this.backgroundJobs.values()) {
+      if (job.status !== 'running') continue;
+      const child = job.child;
+      if (child && typeof child.kill === 'function') {
+        try {
+          child.kill('SIGTERM');
+        } catch {}
+        killing.push(
+          new Promise((resolve) => {
+            const t = setTimeout(() => {
+              try {
+                child.kill('SIGKILL');
+              } catch {}
+              resolve();
+            }, SIGKILL_GRACE_MS);
+            const onExit = () => {
+              clearTimeout(t);
+              resolve();
+            };
+            if (child.on) child.on('exit', onExit);
+            else if (child.onExit) child.onExit(onExit);
+          }),
+        );
+      }
+      job.status = 'killed';
+    }
+    await Promise.all(killing);
+
     if (this._storageTmpDir) {
       let entries;
       try {

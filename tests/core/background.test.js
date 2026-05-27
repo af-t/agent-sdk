@@ -110,3 +110,22 @@ test('pending bg exits drain into messages as a system-reminder after tool group
   assert.ok(drained, 'bg exit should drain into a user message');
   assert.match(JSON.stringify(drained.content), /system-reminder/);
 });
+
+import { spawn } from 'node:child_process';
+
+test('cleanup() kills running background jobs', async () => {
+  const agent = await createAgent({ apiKey: 'x' });
+  const child = spawn('bash', ['-c', 'sleep 30']);
+  agent.backgroundJobs.set('bg-test', {
+    id: 'bg-test',
+    kind: 'bash',
+    child,
+    status: 'running',
+    startedAt: Date.now(),
+  });
+  assert.equal(child.killed, false);
+  await agent.cleanup();
+  // Allow event loop to process kill signal.
+  await new Promise((r) => setTimeout(r, 50));
+  assert.ok(child.killed || child.exitCode !== null, 'child should be killed after cleanup');
+});
