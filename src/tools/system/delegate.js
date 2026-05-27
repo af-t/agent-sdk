@@ -54,6 +54,8 @@ export const execute = async ({ description, prompt, persona, id }, { agent, sig
       maxTokens: agent.maxTokens || CONSTANTS.MAX_TOKENS_SUBAGENT,
       maxTurns: 1000,
       isSubagent: true,
+      restricted: agent.restricted,
+      storagePaths: agent._storagePaths ?? undefined,
     });
     agent.subagents.set(resolvedId, subagent);
   } else {

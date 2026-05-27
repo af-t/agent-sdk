@@ -158,6 +158,7 @@ class Agent {
 
     this._memoryDir = resolvedMemoryDir;
     this._storageTmpDir = resolvedTmpDir;
+    this._storagePaths = options.storagePaths ?? null;
     this._todoFile = resolvedTmpDir
       ? path.join(resolvedTmpDir, `todos-${Math.random().toString(36).slice(2, 7)}.json`)
       : path.join(process.cwd(), '.todos.json');
