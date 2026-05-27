@@ -21,8 +21,14 @@ export class McpNativeClient extends EventEmitter {
   }
 
   async connect() {
+    let childEnv;
+    if (this.config.restricted !== false) {
+      childEnv = { ...stripSecrets(process.env), ...stripSecrets(this.config.env || {}) };
+    } else {
+      childEnv = { ...process.env, ...(this.config.env || {}) };
+    }
     this.process = spawn(this.config.command, this.config.args || [], {
-      env: { ...stripSecrets(process.env), ...(this.config.env || {}) },
+      env: childEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
@@ -191,7 +197,7 @@ export class McpNativeClient extends EventEmitter {
               jsonrpc: '2.0',
               id: message.id,
               error: { code: -32601, message: 'Method not found' },
-            }) + '\n'
+            }) + '\n',
           );
         } catch (err) {
           logger.debug('Failed to write JSON-RPC method not found error:', err.message);
@@ -213,8 +219,9 @@ export class McpNativeClient extends EventEmitter {
 }
 
 export class McpClientWrapper {
-  constructor({ command, args, env }) {
-    this.client = new McpNativeClient({ command, args, env });
+  constructor({ command, args, env, restricted = true } = {}) {
+    this.restricted = restricted !== false;
+    this.client = new McpNativeClient({ command, args, env, restricted: this.restricted });
   }
 
   async connectAndGetTools() {

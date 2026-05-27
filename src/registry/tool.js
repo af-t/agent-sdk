@@ -154,7 +154,7 @@ export class ToolRegistry {
   }
 
   async connectMcpServer({ name, command, args, env }) {
-    const client = new McpClientWrapper({ command, args, env });
+    const client = new McpClientWrapper({ command, args, env, restricted: this.restricted });
     try {
       const remoteTools = await client.connectAndGetTools();
 
