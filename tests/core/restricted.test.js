@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import createAgent from '../../src/index.js';
 import { ToolRegistry } from '../../src/registry/tool.js';
+import { execute as bashExecute } from '../../src/tools/system/bash.js';
 
 test('agent.restricted defaults to true', async () => {
   const agent = await createAgent({ apiKey: 'sk-test' });
@@ -58,4 +59,34 @@ test('createAgent forwards restricted to its ToolRegistry', async () => {
   assert.equal(a.tools.restricted, false);
   const b = await createAgent({ apiKey: 'sk-test' });
   assert.equal(b.tools.restricted, true);
+});
+
+test('Bash blocks rm -rf / when restricted=true', async () => {
+  const fakeAgent = { restricted: true };
+  await assert.rejects(bashExecute({ command: 'rm -rf /' }, { agent: fakeAgent }), /BLOCKED/);
+});
+
+test('Bash skips block list when restricted=false', async () => {
+  const fakeAgent = { restricted: false };
+  // Use a harmless command that contains a blocked substring as a comment.
+  // The block check uses `.includes`, so this would normally trigger.
+  await bashExecute({ command: "echo 'rm -rf /' # printing only" }, { agent: fakeAgent });
+});
+
+test('Bash strips secret env vars when restricted=true', async () => {
+  const fakeAgent = { restricted: true };
+  const out = await bashExecute(
+    { command: 'echo "SECRET=${SECRET_TOKEN:-MISSING}"', env: { SECRET_TOKEN: 'sek' } },
+    { agent: fakeAgent },
+  );
+  assert.match(String(out), /SECRET=MISSING/);
+});
+
+test('Bash passes through env vars when restricted=false', async () => {
+  const fakeAgent = { restricted: false };
+  const out = await bashExecute(
+    { command: 'echo "SECRET=${SECRET_TOKEN}"', env: { SECRET_TOKEN: 'sek' } },
+    { agent: fakeAgent },
+  );
+  assert.match(String(out), /SECRET=sek/);
 });

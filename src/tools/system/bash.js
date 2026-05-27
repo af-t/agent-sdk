@@ -246,29 +246,39 @@ export const input_schema = {
 
 export const execute = async ({ command, cwd = process.cwd(), env = process.env, timeout = 300000 }, ctx = {}) => {
   const signal = ctx.signal;
+  const restricted = ctx.agent?.restricted !== false;
 
   if (signal?.aborted) {
     throw new Error('Bash execution aborted before start');
   }
 
-  const blocked = isBlocked(command);
-  if (blocked) {
-    throw new Error(
-      `BLOCKED: Command matches blocked pattern '${blocked}'. This command is not allowed for safety reasons.`,
-    );
+  if (restricted) {
+    const blocked = isBlocked(command);
+    if (blocked) {
+      throw new Error(
+        `BLOCKED: Command matches blocked pattern '${blocked}'. This command is not allowed for safety reasons.`,
+      );
+    }
+
+    const suspicious = hasSuspiciousPattern(command);
+    if (suspicious) {
+      logger.warn(`Suspicious command pattern detected: ${suspicious}. Proceeding but this may be unsafe.`);
+    }
   }
 
-  const suspicious = hasSuspiciousPattern(command);
-  if (suspicious) {
-    logger.warn(`Suspicious command pattern detected: ${suspicious}. Proceeding but this may be unsafe.`);
-  }
-
-  const safeEnv = {};
-  for (const key of SAFE_ENV_KEYS) {
-    if (key in process.env) safeEnv[key] = process.env[key];
-  }
-  if (env !== process.env) {
-    Object.assign(safeEnv, stripSecrets(env));
+  let safeEnv;
+  if (restricted) {
+    safeEnv = {};
+    for (const key of SAFE_ENV_KEYS) {
+      if (key in process.env) safeEnv[key] = process.env[key];
+    }
+    if (env !== process.env) {
+      Object.assign(safeEnv, stripSecrets(env));
+    }
+  } else {
+    // Trust mode: passthrough full process.env, merge user-supplied env raw.
+    safeEnv = { ...process.env };
+    if (env !== process.env) Object.assign(safeEnv, env);
   }
 
   const ptyMod = await getPty();
