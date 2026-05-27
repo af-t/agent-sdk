@@ -1,4 +1,7 @@
 import { spawn } from 'node:child_process';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import logger from '../../core/logger.js';
 import { stripSecrets } from '../../core/utils.js';
 
@@ -230,6 +233,142 @@ function runWithPty(command, cwd, env, timeout, signal) {
   });
 }
 
+function generateJobId() {
+  return 'bg-' + crypto.randomBytes(4).toString('hex').slice(0, 5);
+}
+
+function runWithSpawnBackground(command, cwd, env, signal, agent) {
+  const id = generateJobId();
+  const dir = agent._resolveBackgroundLogDir();
+  const logPath = path.join(dir, `background-${id}.log`);
+  const stream = fs.createWriteStream(logPath, { flags: 'a' });
+  const child = spawn('bash', ['-c', 'exec 2>&1; ' + command], { cwd, env });
+  child.stdout.pipe(stream);
+
+  const job = {
+    id,
+    kind: 'bash',
+    child,
+    logPath,
+    startedAt: Date.now(),
+    endedAt: null,
+    exitCode: null,
+    status: 'running',
+    reason: 'explicit',
+  };
+  agent.backgroundJobs.set(id, job);
+
+  child.on('close', (code) => {
+    stream.end();
+    job.endedAt = Date.now();
+    job.exitCode = code;
+    job.status = code === 0 ? 'exited' : code === null ? 'killed' : 'crashed';
+    agent._fireBackgroundExit({
+      id,
+      kind: 'bash',
+      exitCode: code,
+      durationMs: job.endedAt - job.startedAt,
+      status: job.status,
+      logPath,
+    });
+  });
+
+  child.on('error', (err) => {
+    stream.end();
+    job.endedAt = Date.now();
+    job.status = 'crashed';
+    job.exitCode = -1;
+    agent._fireBackgroundExit({
+      id,
+      kind: 'bash',
+      exitCode: -1,
+      durationMs: job.endedAt - job.startedAt,
+      status: 'crashed',
+      error: err.message,
+      logPath,
+    });
+  });
+
+  if (signal) {
+    signal.addEventListener(
+      'abort',
+      () => {
+        try {
+          child.kill('SIGTERM');
+        } catch {}
+      },
+      { once: true },
+    );
+  }
+
+  return { id, logPath, pid: child.pid };
+}
+
+function runWithPtyBackground(command, cwd, env, signal, agent) {
+  const id = generateJobId();
+  const dir = agent._resolveBackgroundLogDir();
+  const logPath = path.join(dir, `background-${id}.log`);
+  const stream = fs.createWriteStream(logPath, { flags: 'a' });
+
+  let ptyProcess;
+  try {
+    ptyProcess = _ptyModule.spawn('bash', ['-c', command], {
+      name: 'xterm-color',
+      cols: 80,
+      rows: 24,
+      cwd,
+      env,
+    });
+  } catch (err) {
+    stream.end();
+    throw err;
+  }
+
+  ptyProcess.onData((d) => stream.write(d));
+
+  const job = {
+    id,
+    kind: 'bash',
+    child: ptyProcess,
+    logPath,
+    startedAt: Date.now(),
+    endedAt: null,
+    exitCode: null,
+    status: 'running',
+    reason: 'explicit',
+  };
+  agent.backgroundJobs.set(id, job);
+
+  ptyProcess.onExit(({ exitCode, signal: sig }) => {
+    stream.end();
+    job.endedAt = Date.now();
+    job.exitCode = exitCode;
+    job.status = exitCode === 0 ? 'exited' : sig ? 'killed' : 'crashed';
+    agent._fireBackgroundExit({
+      id,
+      kind: 'bash',
+      exitCode,
+      durationMs: job.endedAt - job.startedAt,
+      status: job.status,
+      logPath,
+    });
+  });
+
+  if (signal) {
+    signal.addEventListener(
+      'abort',
+      () => {
+        try {
+          ptyProcess.kill('SIGTERM');
+        } catch {}
+      },
+      { once: true },
+    );
+  }
+
+  return { id, logPath, pid: ptyProcess.pid };
+}
+
 export const name = 'Bash';
 export const description =
   'Execute a shell command. Use this for system operations that do not have a specialized tool, such as running tests, performing builds, or using complex CLI utilities. Side effect: executes arbitrary shell commands. The agent may issue multiple tool calls in one turn that run concurrently — do not request parallel calls that mutate the same files or processes.';
@@ -240,11 +379,32 @@ export const input_schema = {
     cwd: { type: 'string', description: 'Working directory' },
     env: { type: 'object', description: 'Environment variables' },
     timeout: { type: 'number', description: 'Timeout in ms (default 300000)' },
+    background: {
+      type: 'boolean',
+      description:
+        'Start the command in the background. Returns immediately with a job ID and log path; the agent receives an exit notification when the process finishes.',
+    },
+    on_timeout: {
+      type: 'string',
+      enum: ['kill', 'background'],
+      description:
+        "Action when the timeout fires: 'kill' aborts the process (original behavior), 'background' detaches it into a background job. Default 'background'.",
+    },
   },
   required: ['command'],
 };
 
-export const execute = async ({ command, cwd = process.cwd(), env = process.env, timeout = 300000 }, ctx = {}) => {
+export const execute = async (
+  {
+    command,
+    cwd = process.cwd(),
+    env = process.env,
+    timeout = 300000,
+    background = false,
+    on_timeout: _on_timeout = 'background',
+  },
+  ctx = {},
+) => {
   const signal = ctx.signal;
   const restricted = ctx.agent?.restricted !== false;
 
@@ -282,8 +442,19 @@ export const execute = async ({ command, cwd = process.cwd(), env = process.env,
   }
 
   const ptyMod = await getPty();
+  if (ptyMod) _ptyModule = ptyMod;
+
+  if (background) {
+    if (!ctx.agent) {
+      throw new Error('Bash background mode requires ctx.agent (an Agent instance).');
+    }
+    const info = ptyMod
+      ? runWithPtyBackground(command, cwd, safeEnv, signal, ctx.agent)
+      : runWithSpawnBackground(command, cwd, safeEnv, signal, ctx.agent);
+    return `Started in background.\nJob ID: ${info.id} (kind: bash)\nLog: ${info.logPath}\nPID: ${info.pid ?? 'n/a'}\nUse Remind({ wait_ms, watch: ['${info.id}'] }) to wait/peek, or Read the log.`;
+  }
+
   if (ptyMod) {
-    _ptyModule = ptyMod;
     return runWithPty(command, cwd, safeEnv, timeout, signal);
   }
 
