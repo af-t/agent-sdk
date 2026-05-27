@@ -126,6 +126,57 @@ describe('detectFileType', () => {
     const result = detectFileType(buf, '.txt');
     assert.deepEqual(result, { category: 'text', mime: 'text/plain' });
   });
+
+  it('detects video by extension', () => {
+    const result = detectFileType(Buffer.from('hello'), '.mp4');
+    assert.deepEqual(result, { category: 'video', mime: 'video/mp4' });
+  });
+
+  it('detects audio by extension', () => {
+    const result = detectFileType(Buffer.from('hello'), '.mp3');
+    assert.deepEqual(result, { category: 'audio', mime: 'audio/mpeg' });
+  });
+
+  it('detects video by magic bytes (mp4)', () => {
+    const buf = Buffer.alloc(12);
+    buf.write('ftyp', 4, 'ascii');
+    const result = detectFileType(buf, '');
+    assert.deepEqual(result, { category: 'video', mime: 'video/mp4' });
+  });
+
+  it('detects audio by magic bytes (wav)', () => {
+    const buf = Buffer.alloc(16);
+    buf.write('RIFF', 0, 'ascii');
+    buf.write('WAVE', 8, 'ascii');
+    const result = detectFileType(buf, '');
+    assert.deepEqual(result, { category: 'audio', mime: 'audio/wav' });
+  });
+
+  it('detects video by magic bytes (webm)', () => {
+    const buf = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x00, 0x00]);
+    const result = detectFileType(buf, '');
+    assert.deepEqual(result, { category: 'video', mime: 'video/webm' });
+  });
+
+  it('detects audio by magic bytes (ogg)', () => {
+    const buf = Buffer.alloc(8);
+    buf.write('OggS', 0, 'ascii');
+    const result = detectFileType(buf, '');
+    assert.deepEqual(result, { category: 'audio', mime: 'audio/ogg' });
+  });
+
+  it('detects audio by magic bytes (mp3 id3)', () => {
+    const buf = Buffer.alloc(8);
+    buf.write('ID3', 0, 'ascii');
+    const result = detectFileType(buf, '');
+    assert.deepEqual(result, { category: 'audio', mime: 'audio/mpeg' });
+  });
+
+  it('detects audio by magic bytes (mp3 frame sync)', () => {
+    const buf = Buffer.from([0xff, 0xe0, 0x00, 0x00]);
+    const result = detectFileType(buf, '');
+    assert.deepEqual(result, { category: 'audio', mime: 'audio/mpeg' });
+  });
 });
 
 describe('imageDimensions', () => {
@@ -157,6 +208,12 @@ describe('imageDimensions', () => {
   it('returns null for unknown mime', () => {
     const buf = Buffer.from('hello');
     assert.strictEqual(imageDimensions(buf, 'text/plain'), null);
+  });
+
+  it('returns null for JPEG with segments but no SOF marker', () => {
+    // SOI + one non-SOF APP0 segment (marker 0xe0, length 0x0004) — no SOF follows
+    const buf = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00]);
+    assert.strictEqual(imageDimensions(buf, 'image/jpeg'), null);
   });
 
   it('returns null on truncated PNG buffer', () => {

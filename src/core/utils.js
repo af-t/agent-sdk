@@ -27,23 +27,26 @@ export function truncateOutput(text, maxChars = CONSTANTS.MAX_TOOL_OUTPUT) {
 export function payloadHasMultimodal(payload) {
   if (!payload || !Array.isArray(payload.messages)) return false;
   for (const msg of payload.messages) {
-    if (msg.role !== 'tool') continue;
+    if (msg.role !== 'tool' && msg.role !== 'user') continue;
     if (!Array.isArray(msg.content)) continue;
-    if (msg.content.some((part) => part.type !== 'text')) return true;
+    if (msg.content.some((part) => part && typeof part === 'object' && part.type !== 'text')) return true;
   }
   return false;
 }
 
-// strip non-text parts from tool-role messages; mutates payload.messages slots
+// strip non-text parts from user and tool messages; mutates payload.messages slots
 export function degradePayload(payload) {
   if (!payload || !Array.isArray(payload.messages)) return;
   for (let i = 0; i < payload.messages.length; i++) {
     const msg = payload.messages[i];
-    if (msg.role !== 'tool') continue;
+    if (msg.role !== 'tool' && msg.role !== 'user') continue;
     if (!Array.isArray(msg.content)) continue;
-    if (!msg.content.some((part) => part.type !== 'text')) continue;
-    const textParts = msg.content.filter((part) => part.type === 'text');
-    const content = textParts.length > 0 ? textParts.map((p) => p.text).join('\n') : '[non-text content omitted]';
+    if (!msg.content.some((part) => part && typeof part === 'object' && part.type !== 'text')) continue;
+    const textParts = msg.content.filter((part) => part && (typeof part === 'string' || part.type === 'text'));
+    const content =
+      textParts.length > 0
+        ? textParts.map((p) => (typeof p === 'string' ? p : p.text)).join('\n')
+        : '[non-text content omitted]';
     payload.messages[i] = { ...msg, content };
   }
 }

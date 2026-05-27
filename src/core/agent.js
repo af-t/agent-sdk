@@ -49,6 +49,8 @@ class Agent {
   #activeRunPromise = null;
   #multimodalUnsupported = false;
   #notifyCallbacks = new Set();
+  #pendingRichCallIds = new Set();
+  #richUserMsgIdx = -1;
   #bgExitListeners;
   #bgRawListeners;
   #pendingBgDrains;
@@ -378,9 +380,10 @@ class Agent {
   }
 
   async #buildPayload() {
-    const messagesForPayload = this.messages.map((msg, idx) => {
+    const messagesCopy = [...this.messages];
+    const messagesForPayload = messagesCopy.map((msg, idx) => {
       if (
-        idx === this.messages.length - 1 &&
+        idx === messagesCopy.length - 1 &&
         msg.role === 'user' &&
         Array.isArray(msg.content) &&
         msg.content.length > 0
@@ -605,9 +608,55 @@ class Agent {
     const started = Date.now();
     let output;
     let toolError;
+    const richParts = [];
     try {
       const result = await this.tools.execute(name, input, { agent: this, signal });
-      output = typeof result === 'string' ? result : JSON.stringify(result);
+      if (Array.isArray(result)) {
+        // Extract any non-text parts (multimodal blocks like image_url, file)
+        const textParts = [];
+        for (const part of result) {
+          if (part && typeof part === 'object') {
+            if (part.type === 'text') {
+              textParts.push(part.text);
+            } else if (part.type !== undefined) {
+              if (this.#multimodalUnsupported) {
+                // model cannot handle rich content — note it in text instead
+              } else {
+                richParts.push(part);
+              }
+            } else {
+              // fallback if it doesn't have a type property
+              textParts.push(JSON.stringify(part));
+            }
+          } else {
+            textParts.push(String(part));
+          }
+        }
+        if (richParts.length > 0) {
+          output = textParts.join('\n') || `[File loaded successfully as multimodal content]`;
+        } else if (
+          this.#multimodalUnsupported &&
+          result.some((p) => p && typeof p === 'object' && p.type && p.type !== 'text')
+        ) {
+          output =
+            (textParts.join('\n') || '') +
+            '\n[Multimodal content not displayed — this model does not support it. Do not attempt to describe or guess the content.]';
+        } else {
+          output = result.map((p) => (typeof p === 'string' ? p : JSON.stringify(p))).join('\n');
+        }
+      } else if (result && typeof result === 'object' && result.type) {
+        if (result.type === 'text') {
+          output = result.text;
+        } else if (this.#multimodalUnsupported) {
+          output =
+            '[Multimodal content not displayed — this model does not support it. Do not attempt to describe or guess the content.]';
+        } else {
+          richParts.push(result);
+          output = `[File loaded successfully as multimodal content]`;
+        }
+      } else {
+        output = typeof result === 'string' ? result : JSON.stringify(result);
+      }
     } catch (err) {
       toolError = err;
     }
@@ -620,7 +669,7 @@ class Agent {
     await this.#broadcast({ tool_end: payload });
 
     if (toolError) throw toolError;
-    return output;
+    return { output, richParts };
   }
 
   #injectBlock(block) {
@@ -675,6 +724,9 @@ class Agent {
     this.usage = { cost: 0, tokens: 0 };
     this.fileState.clear();
     this.currentTurn = 0;
+    this.#pendingRichCallIds = new Set();
+    this.#richUserMsgIdx = -1;
+    this.#multimodalUnsupported = false;
   }
 
   _resolveBackgroundLogDir() {
@@ -842,18 +894,48 @@ class Agent {
         let response;
         try {
           response = await withRetry(() => (isStreaming ? this.#sendStream(payload) : this.#send(payload)), 5);
+          this.#pendingRichCallIds.clear();
+          this.#richUserMsgIdx = -1;
         } catch (err) {
-          if (
+          const errMsg = String(err.message).toLowerCase();
+          const isMultimodalError =
             err instanceof ApiError &&
-            err.status === 400 &&
-            !this.#multimodalUnsupported &&
-            payloadHasMultimodal(payload)
-          ) {
-            logger.warn('Request rejected (400) with multimodal tool content; degrading and retrying.');
+            (err.status === 400 ||
+              err.status === 402 ||
+              errMsg.includes('balance') ||
+              errMsg.includes('file') ||
+              errMsg.includes('video'));
+
+          if (isMultimodalError && !this.#multimodalUnsupported && payloadHasMultimodal(payload)) {
+            logger.warn(
+              `Request rejected with multimodal error (${err.status || err.message}); degrading and retrying text-only fallback.`,
+            );
             this.#multimodalUnsupported = true;
+            for (const msg of this.messages) {
+              if (msg.role === 'tool' && this.#pendingRichCallIds.has(msg.tool_call_id)) {
+                msg.content =
+                  (msg.content ? msg.content + '\n' : '') +
+                  '[Multimodal content could not be displayed — this model does not support it. Do not describe or guess this content.]';
+              }
+            }
+            this.#pendingRichCallIds.clear();
+            const richNotice =
+              '[Multimodal content could not be displayed — this model does not support it. Do not describe or guess the content.]';
+            if (this.#richUserMsgIdx >= 0) {
+              this.messages[this.#richUserMsgIdx] = { role: 'user', content: richNotice };
+              this.#richUserMsgIdx = -1;
+            }
             degradePayload(payload);
+            // degradePayload collapses the rich user message to its text intro — replace with honest notice
+            for (const msg of payload.messages) {
+              if (msg.role === 'user' && msg.content === 'Multimodal content from the previous tool results:') {
+                msg.content = richNotice;
+                break;
+              }
+            }
             response = await withRetry(() => (isStreaming ? this.#sendStream(payload) : this.#send(payload)), 5);
           } else {
+            this.#pendingRichCallIds.clear();
             throw err;
           }
         }
@@ -877,12 +959,19 @@ class Agent {
 
         const settled = await Promise.allSettled(tool_calls.map((tc) => this.#executeOneToolCall(tc, signal)));
 
+        const richPartsOrdered = [];
+        const richToolIds = [];
         for (let i = 0; i < tool_calls.length; i++) {
           const tc = tool_calls[i];
           const r = settled[i];
           const tool_call_id = tc.id || `call_${crypto.randomUUID()}`;
           if (r.status === 'fulfilled') {
-            this.messages.push({ role: 'tool', content: r.value, tool_call_id });
+            const { output, richParts } = r.value;
+            this.messages.push({ role: 'tool', content: output, tool_call_id });
+            if (richParts.length > 0) {
+              richPartsOrdered.push(...richParts);
+              richToolIds.push(tool_call_id);
+            }
           } else {
             const summary = (r.reason?.message || '').split('\n')[0];
             logger.warn(`Tool ${tc.function.name} failed: ${summary}`);
@@ -892,6 +981,17 @@ class Agent {
               tool_call_id,
             });
           }
+        }
+        if (richPartsOrdered.length > 0) {
+          this.#richUserMsgIdx = this.messages.length;
+          this.messages.push({
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Multimodal content from the previous tool results:' },
+              ...richPartsOrdered,
+            ],
+          });
+          for (const id of richToolIds) this.#pendingRichCallIds.add(id);
         }
 
         if (signal?.aborted) {

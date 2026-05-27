@@ -586,11 +586,11 @@ describe('payloadHasMultimodal', () => {
     assert.strictEqual(payloadHasMultimodal(payload), true);
   });
 
-  it('ignores non-tool messages with non-text parts', () => {
+  it('returns true when a user message contains non-text parts', () => {
     const payload = {
       messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } }] }],
     };
-    assert.strictEqual(payloadHasMultimodal(payload), false);
+    assert.strictEqual(payloadHasMultimodal(payload), true);
   });
 });
 

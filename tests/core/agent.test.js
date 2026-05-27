@@ -824,4 +824,70 @@ describe('run() — steering applied in-loop', () => {
     assert.strictEqual(calls, 2);
     assert.strictEqual(result, 'second');
   });
+
+  it('separates rich outputs and injects them as user content blocks in the next turn', async () => {
+    let callsCount = 0;
+    let payloadSent = null;
+    global.fetch = async (url, opts) => {
+      callsCount++;
+      if (callsCount === 1) {
+        return makeJsonResponse({
+          choices: [
+            {
+              message: {
+                content: null,
+                reasoning: null,
+                tool_calls: [{ id: 'call_rich_1', type: 'function', function: { name: 'RichTool', arguments: '{}' } }],
+              },
+            },
+          ],
+          usage: { cost: 0, total_tokens: 1 },
+        });
+      }
+      payloadSent = JSON.parse(opts.body);
+      return makeJsonResponse({
+        choices: [{ message: { content: 'finished', reasoning: null, tool_calls: null } }],
+        usage: { cost: 0, total_tokens: 1 },
+      });
+    };
+
+    const agent = new Agent({ apiKey: 'sk-test', maxTurns: 2 });
+    agent.use({
+      name: 'RichTool',
+      description: 'returns rich multimodal array',
+      input_schema: { type: 'object', properties: {} },
+      execute: async () => [
+        { type: 'text', text: 'image desc' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,abc' } },
+      ],
+    });
+
+    const result = await agent.run('go');
+    assert.strictEqual(callsCount, 2);
+    assert.strictEqual(result, 'finished');
+
+    // verify that agent.messages has the plain text content in the tool message
+    const toolMsg = agent.messages.find((m) => m.role === 'tool');
+    assert.ok(toolMsg, 'Expected a tool message');
+    assert.strictEqual(typeof toolMsg.content, 'string');
+    assert.strictEqual(toolMsg.content, 'image desc');
+
+    // verify that the first user message in the payload contains the original "go" prompt
+    const firstUserMsg = payloadSent.messages.find((m) => m.role === 'user');
+    assert.ok(firstUserMsg, 'Expected a user message in payload');
+    assert.ok(Array.isArray(firstUserMsg.content), 'user message content in payload should be an array');
+    const goPart = firstUserMsg.content.find((p) => p.text === 'go');
+    assert.ok(goPart, 'Expected to find the original "go" prompt in user message content');
+
+    // The rich content is now a separate user message that follows the tool message
+    const allUserMsgs = payloadSent.messages.filter((m) => m.role === 'user');
+    assert.ok(allUserMsgs.length >= 2, 'Expected at least two user messages (original + multimodal)');
+    const multimodalUserMsg = allUserMsgs.find(
+      (m) => Array.isArray(m.content) && m.content.some((p) => p.type === 'image_url'),
+    );
+    assert.ok(multimodalUserMsg, 'Expected to find a user message containing the injected image_url');
+    const imagePart = multimodalUserMsg.content.find((p) => p.type === 'image_url');
+    assert.ok(imagePart, 'Expected to find the injected image_url in the multimodal user message');
+    assert.strictEqual(imagePart.image_url.url, 'data:image/png;base64,abc');
+  });
 });

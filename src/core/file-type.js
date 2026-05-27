@@ -1,9 +1,34 @@
 // file type detection utilities
 
-// extension-first and magic-byte detection
+const videoExtensions = {
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.avi': 'video/x-msvideo',
+  '.mkv': 'video/x-matroska',
+};
+
+const audioExtensions = {
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.m4a': 'audio/mp4',
+  '.flac': 'audio/flac',
+  '.aac': 'audio/aac',
+  '.ogg': 'audio/ogg',
+};
+
 export function detectFileType(sampleBuffer, ext) {
-  if (ext === '.ipynb') {
+  const lowerExt = (ext || '').toLowerCase();
+  if (lowerExt === '.ipynb') {
     return { category: 'notebook', mime: 'application/x-ipynb+json' };
+  }
+
+  if (videoExtensions[lowerExt]) {
+    return { category: 'video', mime: videoExtensions[lowerExt] };
+  }
+
+  if (audioExtensions[lowerExt]) {
+    return { category: 'audio', mime: audioExtensions[lowerExt] };
   }
 
   const mime = magicMime(sampleBuffer);
@@ -12,6 +37,8 @@ export function detectFileType(sampleBuffer, ext) {
   if (mime === 'image/gif') return { category: 'image', mime };
   if (mime === 'image/webp') return { category: 'image', mime };
   if (mime === 'application/pdf') return { category: 'pdf', mime };
+  if (mime && mime.startsWith('video/')) return { category: 'video', mime };
+  if (mime && mime.startsWith('audio/')) return { category: 'audio', mime };
 
   if (isBinary(sampleBuffer)) {
     return { category: 'binary', mime: 'application/octet-stream' };
@@ -47,6 +74,30 @@ function magicMime(buf) {
   }
   if (buf.length >= 4 && buf.toString('ascii', 0, 4) === '%PDF') {
     return 'application/pdf';
+  }
+  // MP4
+  if (buf.length >= 8 && buf.toString('ascii', 4, 8) === 'ftyp') {
+    return 'video/mp4';
+  }
+  // WebM / MKV
+  if (buf.length >= 4 && buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) {
+    return 'video/webm';
+  }
+  // Ogg
+  if (buf.length >= 4 && buf.toString('ascii', 0, 4) === 'OggS') {
+    return 'audio/ogg';
+  }
+  // WAV
+  if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WAVE') {
+    return 'audio/wav';
+  }
+  // MP3 ID3
+  if (buf.length >= 3 && buf.toString('ascii', 0, 3) === 'ID3') {
+    return 'audio/mpeg';
+  }
+  // MP3 frame sync
+  if (buf.length >= 2 && buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) {
+    return 'audio/mpeg';
   }
   return null;
 }

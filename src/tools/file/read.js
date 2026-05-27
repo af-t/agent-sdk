@@ -8,10 +8,22 @@ import { flattenNotebook } from '../../core/notebook.js';
 const MAX_READ_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
 const MAX_PDF_BYTES = 10 * 1024 * 1024; // 10MB
+const MAX_VIDEO_BYTES = 25 * 1024 * 1024; // 25MB
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024; // 25MB
+
+const AUDIO_FORMAT_MAP = {
+  'audio/wav': 'wav',
+  'audio/mpeg': 'mp3',
+  'audio/flac': 'flac',
+  'audio/aac': 'aac',
+  'audio/mp4': 'm4a',
+  'audio/ogg': 'ogg',
+  'audio/aiff': 'aiff',
+};
 
 export const name = 'Read';
 export const description =
-  'Read the contents of a file with pagination and line numbers. Handles text, notebooks (.ipynb), images (PNG/JPEG/GIF/WebP), PDFs, and binary files. Use pagination (start_line/end_line) for large files to avoid context overflow and ensure efficient reading.';
+  'Read the contents of a file with pagination and line numbers. Handles text, notebooks (.ipynb), images (PNG/JPEG/GIF/WebP), PDFs, audio, video, and binary files. Use pagination (start_line/end_line) for large files to avoid context overflow and ensure efficient reading. For images, PDFs, audio, and video files, the tool automatically loads and injects them as multimodal content blocks directly into your context, so you do not need to expect binary hex or run external tools like ffmpeg to inspect them.';
 export const input_schema = {
   type: 'object',
   properties: {
@@ -133,6 +145,38 @@ export const execute = async ({ path: filePath, start_line = 1, end_line = Infin
     return [
       { type: 'text', text: `[pdf] ${baseName} — ${humanSize(stat.size)}` },
       { type: 'file', file: { filename: baseName, file_data: dataUri } },
+    ];
+  }
+
+  if (category === 'video') {
+    const baseName = path.basename(safePath);
+    if (stat.size > MAX_VIDEO_BYTES) {
+      return `[video] ${baseName} — ${mime}, ${humanSize(stat.size)} (too large to inline; over ${humanSize(MAX_VIDEO_BYTES)})`;
+    }
+    const buf = await fs.readFile(safePath);
+    const dataUri = 'data:' + mime + ';base64,' + buf.toString('base64');
+    return [
+      { type: 'text', text: `[video] ${baseName} — ${mime}, ${humanSize(stat.size)}` },
+      { type: 'video_url', video_url: { url: dataUri } },
+    ];
+  }
+
+  if (category === 'audio') {
+    const baseName = path.basename(safePath);
+    if (stat.size > MAX_AUDIO_BYTES) {
+      return `[audio] ${baseName} — ${mime}, ${humanSize(stat.size)} (too large to inline; over ${humanSize(MAX_AUDIO_BYTES)})`;
+    }
+    const buf = await fs.readFile(safePath);
+    const base64Data = buf.toString('base64');
+    return [
+      { type: 'text', text: `[audio] ${baseName} — ${mime}, ${humanSize(stat.size)}` },
+      {
+        type: 'input_audio',
+        input_audio: {
+          data: base64Data,
+          format: AUDIO_FORMAT_MAP[mime] ?? 'mp3',
+        },
+      },
     ];
   }
 

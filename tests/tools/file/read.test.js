@@ -353,3 +353,95 @@ describe('read.js — fileState caching', () => {
     }
   });
 });
+
+describe('read.js — video and audio branch', () => {
+  let tmpDir;
+  let mp4File;
+  let oversizedMp4File;
+  let mp3File;
+
+  before(async () => {
+    const os = await import('node:os');
+    tmpDir = await fs.mkdtemp(path.join(os.default.tmpdir(), 'read-media-test-'));
+
+    // MP4 signature at offset 4: "ftyp"
+    const mp4Bytes = Buffer.alloc(16);
+    mp4Bytes.write('ftyp', 4, 'ascii');
+    mp4File = path.join(tmpDir, 'test.mp4');
+    await fs.writeFile(mp4File, mp4Bytes);
+
+    // Oversized MP4
+    const largeMp4 = Buffer.alloc(25 * 1024 * 1024 + 1);
+    largeMp4.write('ftyp', 4, 'ascii');
+    oversizedMp4File = path.join(tmpDir, 'large.mp4');
+    await fs.writeFile(oversizedMp4File, largeMp4);
+
+    // MP3 ID3 signature: "ID3"
+    const mp3Bytes = Buffer.alloc(8);
+    mp3Bytes.write('ID3', 0, 'ascii');
+    mp3File = path.join(tmpDir, 'test.mp3');
+    await fs.writeFile(mp3File, mp3Bytes);
+  });
+
+  after(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns an array with text and video_url for a small MP4 video', async () => {
+    const mod = await import('../../../src/tools/file/read.js');
+    const ctx = { agent: { trustedPaths: new Set([tmpDir]) } };
+    const result = await mod.execute({ path: mp4File }, ctx);
+    assert.ok(Array.isArray(result), 'result should be an array');
+    assert.equal(result[0].type, 'text');
+    assert.ok(result[0].text.includes('video/mp4'));
+    assert.equal(result[1].type, 'video_url');
+    assert.ok(result[1].video_url.url.startsWith('data:video/mp4;base64,'), 'url should be an MP4 data URI');
+  });
+
+  it('returns a string for an oversized MP4', async () => {
+    const mod = await import('../../../src/tools/file/read.js');
+    const ctx = { agent: { trustedPaths: new Set([tmpDir]) } };
+    const result = await mod.execute({ path: oversizedMp4File }, ctx);
+    assert.ok(typeof result === 'string', 'result should be a string');
+    assert.ok(result.includes('too large to inline'), 'result should mention too large to inline');
+  });
+
+  it('returns an array with text and input_audio for a small MP3 audio', async () => {
+    const mod = await import('../../../src/tools/file/read.js');
+    const ctx = { agent: { trustedPaths: new Set([tmpDir]) } };
+    const result = await mod.execute({ path: mp3File }, ctx);
+    assert.ok(Array.isArray(result), 'result should be an array');
+    assert.equal(result[0].type, 'text');
+    assert.ok(result[0].text.includes('audio/mpeg'));
+    assert.equal(result[1].type, 'input_audio');
+    assert.ok(typeof result[1].input_audio.data === 'string', 'data should be a base64 string');
+    assert.strictEqual(result[1].input_audio.format, 'mp3');
+  });
+
+  it('returns a string for an oversized audio file', async () => {
+    const oversizedMp3File = path.join(tmpDir, 'large.mp3');
+    await fs.writeFile(oversizedMp3File, Buffer.alloc(8));
+    await fs.truncate(oversizedMp3File, 25 * 1024 * 1024 + 1);
+    const mod = await import('../../../src/tools/file/read.js');
+    const ctx = { agent: { trustedPaths: new Set([tmpDir]) } };
+    const result = await mod.execute({ path: oversizedMp3File }, ctx);
+    assert.ok(typeof result === 'string');
+    assert.ok(result.includes('too large to inline'));
+  });
+});
+
+describe('read.js — oversized text file', () => {
+  it('throws when text file exceeds 10MB', async () => {
+    const os = await import('node:os');
+    const tmpDir = await fs.mkdtemp(path.join(os.default.tmpdir(), 'read-oversize-'));
+    const bigFile = path.join(tmpDir, 'big.txt');
+    try {
+      await fs.writeFile(bigFile, Buffer.alloc(10 * 1024 * 1024 + 1, 0x61)); // 10MB+1 of 'a'
+      const mod = await import('../../../src/tools/file/read.js');
+      const ctx = { agent: { trustedPaths: new Set([tmpDir]) } };
+      await assert.rejects(() => mod.execute({ path: bigFile }, ctx), /too large/i);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
