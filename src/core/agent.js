@@ -7,7 +7,7 @@ import skillRegistry from '../registry/skill.js';
 import crypto from 'node:crypto';
 import os from 'node:os';
 import fs from 'node:fs';
-import { readFile, readdir, unlink } from 'node:fs/promises';
+import { readFile, readdir, rm, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
 const __dirname = getDirname(import.meta);
@@ -737,6 +737,13 @@ class Agent {
         } catch (err) {
           logger.debug(`cleanup: failed to delete ${entry.name}: ${err.message}`);
         }
+      }
+    } else if (this._bgLogDir) {
+      // auto-created fallback dir; remove entirely
+      try {
+        await rm(this._bgLogDir, { recursive: true, force: true });
+      } catch (err) {
+        logger.debug(`cleanup: failed to remove bg log dir: ${err.message}`);
       }
     }
 

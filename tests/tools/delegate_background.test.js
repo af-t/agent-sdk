@@ -48,26 +48,30 @@ test('Delegate background:true returns immediately with job id', async () => {
     return 'final report from subagent';
   });
 
-  const { execute: delegateExecute } = await import('../../src/tools/system/delegate.js');
-  const t0 = Date.now();
-  const out = await delegateExecute(
-    { agent: 'researcher', prompt: 'do work', description: 'do work', background: true },
-    { agent: parent, signal: new AbortController().signal },
-  );
-  const elapsed = Date.now() - t0;
-  assert.ok(elapsed < 80, `expected immediate return, took ${elapsed}ms`);
-  assert.match(out, /Subagent started in background/);
-  assert.match(out, /Job ID: bg-/);
+  try {
+    const { execute: delegateExecute } = await import('../../src/tools/system/delegate.js');
+    const t0 = Date.now();
+    const out = await delegateExecute(
+      { agent: 'researcher', prompt: 'do work', description: 'do work', background: true },
+      { agent: parent, signal: new AbortController().signal },
+    );
+    const elapsed = Date.now() - t0;
+    assert.ok(elapsed < 80, `expected immediate return, took ${elapsed}ms`);
+    assert.match(out, /Subagent started in background/);
+    assert.match(out, /Job ID: bg-/);
 
-  // Wait for subagent to actually finish.
-  await subagentDone;
-  await new Promise((r) => setTimeout(r, 100));
+    // Wait for subagent to actually finish.
+    await subagentDone;
+    await new Promise((r) => setTimeout(r, 100));
 
-  const ids = [...parent.backgroundJobs.keys()];
-  assert.equal(ids.length, 1);
-  const job = parent.backgroundJobs.get(ids[0]);
-  assert.equal(job.kind, 'delegate');
-  assert.equal(job.status, 'exited');
-  const content = fs.readFileSync(job.logPath, 'utf8');
-  assert.match(content, /final report from subagent/);
+    const ids = [...parent.backgroundJobs.keys()];
+    assert.equal(ids.length, 1);
+    const job = parent.backgroundJobs.get(ids[0]);
+    assert.equal(job.kind, 'delegate');
+    assert.equal(job.status, 'exited');
+    const content = fs.readFileSync(job.logPath, 'utf8');
+    assert.match(content, /final report from subagent/);
+  } finally {
+    await parent.cleanup();
+  }
 });

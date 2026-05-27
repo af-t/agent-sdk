@@ -58,6 +58,7 @@ test('background log dir falls back to os.tmpdir/openrouter-<pid> when unconfigu
   assert.equal(dir, fs.realpathSync(expected));
   assert.ok(fs.existsSync(dir));
   assert.ok(agent.trustedPaths.has(dir));
+  await agent.cleanup();
 });
 
 test('pending bg exits drain into messages as a system-reminder after tool group', async () => {
