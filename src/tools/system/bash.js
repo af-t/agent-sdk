@@ -426,7 +426,15 @@ function runWithPtyBackground(command, cwd, env, signal, agent) {
     throw err;
   }
 
-  ptyProcess.onData((d) => stream.write(d));
+  try {
+    ptyProcess.onData((d) => stream.write(d));
+  } catch (err) {
+    stream.end();
+    try {
+      ptyProcess.kill();
+    } catch {}
+    throw err;
+  }
 
   const job = {
     id,
@@ -441,20 +449,29 @@ function runWithPtyBackground(command, cwd, env, signal, agent) {
   };
   agent.backgroundJobs.set(id, job);
 
-  ptyProcess.onExit(({ exitCode, signal: sig }) => {
-    stream.end();
-    job.endedAt = Date.now();
-    job.exitCode = exitCode;
-    job.status = exitCode === 0 ? 'exited' : sig ? 'killed' : 'crashed';
-    agent._fireBackgroundExit({
-      id,
-      kind: 'bash',
-      exitCode,
-      durationMs: job.endedAt - job.startedAt,
-      status: job.status,
-      logPath,
+  try {
+    ptyProcess.onExit(({ exitCode, signal: sig }) => {
+      stream.end();
+      job.endedAt = Date.now();
+      job.exitCode = exitCode;
+      job.status = exitCode === 0 ? 'exited' : sig ? 'killed' : 'crashed';
+      agent._fireBackgroundExit({
+        id,
+        kind: 'bash',
+        exitCode,
+        durationMs: job.endedAt - job.startedAt,
+        status: job.status,
+        logPath,
+      });
     });
-  });
+  } catch (err) {
+    stream.end();
+    agent.backgroundJobs.delete(id);
+    try {
+      ptyProcess.kill();
+    } catch {}
+    throw err;
+  }
 
   if (signal) {
     signal.addEventListener(
