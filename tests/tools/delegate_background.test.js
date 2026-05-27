@@ -6,11 +6,8 @@ import createAgent from '../../src/index.js';
 import Agent from '../../src/core/agent.js';
 
 test('Delegate-spawned subagent inherits parent.restricted', async () => {
+  mock.method(Agent.prototype, 'run', async () => 'subagent report');
   const parent = await createAgent({ apiKey: 'x', restricted: false });
-  parent._sendForTest = async () => ({
-    choices: [{ message: { content: 'subagent report', reasoning: null, tool_calls: null } }],
-    usage: { cost: 0, total_tokens: 0 },
-  });
 
   const { execute: delegateExecute } = await import('../../src/tools/system/delegate.js');
   const out = await delegateExecute(
@@ -23,13 +20,10 @@ test('Delegate-spawned subagent inherits parent.restricted', async () => {
 });
 
 test('Delegate-spawned subagent shares parent storagePaths.tmpDir', async () => {
+  mock.method(Agent.prototype, 'run', async () => 'r');
   const parent = await createAgent({
     apiKey: 'x',
     storagePaths: { tmpDir: '/tmp/openrouter-parent-test' },
-  });
-  parent._sendForTest = async () => ({
-    choices: [{ message: { content: 'r', reasoning: null, tool_calls: null } }],
-    usage: { cost: 0, total_tokens: 0 },
   });
   const { execute: delegateExecute } = await import('../../src/tools/system/delegate.js');
   await delegateExecute(
