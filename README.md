@@ -114,6 +114,11 @@ cp .env.example .env
 | `OPENROUTER_ONLY`       | No       | Restrict to specific providers only                            |
 | `TAVILY_API_KEY`        | No       | API key for WebSearch tool (from [Tavily](https://tavily.com)) |
 | `DEBUG`                 | No       | Enable debug logging (`true`/`1`)                              |
+| `OPENROUTER_TEMPERATURE`, `OPENROUTER_TOP_P`, `OPENROUTER_MIN_P`, `OPENROUTER_TOP_K` | No | Sampling controls |
+| `OPENROUTER_FREQUENCY_PENALTY`, `OPENROUTER_PRESENCE_PENALTY`, `OPENROUTER_REPETITION_PENALTY` | No | Repetition controls |
+| `OPENROUTER_SEED`, `OPENROUTER_MAX_COMPLETION_TOKENS` | No | Deterministic seed; output token cap (supersedes `MAX_TOKENS`) |
+| `OPENROUTER_REASONING_EFFORT`, `OPENROUTER_REASONING_MAX_TOKENS`, `OPENROUTER_REASONING_EXCLUDE`, `OPENROUTER_REASONING_ENABLED` | No | Reasoning controls |
+| `OPENROUTER_PROVIDER_AVOID`, `OPENROUTER_PROVIDER_SORT`, `OPENROUTER_PROVIDER_ALLOW_FALLBACKS`, `OPENROUTER_PROVIDER_REQUIRE_PARAMETERS`, `OPENROUTER_PROVIDER_DATA_COLLECTION` | No | Provider routing |
 
 ## Basic Usage
 
@@ -589,6 +594,14 @@ Factory function to create an Agent instance.
 | `model`              | string   | Model identifier.                                                                     |
 | `order`              | string[] | Provider routing order.                                                               |
 | `only`               | string[] | Restrict to specific providers.                                                       |
+| `provider`           | object   | Provider routing: `{ order, only, avoid, sort, allowFallbacks, requireParameters, dataCollection }`. Merged with env. |
+| `temperature`, `topP`, `minP`, `topK` | number | Sampling controls. Option wins over env.                            |
+| `frequencyPenalty`, `presencePenalty`, `repetitionPenalty` | number | Repetition controls.                           |
+| `seed`               | number   | Deterministic sampling seed.                                                          |
+| `maxCompletionTokens`| number   | Output token cap; sent as `max_completion_tokens`, supersedes `maxTokens`.            |
+| `responseFormat`     | object   | Passed through as `response_format` (e.g. JSON mode).                                 |
+| `stop`               | string[] | Stop sequences.                                                                      |
+| `reasoning`          | object   | `{ effort, maxTokens, exclude, enabled }`. Maps to OpenRouter's `reasoning`.          |
 | `systemPrompt`       | string   | System prompt override. Falls back to `RULE.md`, then a built-in default.             |
 | `maxTurns`           | number   | Max request cycles per `run()`. Default `25`; `0` means unlimited.                    |
 | `maxTokens`          | number   | Maximum output tokens per request.                                                    |
@@ -658,7 +671,7 @@ Queue a prompt for an already-running loop without waiting for it to finish — 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines on:
 
 - Getting started with development
-- Code style (ES modules, async/await, JSDoc)
+- Code style (ES modules, async/await, `//` comments — no JSDoc)
 - Submitting changes (feature branch, pull request)
 - Reporting issues
 
