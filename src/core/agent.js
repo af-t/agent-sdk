@@ -86,6 +86,18 @@ class Agent {
       memoryTypes,
       isSubagent,
       restricted,
+      temperature,
+      topP,
+      minP,
+      topK,
+      frequencyPenalty,
+      presencePenalty,
+      repetitionPenalty,
+      seed,
+      maxCompletionTokens,
+      responseFormat,
+      stop,
+      reasoning,
     } = options;
 
     this.restricted = restricted !== false;
@@ -104,10 +116,63 @@ class Agent {
 
     const resolvedOrder = order || provider?.order || config.ORDER;
     const resolvedOnly = only || provider?.only || config.ONLY;
-    this.provider = { order: resolvedOrder, only: resolvedOnly };
+    const resolvedAvoid = provider?.avoid || config.PROVIDER_AVOID;
+    const resolvedSort = provider?.sort || config.PROVIDER_SORT;
+    const resolvedAllowFallbacks = provider?.allowFallbacks !== undefined ? provider.allowFallbacks : config.PROVIDER_ALLOW_FALLBACKS;
+    const resolvedRequireParameters = provider?.requireParameters !== undefined ? provider.requireParameters : config.PROVIDER_REQUIRE_PARAMETERS;
+    const resolvedDataCollection = provider?.dataCollection !== undefined ? provider.dataCollection : config.PROVIDER_DATA_COLLECTION;
+
+    this.provider = {
+      order: resolvedOrder,
+      only: resolvedOnly,
+      avoid: resolvedAvoid,
+      sort: resolvedSort,
+      allowFallbacks: resolvedAllowFallbacks,
+      requireParameters: resolvedRequireParameters,
+      dataCollection: resolvedDataCollection,
+    };
+
     this.messages = [];
     this.tools = tools || new ToolRegistry({ restricted: this.restricted });
-    this.effort = effort || 'high';
+
+    this.temperature = temperature !== undefined ? temperature : (config.TEMPERATURE !== undefined ? parseFloat(config.TEMPERATURE) : undefined);
+    this.topP = topP !== undefined ? topP : (config.TOP_P !== undefined ? parseFloat(config.TOP_P) : undefined);
+    this.minP = minP !== undefined ? minP : (config.MIN_P !== undefined ? parseFloat(config.MIN_P) : undefined);
+    this.topK = topK !== undefined ? topK : (config.TOP_K !== undefined ? parseInt(config.TOP_K) : undefined);
+    this.frequencyPenalty = frequencyPenalty !== undefined ? frequencyPenalty : (config.FREQUENCY_PENALTY !== undefined ? parseFloat(config.FREQUENCY_PENALTY) : undefined);
+    this.presencePenalty = presencePenalty !== undefined ? presencePenalty : (config.PRESENCE_PENALTY !== undefined ? parseFloat(config.PRESENCE_PENALTY) : undefined);
+    this.repetitionPenalty = repetitionPenalty !== undefined ? repetitionPenalty : (config.REPETITION_PENALTY !== undefined ? parseFloat(config.REPETITION_PENALTY) : undefined);
+    this.seed = seed !== undefined ? seed : (config.SEED !== undefined ? parseInt(config.SEED) : undefined);
+
+    const resolvedMaxCompletionTokens = maxCompletionTokens !== undefined ? maxCompletionTokens : config.MAX_COMPLETION_TOKENS;
+    this.maxCompletionTokens = resolvedMaxCompletionTokens !== undefined ? parseInt(resolvedMaxCompletionTokens) : undefined;
+
+    this.responseFormat = responseFormat;
+    this.stop = stop;
+
+    this.reasoning = undefined;
+    if (reasoning && typeof reasoning === 'object') {
+      this.reasoning = {
+        effort: reasoning.effort !== undefined ? reasoning.effort : config.REASONING_EFFORT,
+        maxTokens: reasoning.maxTokens !== undefined ? reasoning.maxTokens : (config.REASONING_MAX_TOKENS !== undefined ? parseInt(config.REASONING_MAX_TOKENS) : undefined),
+        exclude: reasoning.exclude !== undefined ? reasoning.exclude : config.REASONING_EXCLUDE,
+        enabled: reasoning.enabled !== undefined ? reasoning.enabled : config.REASONING_ENABLED,
+      };
+    } else if (config.REASONING_EFFORT || config.REASONING_MAX_TOKENS !== undefined || config.REASONING_EXCLUDE !== undefined || config.REASONING_ENABLED !== undefined) {
+      this.reasoning = {
+        effort: config.REASONING_EFFORT,
+        maxTokens: config.REASONING_MAX_TOKENS !== undefined ? parseInt(config.REASONING_MAX_TOKENS) : undefined,
+        exclude: config.REASONING_EXCLUDE,
+        enabled: config.REASONING_ENABLED,
+      };
+    }
+
+    if (this.reasoning) {
+      this.effort = effort || this.reasoning.effort || config.REASONING_EFFORT || 'high';
+    } else {
+      this.effort = effort || config.REASONING_EFFORT || 'high';
+    }
+
     this.maxTokens = parseInt(maxTokens || config.MAX_TOKENS || 0) || undefined;
     this.usage = { cost: 0, tokens: 0 };
     this.subagents = new Map();
@@ -419,13 +484,57 @@ class Agent {
         ...messagesForPayload,
       ],
       tools: this.tools.getDefinitions(),
-      provider: this.provider,
-      max_tokens: this.maxTokens,
-      reasoning: { effort: this.effort },
     };
 
     if (payload.tools.length === 0) delete payload.tools;
-    if (!payload.max_tokens) delete payload.max_tokens;
+
+    if (this.temperature !== undefined) payload.temperature = this.temperature;
+    if (this.topP !== undefined) payload.top_p = this.topP;
+    if (this.minP !== undefined) payload.min_p = this.minP;
+    if (this.topK !== undefined) payload.top_k = this.topK;
+    if (this.frequencyPenalty !== undefined) payload.frequency_penalty = this.frequencyPenalty;
+    if (this.presencePenalty !== undefined) payload.presence_penalty = this.presencePenalty;
+    if (this.repetitionPenalty !== undefined) payload.repetition_penalty = this.repetitionPenalty;
+    if (this.seed !== undefined) payload.seed = this.seed;
+    if (this.responseFormat !== undefined) payload.response_format = this.responseFormat;
+    if (this.stop !== undefined) payload.stop = this.stop;
+
+    if (this.maxCompletionTokens !== undefined) {
+      payload.max_completion_tokens = this.maxCompletionTokens;
+    } else if (this.maxTokens !== undefined) {
+      payload.max_tokens = this.maxTokens;
+    }
+
+    const reasoningPayload = {};
+    if (this.reasoning) {
+      if (this.reasoning.effort !== undefined) reasoningPayload.effort = this.reasoning.effort;
+      if (this.reasoning.maxTokens !== undefined) reasoningPayload.max_tokens = this.reasoning.maxTokens;
+      if (this.reasoning.exclude !== undefined) reasoningPayload.exclude = this.reasoning.exclude;
+      if (this.reasoning.enabled !== undefined) reasoningPayload.enabled = this.reasoning.enabled;
+    } else if (this.effort !== undefined) {
+      reasoningPayload.effort = this.effort;
+    }
+
+    if (Object.keys(reasoningPayload).length > 0) {
+      payload.reasoning = reasoningPayload;
+    }
+
+    const providerPayload = {};
+    if (this.provider) {
+      if (this.provider.order !== undefined) providerPayload.order = this.provider.order;
+      if (this.provider.only !== undefined) providerPayload.only = this.provider.only;
+      if (this.provider.avoid !== undefined) providerPayload.avoid = this.provider.avoid;
+      if (this.provider.sort !== undefined) providerPayload.sort = this.provider.sort;
+      if (this.provider.allowFallbacks !== undefined) providerPayload.allow_fallbacks = this.provider.allowFallbacks;
+      if (this.provider.requireParameters !== undefined) providerPayload.require_parameters = this.provider.requireParameters;
+      if (this.provider.dataCollection !== undefined) {
+        providerPayload.data_collection = this.provider.dataCollection;
+        providerPayload.dataCollection = this.provider.dataCollection;
+      }
+    }
+    if (Object.keys(providerPayload).length > 0) {
+      payload.provider = providerPayload;
+    }
 
     for (const hook of this.#beforeRequestHooks) {
       await hook(payload);
@@ -508,7 +617,7 @@ class Agent {
       if (!delta) return;
 
       const cd = delta.content || '';
-      const rd = delta.reasoning || '';
+      const rd = delta.reasoning || delta.reasoning_content || '';
       if (cd) content += cd;
       if (rd) reasoning += rd;
 
@@ -945,7 +1054,8 @@ class Agent {
           break;
         }
 
-        const { content, reasoning, tool_calls } = message;
+        const { content, tool_calls } = message;
+        const reasoning = message.reasoning || message.reasoning_content || undefined;
 
         this.messages.push({ role: 'assistant', reasoning, content, tool_calls });
 

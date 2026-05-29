@@ -26,10 +26,28 @@ describe('config', () => {
       'TAVILY_API_KEY',
       'MAX_RETRIES',
       'DEBUG',
+      'TEMPERATURE',
+      'TOP_P',
+      'MIN_P',
+      'TOP_K',
+      'FREQUENCY_PENALTY',
+      'PRESENCE_PENALTY',
+      'REPETITION_PENALTY',
+      'SEED',
+      'MAX_COMPLETION_TOKENS',
+      'REASONING_EFFORT',
+      'REASONING_MAX_TOKENS',
+      'REASONING_EXCLUDE',
+      'REASONING_ENABLED',
+      'PROVIDER_ALLOW_FALLBACKS',
+      'PROVIDER_REQUIRE_PARAMETERS',
+      'PROVIDER_DATA_COLLECTION',
+      'PROVIDER_AVOID',
+      'PROVIDER_SORT',
     ]) {
       assert.ok(Object.prototype.hasOwnProperty.call(config, k), `missing key: ${k}`);
     }
-    assert.strictEqual(Object.keys(config).length, 9);
+    assert.strictEqual(Object.keys(config).length, 27);
   });
 
   it('top-level object is frozen', () => {
