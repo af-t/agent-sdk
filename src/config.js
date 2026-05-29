@@ -25,6 +25,7 @@ export default deepFreeze({
   MODEL: process.env.OPENROUTER_MODEL,
   MAX_TOKENS: process.env.OPENROUTER_MAX_TOKENS,
   MAX_TURNS: process.env.OPENROUTER_MAX_TURNS,
+  AUTO_WAKE: process.env.OPENROUTER_AUTO_WAKE,
   TAVILY_API_KEY: process.env.TAVILY_API_KEY,
   MAX_RETRIES: 5,
   DEBUG: process.env.DEBUG === 'true' || process.env.DEBUG === '1',

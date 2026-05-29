@@ -890,4 +890,11 @@ describe('run() — steering applied in-loop', () => {
     assert.ok(imagePart, 'Expected to find the injected image_url in the multimodal user message');
     assert.strictEqual(imagePart.image_url.url, 'data:image/png;base64,abc');
   });
+
+  it('autoWake defaults to false and is enabled via option', () => {
+    const a = new Agent({ apiKey: 'x' });
+    assert.equal(a.autoWake, false);
+    const b = new Agent({ apiKey: 'x', autoWake: true });
+    assert.equal(b.autoWake, true);
+  });
 });

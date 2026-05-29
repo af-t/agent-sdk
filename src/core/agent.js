@@ -98,6 +98,7 @@ class Agent {
       responseFormat,
       stop,
       reasoning,
+      autoWake,
     } = options;
 
     this.restricted = restricted !== false;
@@ -193,6 +194,7 @@ class Agent {
       this.maxTurns = DEFAULT_MAX_TURNS;
     }
     this.maxToolOutputChars = maxToolOutputChars ?? CONSTANTS.MAX_TOOL_OUTPUT;
+    this.autoWake = autoWake !== undefined ? !!autoWake : config.AUTO_WAKE === 'true' || config.AUTO_WAKE === '1';
     this.systemPrompt =
       systemPrompt ||
       (() => {
