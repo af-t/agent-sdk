@@ -142,12 +142,9 @@ function runWithSpawn(command, cwd, env, timeout, signal, onTimeout, agent) {
         const logPath = path.join(dir, `background-${id}.log`);
         const stream = fs.createWriteStream(logPath, { flags: 'a' });
         stream.write(output);
+        // stderr is folded into stdout at the shell level (exec 2>&1), so only stdout carries output
         child.stdout.removeAllListeners('data');
         child.stdout.pause();
-        if (child.stderr) child.stderr.removeAllListeners('data');
-        if (child.stderr) child.stderr.pause();
-        // pipe with { end: false } so that the earlier-closing stderr does not end the shared stream
-        if (child.stderr) child.stderr.pipe(stream, { end: false });
         child.stdout.pipe(stream);
         const job = {
           id,
