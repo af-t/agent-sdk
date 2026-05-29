@@ -570,7 +570,7 @@ export const execute = async (
     const info = ptyMod
       ? runWithPtyBackground(command, cwd, safeEnv, signal, ctx.agent)
       : runWithSpawnBackground(command, cwd, safeEnv, signal, ctx.agent);
-    return `Started in background.\nJob ID: ${info.id} (kind: bash)\nLog: ${info.logPath}\nPID: ${info.pid ?? 'n/a'}\nUse Remind({ wait_ms, watch: ['${info.id}'] }) to wait/peek, or Read the log.`;
+    return `Started in background.\nJob ID: ${info.id} (kind: bash)\nLog: ${info.logPath}\nPID: ${info.pid ?? 'n/a'}\nExit will be reported automatically. Read the log, or use Remind({ wait_ms | until, watch: ['${info.id}'] }) only for a timed check-in with a log tail.`;
   }
 
   if (ptyMod) {

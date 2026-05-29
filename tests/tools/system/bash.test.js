@@ -1,5 +1,6 @@
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
+import Agent from '../../../src/core/agent.js';
 
 describe('Bash tool module', () => {
   let mod;
@@ -485,6 +486,22 @@ describe('Bash tool — abort signal handling', () => {
   it('runs normally when no signal is provided', async () => {
     const result = await mod.execute({ command: 'echo hello-no-signal', timeout: 5000 });
     assert.match(result, /hello-no-signal/);
+  });
+});
+
+describe('Bash tool — background hint message', () => {
+  let bash;
+
+  before(async () => {
+    bash = await import('../../../src/tools/system/bash.js');
+  });
+
+  it('background return message reflects automatic exit reporting', async () => {
+    const agent = new Agent({ apiKey: 'x' });
+    const out = await bash.execute({ command: 'true', background: true }, { agent });
+    assert.match(out, /reported automatically/i);
+    assert.doesNotMatch(out, /to wait\/peek/);
+    await agent.cleanup();
   });
 });
 
