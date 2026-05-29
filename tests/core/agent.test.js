@@ -1,4 +1,4 @@
-import { describe, it, before, after } from 'node:test';
+import { describe, it, before, after, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -948,6 +948,69 @@ describe('run() — steering applied in-loop', () => {
       await new Promise((r) => setTimeout(r, 40));
       assert.equal(events.length, 0);
       assert.equal(agent.backgroundJobs.get(id).status, 'killed');
+    });
+  });
+
+  describe('autoWake self-resume', () => {
+    it('autoWake on: idle bg-exit triggers exactly one run', async () => {
+      const agent = new Agent({ apiKey: 'x', autoWake: true });
+      const runMock = mock.method(Agent.prototype, 'run', async () => 'ok');
+      agent._fireBackgroundExit({
+        id: 'bg-1',
+        kind: 'timer',
+        status: 'done',
+        exitCode: 0,
+        durationMs: 5,
+        logPath: null,
+      });
+      await new Promise((r) => queueMicrotask(r));
+      assert.equal(runMock.mock.callCount(), 1);
+      runMock.mock.restore();
+    });
+
+    it('autoWake on: multiple idle exits in one tick coalesce into one run', async () => {
+      const agent = new Agent({ apiKey: 'x', autoWake: true });
+      const runMock = mock.method(Agent.prototype, 'run', async () => 'ok');
+      agent._fireBackgroundExit({
+        id: 'bg-1',
+        kind: 'timer',
+        status: 'done',
+        exitCode: 0,
+        durationMs: 5,
+        logPath: null,
+      });
+      agent._fireBackgroundExit({
+        id: 'bg-2',
+        kind: 'timer',
+        status: 'done',
+        exitCode: 0,
+        durationMs: 5,
+        logPath: null,
+      });
+      await new Promise((r) => queueMicrotask(r));
+      assert.equal(runMock.mock.callCount(), 1);
+      runMock.mock.restore();
+    });
+
+    it('autoWake off: idle bg-exit calls listeners but not run', async () => {
+      const agent = new Agent({ apiKey: 'x' });
+      const runMock = mock.method(Agent.prototype, 'run', async () => 'ok');
+      let fired = false;
+      agent.onBackgroundExit(() => {
+        fired = true;
+      });
+      agent._fireBackgroundExit({
+        id: 'bg-1',
+        kind: 'timer',
+        status: 'done',
+        exitCode: 0,
+        durationMs: 5,
+        logPath: null,
+      });
+      await new Promise((r) => queueMicrotask(r));
+      assert.equal(runMock.mock.callCount(), 0);
+      assert.equal(fired, true);
+      runMock.mock.restore();
     });
   });
 });

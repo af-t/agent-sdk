@@ -356,6 +356,19 @@ class Agent {
           logger.warn(`onBackgroundExit listener threw: ${err.message}`);
         }
       }
+      if (this.autoWake) {
+        this.#pendingBgDrains.push(event);
+        this.#drainBgExits();
+        if (!this.#wakeScheduled) {
+          this.#wakeScheduled = true;
+          queueMicrotask(() => {
+            this.#wakeScheduled = false;
+            if (!this.#running) {
+              this.run(null, null).catch((err) => logger.warn(`autoWake run failed: ${err.message}`));
+            }
+          });
+        }
+      }
     }
   }
 
