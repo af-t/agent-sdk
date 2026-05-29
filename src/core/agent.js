@@ -120,9 +120,12 @@ class Agent {
     const resolvedOnly = only || provider?.only || config.ONLY;
     const resolvedAvoid = provider?.avoid || config.PROVIDER_AVOID;
     const resolvedSort = provider?.sort || config.PROVIDER_SORT;
-    const resolvedAllowFallbacks = provider?.allowFallbacks !== undefined ? provider.allowFallbacks : config.PROVIDER_ALLOW_FALLBACKS;
-    const resolvedRequireParameters = provider?.requireParameters !== undefined ? provider.requireParameters : config.PROVIDER_REQUIRE_PARAMETERS;
-    const resolvedDataCollection = provider?.dataCollection !== undefined ? provider.dataCollection : config.PROVIDER_DATA_COLLECTION;
+    const resolvedAllowFallbacks =
+      provider?.allowFallbacks !== undefined ? provider.allowFallbacks : config.PROVIDER_ALLOW_FALLBACKS;
+    const resolvedRequireParameters =
+      provider?.requireParameters !== undefined ? provider.requireParameters : config.PROVIDER_REQUIRE_PARAMETERS;
+    const resolvedDataCollection =
+      provider?.dataCollection !== undefined ? provider.dataCollection : config.PROVIDER_DATA_COLLECTION;
 
     this.provider = {
       order: resolvedOrder,
@@ -137,17 +140,39 @@ class Agent {
     this.messages = [];
     this.tools = tools || new ToolRegistry({ restricted: this.restricted });
 
-    this.temperature = temperature !== undefined ? temperature : (config.TEMPERATURE !== undefined ? parseFloat(config.TEMPERATURE) : undefined);
-    this.topP = topP !== undefined ? topP : (config.TOP_P !== undefined ? parseFloat(config.TOP_P) : undefined);
-    this.minP = minP !== undefined ? minP : (config.MIN_P !== undefined ? parseFloat(config.MIN_P) : undefined);
-    this.topK = topK !== undefined ? topK : (config.TOP_K !== undefined ? parseInt(config.TOP_K) : undefined);
-    this.frequencyPenalty = frequencyPenalty !== undefined ? frequencyPenalty : (config.FREQUENCY_PENALTY !== undefined ? parseFloat(config.FREQUENCY_PENALTY) : undefined);
-    this.presencePenalty = presencePenalty !== undefined ? presencePenalty : (config.PRESENCE_PENALTY !== undefined ? parseFloat(config.PRESENCE_PENALTY) : undefined);
-    this.repetitionPenalty = repetitionPenalty !== undefined ? repetitionPenalty : (config.REPETITION_PENALTY !== undefined ? parseFloat(config.REPETITION_PENALTY) : undefined);
-    this.seed = seed !== undefined ? seed : (config.SEED !== undefined ? parseInt(config.SEED) : undefined);
+    this.temperature =
+      temperature !== undefined
+        ? temperature
+        : config.TEMPERATURE !== undefined
+          ? parseFloat(config.TEMPERATURE)
+          : undefined;
+    this.topP = topP !== undefined ? topP : config.TOP_P !== undefined ? parseFloat(config.TOP_P) : undefined;
+    this.minP = minP !== undefined ? minP : config.MIN_P !== undefined ? parseFloat(config.MIN_P) : undefined;
+    this.topK = topK !== undefined ? topK : config.TOP_K !== undefined ? parseInt(config.TOP_K) : undefined;
+    this.frequencyPenalty =
+      frequencyPenalty !== undefined
+        ? frequencyPenalty
+        : config.FREQUENCY_PENALTY !== undefined
+          ? parseFloat(config.FREQUENCY_PENALTY)
+          : undefined;
+    this.presencePenalty =
+      presencePenalty !== undefined
+        ? presencePenalty
+        : config.PRESENCE_PENALTY !== undefined
+          ? parseFloat(config.PRESENCE_PENALTY)
+          : undefined;
+    this.repetitionPenalty =
+      repetitionPenalty !== undefined
+        ? repetitionPenalty
+        : config.REPETITION_PENALTY !== undefined
+          ? parseFloat(config.REPETITION_PENALTY)
+          : undefined;
+    this.seed = seed !== undefined ? seed : config.SEED !== undefined ? parseInt(config.SEED) : undefined;
 
-    const resolvedMaxCompletionTokens = maxCompletionTokens !== undefined ? maxCompletionTokens : config.MAX_COMPLETION_TOKENS;
-    this.maxCompletionTokens = resolvedMaxCompletionTokens !== undefined ? parseInt(resolvedMaxCompletionTokens) : undefined;
+    const resolvedMaxCompletionTokens =
+      maxCompletionTokens !== undefined ? maxCompletionTokens : config.MAX_COMPLETION_TOKENS;
+    this.maxCompletionTokens =
+      resolvedMaxCompletionTokens !== undefined ? parseInt(resolvedMaxCompletionTokens) : undefined;
 
     this.responseFormat = responseFormat;
     this.stop = stop;
@@ -156,11 +181,21 @@ class Agent {
     if (reasoning && typeof reasoning === 'object') {
       this.reasoning = {
         effort: reasoning.effort !== undefined ? reasoning.effort : config.REASONING_EFFORT,
-        maxTokens: reasoning.maxTokens !== undefined ? reasoning.maxTokens : (config.REASONING_MAX_TOKENS !== undefined ? parseInt(config.REASONING_MAX_TOKENS) : undefined),
+        maxTokens:
+          reasoning.maxTokens !== undefined
+            ? reasoning.maxTokens
+            : config.REASONING_MAX_TOKENS !== undefined
+              ? parseInt(config.REASONING_MAX_TOKENS)
+              : undefined,
         exclude: reasoning.exclude !== undefined ? reasoning.exclude : config.REASONING_EXCLUDE,
         enabled: reasoning.enabled !== undefined ? reasoning.enabled : config.REASONING_ENABLED,
       };
-    } else if (config.REASONING_EFFORT || config.REASONING_MAX_TOKENS !== undefined || config.REASONING_EXCLUDE !== undefined || config.REASONING_ENABLED !== undefined) {
+    } else if (
+      config.REASONING_EFFORT ||
+      config.REASONING_MAX_TOKENS !== undefined ||
+      config.REASONING_EXCLUDE !== undefined ||
+      config.REASONING_ENABLED !== undefined
+    ) {
       this.reasoning = {
         effort: config.REASONING_EFFORT,
         maxTokens: config.REASONING_MAX_TOKENS !== undefined ? parseInt(config.REASONING_MAX_TOKENS) : undefined,
@@ -529,7 +564,8 @@ class Agent {
       if (this.provider.avoid !== undefined) providerPayload.avoid = this.provider.avoid;
       if (this.provider.sort !== undefined) providerPayload.sort = this.provider.sort;
       if (this.provider.allowFallbacks !== undefined) providerPayload.allow_fallbacks = this.provider.allowFallbacks;
-      if (this.provider.requireParameters !== undefined) providerPayload.require_parameters = this.provider.requireParameters;
+      if (this.provider.requireParameters !== undefined)
+        providerPayload.require_parameters = this.provider.requireParameters;
       if (this.provider.dataCollection !== undefined) {
         providerPayload.data_collection = this.provider.dataCollection;
         providerPayload.dataCollection = this.provider.dataCollection;

@@ -40,10 +40,34 @@ export default deepFreeze({
   MAX_COMPLETION_TOKENS: process.env.OPENROUTER_MAX_COMPLETION_TOKENS,
   REASONING_EFFORT: process.env.OPENROUTER_REASONING_EFFORT,
   REASONING_MAX_TOKENS: process.env.OPENROUTER_REASONING_MAX_TOKENS,
-  REASONING_EXCLUDE: process.env.OPENROUTER_REASONING_EXCLUDE === 'true' || process.env.OPENROUTER_REASONING_EXCLUDE === '1' ? true : process.env.OPENROUTER_REASONING_EXCLUDE === 'false' || process.env.OPENROUTER_REASONING_EXCLUDE === '0' ? false : undefined,
-  REASONING_ENABLED: process.env.OPENROUTER_REASONING_ENABLED === 'true' || process.env.OPENROUTER_REASONING_ENABLED === '1' ? true : process.env.OPENROUTER_REASONING_ENABLED === 'false' || process.env.OPENROUTER_REASONING_ENABLED === '0' ? false : undefined,
-  PROVIDER_ALLOW_FALLBACKS: process.env.OPENROUTER_PROVIDER_ALLOW_FALLBACKS === 'true' || process.env.OPENROUTER_PROVIDER_ALLOW_FALLBACKS === '1' ? true : process.env.OPENROUTER_PROVIDER_ALLOW_FALLBACKS === 'false' || process.env.OPENROUTER_PROVIDER_ALLOW_FALLBACKS === '0' ? false : undefined,
-  PROVIDER_REQUIRE_PARAMETERS: process.env.OPENROUTER_PROVIDER_REQUIRE_PARAMETERS === 'true' || process.env.OPENROUTER_PROVIDER_REQUIRE_PARAMETERS === '1' ? true : process.env.OPENROUTER_PROVIDER_REQUIRE_PARAMETERS === 'false' || process.env.OPENROUTER_PROVIDER_REQUIRE_PARAMETERS === '0' ? false : undefined,
+  REASONING_EXCLUDE:
+    process.env.OPENROUTER_REASONING_EXCLUDE === 'true' || process.env.OPENROUTER_REASONING_EXCLUDE === '1'
+      ? true
+      : process.env.OPENROUTER_REASONING_EXCLUDE === 'false' || process.env.OPENROUTER_REASONING_EXCLUDE === '0'
+        ? false
+        : undefined,
+  REASONING_ENABLED:
+    process.env.OPENROUTER_REASONING_ENABLED === 'true' || process.env.OPENROUTER_REASONING_ENABLED === '1'
+      ? true
+      : process.env.OPENROUTER_REASONING_ENABLED === 'false' || process.env.OPENROUTER_REASONING_ENABLED === '0'
+        ? false
+        : undefined,
+  PROVIDER_ALLOW_FALLBACKS:
+    process.env.OPENROUTER_PROVIDER_ALLOW_FALLBACKS === 'true' ||
+    process.env.OPENROUTER_PROVIDER_ALLOW_FALLBACKS === '1'
+      ? true
+      : process.env.OPENROUTER_PROVIDER_ALLOW_FALLBACKS === 'false' ||
+          process.env.OPENROUTER_PROVIDER_ALLOW_FALLBACKS === '0'
+        ? false
+        : undefined,
+  PROVIDER_REQUIRE_PARAMETERS:
+    process.env.OPENROUTER_PROVIDER_REQUIRE_PARAMETERS === 'true' ||
+    process.env.OPENROUTER_PROVIDER_REQUIRE_PARAMETERS === '1'
+      ? true
+      : process.env.OPENROUTER_PROVIDER_REQUIRE_PARAMETERS === 'false' ||
+          process.env.OPENROUTER_PROVIDER_REQUIRE_PARAMETERS === '0'
+        ? false
+        : undefined,
   PROVIDER_DATA_COLLECTION: process.env.OPENROUTER_PROVIDER_DATA_COLLECTION,
   PROVIDER_AVOID: process.env.OPENROUTER_PROVIDER_AVOID?.split?.(','),
   PROVIDER_SORT: process.env.OPENROUTER_PROVIDER_SORT,

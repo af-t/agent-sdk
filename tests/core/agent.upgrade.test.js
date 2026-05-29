@@ -57,7 +57,7 @@ describe('Agent Upgrade — modern parameters and reasoning', () => {
     assert.strictEqual(agent.maxCompletionTokens, 150);
     assert.deepEqual(agent.responseFormat, { type: 'json_object' });
     assert.deepEqual(agent.stop, ['\n']);
-    
+
     assert.deepEqual(agent.reasoning, {
       effort: 'high',
       maxTokens: 1000,
@@ -84,10 +84,11 @@ describe('Agent Upgrade — modern parameters and reasoning', () => {
       return {
         ok: true,
         status: 200,
-        text: async () => JSON.stringify({
-          choices: [{ message: { role: 'assistant', content: 'Test response' } }],
-          usage: { cost: 0.001, total_tokens: 10 },
-        }),
+        text: async () =>
+          JSON.stringify({
+            choices: [{ message: { role: 'assistant', content: 'Test response' } }],
+            usage: { cost: 0.001, total_tokens: 10 },
+          }),
       };
     };
 
@@ -163,16 +164,19 @@ describe('Agent Upgrade — modern parameters and reasoning', () => {
       return {
         ok: true,
         status: 200,
-        text: async () => JSON.stringify({
-          choices: [{
-            message: {
-              role: 'assistant',
-              content: 'Final content',
-              reasoning_content: 'Thought process here',
-            },
-          }],
-          usage: { cost: 0.001, total_tokens: 20 },
-        }),
+        text: async () =>
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  role: 'assistant',
+                  content: 'Final content',
+                  reasoning_content: 'Thought process here',
+                },
+              },
+            ],
+            usage: { cost: 0.001, total_tokens: 20 },
+          }),
       };
     };
 
@@ -214,7 +218,7 @@ describe('Agent Upgrade — modern parameters and reasoning', () => {
     };
 
     const agent = new Agent({ apiKey: 'sk-custom' });
-    
+
     let streamChunks = [];
     const res = await agent.run('Hello', (update) => {
       streamChunks.push(update);
