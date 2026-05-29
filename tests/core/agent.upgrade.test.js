@@ -219,7 +219,7 @@ describe('Agent Upgrade — modern parameters and reasoning', () => {
 
     const agent = new Agent({ apiKey: 'sk-custom' });
 
-    let streamChunks = [];
+    const streamChunks = [];
     const res = await agent.run('Hello', (update) => {
       streamChunks.push(update);
     });
