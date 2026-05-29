@@ -1,5 +1,6 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { CONSTANTS } from '../../src/core/utils.js';
@@ -25,11 +26,13 @@ function makeJsonResponse(body) {
 describe('Agent', () => {
   let Agent;
   let ToolRegistry;
+  let describeJob;
 
   before(async () => {
     // We'll import with key present since env always has it
     const agentMod = await import('../../src/core/agent.js');
     Agent = agentMod.default;
+    describeJob = agentMod.describeJob;
     const registryMod = await import('../../src/registry/tool.js');
     ToolRegistry = registryMod.ToolRegistry;
   });
@@ -185,6 +188,27 @@ describe('Agent', () => {
       agent.reset();
       assert.equal(agent.fileState.size, 0);
       assert.equal(agent.currentTurn, 0);
+    });
+  });
+
+  describe('describeJob()', () => {
+    it('describeJob renders status and a log tail', () => {
+      const tmp = path.join(os.tmpdir(), `ortest-${Date.now()}.log`);
+      fs.writeFileSync(tmp, 'hello-from-job\n');
+      const agent = new Agent({ apiKey: 'x' });
+      agent.backgroundJobs.set('bg-aaaaa', {
+        id: 'bg-aaaaa',
+        kind: 'bash',
+        status: 'exited',
+        exitCode: 0,
+        startedAt: 0,
+        endedAt: 1000,
+        logPath: tmp,
+      });
+      const out = describeJob(agent, 'bg-aaaaa', 4096);
+      assert.match(out, /bg-aaaaa/);
+      assert.match(out, /hello-from-job/);
+      fs.unlinkSync(tmp);
     });
   });
 });

@@ -840,10 +840,15 @@ class Agent {
   #drainBgExits() {
     if (this.#pendingBgDrains.length === 0) return;
     const events = this.#pendingBgDrains.splice(0);
-    const lines = events.map(
-      (e) =>
+    const lines = [];
+    for (const e of events) {
+      lines.push(
         `- ${e.id} (${e.kind}): ${e.status}, exit ${e.exitCode}, ${Math.round(e.durationMs / 100) / 10}s, log: ${e.logPath}`,
-    );
+      );
+      if (Array.isArray(e.watch) && e.watch.length) {
+        for (const wid of e.watch) lines.push(describeJob(this, wid, e.tailBytes ?? 4096));
+      }
+    }
     const text = `<system-reminder>\nBackground job(s) exited:\n${lines.join('\n')}\n</system-reminder>`;
     this.messages.push({ role: 'user', content: [{ type: 'text', text }] });
   }
@@ -1224,6 +1229,35 @@ class Agent {
       await this.#drainPending();
     }
   }
+}
+
+function tailFile(logPath, bytes) {
+  try {
+    const stat = fs.statSync(logPath);
+    const start = Math.max(0, stat.size - bytes);
+    const fd = fs.openSync(logPath, 'r');
+    const buf = Buffer.alloc(stat.size - start);
+    fs.readSync(fd, buf, 0, buf.length, start);
+    fs.closeSync(fd);
+    return buf.toString('utf8');
+  } catch (err) {
+    return `(unable to tail: ${err.message})`;
+  }
+}
+
+export function describeJob(agent, id, tailBytes) {
+  const job = agent.backgroundJobs?.get(id);
+  if (!job) return `- ${id}: not found in agent.backgroundJobs`;
+  const elapsed = ((job.endedAt ?? Date.now()) - job.startedAt) / 1000;
+  const head = `- ${id} (${job.kind}): ${job.status}${
+    job.exitCode != null ? `, code ${job.exitCode}` : ''
+  }, ${elapsed.toFixed(1)}s`;
+  if (!job.logPath) return head;
+  const tail = tailFile(job.logPath, tailBytes);
+  return `${head}\n  tail (${tailBytes} bytes):\n${tail
+    .split('\n')
+    .map((l) => '    ' + l)
+    .join('\n')}`;
 }
 
 function defaultDateInjector() {
