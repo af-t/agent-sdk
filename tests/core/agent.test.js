@@ -897,4 +897,33 @@ describe('run() — steering applied in-loop', () => {
     const b = new Agent({ apiKey: 'x', autoWake: true });
     assert.equal(b.autoWake, true);
   });
+
+  describe('_scheduleTimer()', () => {
+    it('_scheduleTimer registers a timer job and fires an exit event', async () => {
+      const agent = new Agent({ apiKey: 'x' });
+      const events = [];
+      agent._onBackgroundExitRaw((e) => events.push(e));
+      const { id } = agent._scheduleTimer({ durationMs: 20, watch: [], tailBytes: 4096 });
+      assert.match(id, /^bg-[0-9a-f]{5}$/);
+      const job = agent.backgroundJobs.get(id);
+      assert.equal(job.kind, 'timer');
+      assert.equal(job.status, 'running');
+      await new Promise((r) => setTimeout(r, 50));
+      assert.equal(agent.backgroundJobs.get(id).status, 'done');
+      assert.equal(events.length, 1);
+      assert.equal(events[0].kind, 'timer');
+      assert.equal(events[0].exitCode, 0);
+    });
+
+    it('cleanup clears a pending timer so no exit fires afterwards', async () => {
+      const agent = new Agent({ apiKey: 'x' });
+      const events = [];
+      agent._onBackgroundExitRaw((e) => events.push(e));
+      const { id } = agent._scheduleTimer({ durationMs: 1000, watch: [], tailBytes: 4096 });
+      await agent.cleanup();
+      await new Promise((r) => setTimeout(r, 40));
+      assert.equal(events.length, 0);
+      assert.equal(agent.backgroundJobs.get(id).status, 'killed');
+    });
+  });
 });

@@ -54,6 +54,7 @@ class Agent {
   #bgExitListeners;
   #bgRawListeners;
   #pendingBgDrains;
+  #wakeScheduled = false;
   #envInfo = [
     '',
     '',
@@ -840,6 +841,39 @@ class Agent {
     this.#multimodalUnsupported = false;
   }
 
+  _scheduleTimer({ durationMs, watch = [], tailBytes = 4096 }) {
+    const id = 'bg-' + crypto.randomBytes(4).toString('hex').slice(0, 5);
+    const job = {
+      id,
+      kind: 'timer',
+      status: 'running',
+      startedAt: Date.now(),
+      endedAt: null,
+      exitCode: null,
+      logPath: null,
+      watch,
+      tailBytes,
+      timer: null,
+    };
+    job.timer = setTimeout(() => {
+      job.endedAt = Date.now();
+      job.status = 'done';
+      job.exitCode = 0;
+      this._fireBackgroundExit({
+        id,
+        kind: 'timer',
+        status: 'done',
+        exitCode: 0,
+        durationMs: job.endedAt - job.startedAt,
+        logPath: null,
+        watch,
+        tailBytes,
+      });
+    }, durationMs);
+    this.backgroundJobs.set(id, job);
+    return { id };
+  }
+
   _resolveBackgroundLogDir() {
     if (this._bgLogDir) return this._bgLogDir;
     let dir;
@@ -860,6 +894,11 @@ class Agent {
     const killing = [];
     for (const job of this.backgroundJobs.values()) {
       if (job.status !== 'running') continue;
+      if (job.kind === 'timer') {
+        if (job.timer) clearTimeout(job.timer);
+        job.status = 'killed';
+        continue;
+      }
       const child = job.child;
       if (child && typeof child.kill === 'function') {
         try {
