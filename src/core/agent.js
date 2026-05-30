@@ -1265,12 +1265,22 @@ export function describeJob(agent, id, tailBytes) {
   const head = `- ${id} (${job.kind}): ${job.status}${
     job.exitCode != null ? `, code ${job.exitCode}` : ''
   }, ${elapsed.toFixed(1)}s`;
-  if (!job.logPath) return head;
-  const tail = tailFile(job.logPath, tailBytes);
-  return `${head}\n  tail (${tailBytes} bytes):\n${tail
-    .split('\n')
-    .map((l) => '    ' + l)
-    .join('\n')}`;
+  let out = head;
+  if (job.logPath) {
+    const tail = tailFile(job.logPath, tailBytes);
+    out += `\n  tail (${tailBytes} bytes):\n${tail
+      .split('\n')
+      .map((l) => '    ' + l)
+      .join('\n')}`;
+  }
+  if (job.traceLogPath) {
+    const traceTail = tailFile(job.traceLogPath, tailBytes);
+    out += `\n  trace tail (${tailBytes} bytes):\n${traceTail
+      .split('\n')
+      .map((l) => '    ' + l)
+      .join('\n')}`;
+  }
+  return out;
 }
 
 function defaultDateInjector() {

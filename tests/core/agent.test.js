@@ -210,6 +210,29 @@ describe('Agent', () => {
       assert.match(out, /hello-from-job/);
       fs.unlinkSync(tmp);
     });
+
+    it('describeJob appends a trace tail when the job has a traceLogPath', async () => {
+      const agent = new Agent({ apiKey: 'x' });
+      const dir = agent._resolveBackgroundLogDir();
+      const logPath = path.join(dir, 'background-jobX.log');
+      const traceLogPath = path.join(dir, 'trace-jobX.log');
+      fs.writeFileSync(logPath, 'REPORT BODY');
+      fs.writeFileSync(traceLogPath, '=== turn 1 ===\n[assistant]\nTRACE BODY\n');
+      agent.backgroundJobs.set('jobX', {
+        id: 'jobX',
+        kind: 'delegate',
+        status: 'exited',
+        exitCode: 0,
+        logPath,
+        traceLogPath,
+        startedAt: 0,
+        endedAt: 1000,
+      });
+      const out = describeJob(agent, 'jobX', 4096);
+      assert.match(out, /REPORT BODY/);
+      assert.match(out, /TRACE BODY/);
+      await agent.cleanup();
+    });
   });
 });
 
