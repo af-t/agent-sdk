@@ -75,3 +75,31 @@ test('Delegate background:true returns immediately with job id', async () => {
     await parent.cleanup();
   }
 });
+
+test('foreground Delegate writes a trace file with subagent activity', async () => {
+  // run() receives the notify callback as its 2nd arg; emit synthetic events through it.
+  mock.method(Agent.prototype, 'run', async function (_prompt, notify) {
+    await notify({ reasoning: 'planning' });
+    await notify({ content: 'doing the work' });
+    await notify({ tool_calls: [{ id: 't1', function: { name: 'Read', arguments: '{}' } }] });
+    await notify({ tool_start: { tool_call_id: 't1', name: 'Read', input: { file_path: '/a' } } });
+    await notify({ tool_end: { tool_call_id: 't1', name: 'Read', duration_ms: 7, output: 'body' } });
+    return 'final report from subagent';
+  });
+  const parent = await createAgent({ apiKey: 'x' });
+  try {
+    const { execute: delegateExecute } = await import('../../src/tools/system/delegate.js');
+    const out = await delegateExecute(
+      { prompt: 'do work', description: 'do work' },
+      { agent: parent, signal: new AbortController().signal },
+    );
+    const m = out.match(/Trace: (\S+)/);
+    assert.ok(m, `expected Trace path in footer, got:\n${out}`);
+    const trace = fs.readFileSync(m[1], 'utf8');
+    assert.match(trace, /=== turn 1 ===/);
+    assert.match(trace, /\[reasoning\]\nplanning/);
+    assert.match(trace, /-> Read#t1 end \(7ms\): body/);
+  } finally {
+    await parent.cleanup();
+  }
+});

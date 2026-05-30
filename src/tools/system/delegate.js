@@ -1,9 +1,11 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import Agent from '../../core/agent.js';
 import { CONSTANTS } from '../../core/utils.js';
 import logger from '../../core/logger.js';
+import { createTraceWriter } from '../../core/trace-writer.js';
 
 export const name = 'Delegate';
 export const description =
@@ -153,7 +155,20 @@ export const execute = async ({ description, prompt, persona, id, background = f
     const msgsBefore = subagent.messages.length;
     const startTime = Date.now();
 
-    const report = await subagent.run(prompt, null, { signal });
+    const traceId = crypto.randomBytes(4).toString('hex').slice(0, 5);
+    const logDir =
+      typeof agent._resolveBackgroundLogDir === 'function'
+        ? agent._resolveBackgroundLogDir()
+        : agent._storagePaths?.tmpDir || os.tmpdir();
+    const traceLogPath = path.join(logDir, `trace-${traceId}.log`);
+    const writer = createTraceWriter(traceLogPath);
+
+    let report;
+    try {
+      report = await subagent.run(prompt, writer.notify, { signal });
+    } finally {
+      await writer.close();
+    }
 
     const elapsed = Date.now() - startTime;
     const toolCalls = subagent.messages.slice(msgsBefore).filter((m) => m.role === 'tool').length;
@@ -165,7 +180,9 @@ export const execute = async ({ description, prompt, persona, id, background = f
       elapsed < 60000
         ? `${Math.round(elapsed / 1000)}s`
         : `${Math.floor(elapsed / 60000)}m ${Math.round((elapsed % 60000) / 1000)}s`;
-    const footer = `\n\n---\nSubagent ID: ${resolvedId} (${status})\nTool calls: ${toolCalls}\nDuration: ${duration}`;
+    const footer =
+      `\n\n---\nSubagent ID: ${resolvedId} (${status})\nTool calls: ${toolCalls}\n` +
+      `Duration: ${duration}\nTrace: ${traceLogPath}`;
     return report + footer;
   } catch (err) {
     throw new Error(`Delegation failed: ${err.message}`, { cause: err });
