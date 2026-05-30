@@ -84,6 +84,8 @@ export const execute = async ({ description, prompt, persona, id, background = f
     const bgId = 'bg-' + crypto.randomBytes(4).toString('hex').slice(0, 5);
     const dir = agent._resolveBackgroundLogDir();
     const logPath = path.join(dir, `background-${bgId}.log`);
+    const traceLogPath = path.join(dir, `trace-${bgId}.log`);
+    const writer = createTraceWriter(traceLogPath);
     const startedAt = Date.now();
     const snapshotBefore = {
       cost: subagent.usage.cost,
@@ -96,6 +98,7 @@ export const execute = async ({ description, prompt, persona, id, background = f
       subagent,
       child: null,
       logPath,
+      traceLogPath,
       startedAt,
       endedAt: null,
       exitCode: null,
@@ -109,11 +112,12 @@ export const execute = async ({ description, prompt, persona, id, background = f
       let report;
       let crashed = false;
       try {
-        report = await subagent.run(prompt, null, { signal });
+        report = await subagent.run(prompt, writer.notify, { signal });
       } catch (err) {
         crashed = true;
         report = `Error: ${err.message}`;
       }
+      await writer.close();
       job.endedAt = Date.now();
       job.exitCode = crashed ? -1 : 0;
       job.status = crashed ? 'crashed' : 'exited';
@@ -138,6 +142,7 @@ export const execute = async ({ description, prompt, persona, id, background = f
         durationMs: job.endedAt - job.startedAt,
         status: job.status,
         logPath,
+        traceLogPath,
       });
     })();
 
@@ -146,6 +151,7 @@ export const execute = async ({ description, prompt, persona, id, background = f
       `Job ID: ${bgId} (kind: delegate)\n` +
       `Subagent ID: ${resolvedId} (${isNew ? 'new' : 'reused'})\n` +
       `Log: ${logPath}\n` +
+      `Trace (live): ${traceLogPath}\n` +
       `Use Remind({ wait_ms, watch: ['${bgId}'] }) to wait/peek, or Read the log.`
     );
   }

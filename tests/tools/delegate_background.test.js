@@ -103,3 +103,41 @@ test('foreground Delegate writes a trace file with subagent activity', async () 
     await parent.cleanup();
   }
 });
+
+test('background Delegate streams a trace file and exit event carries traceLogPath', async () => {
+  let resolveDone;
+  const done = new Promise((r) => (resolveDone = r));
+  mock.method(Agent.prototype, 'run', async function (_prompt, notify) {
+    await notify({ content: 'bg work' });
+    await notify({ tool_calls: [{ id: 'b1', function: { name: 'Bash' } }] });
+    await notify({ tool_end: { tool_call_id: 'b1', name: 'Bash', duration_ms: 3, output: 'ok' } });
+    return 'bg final report';
+  });
+  const parent = await createAgent({ apiKey: 'x' });
+  const seen = [];
+  const dispose = parent._onBackgroundExitRaw((e) => {
+    seen.push(e);
+    resolveDone();
+  });
+  try {
+    const { execute: delegateExecute } = await import('../../src/tools/system/delegate.js');
+    const out = await delegateExecute(
+      { prompt: 'do work', description: 'do work', background: true },
+      { agent: parent, signal: new AbortController().signal },
+    );
+    const m = out.match(/Trace \(live\): (\S+)/);
+    assert.ok(m, `expected Trace (live) path, got:\n${out}`);
+
+    await done;
+    await new Promise((r) => setTimeout(r, 50));
+
+    const event = seen.find((e) => e.kind === 'delegate');
+    assert.ok(event.traceLogPath, 'exit event should carry traceLogPath');
+    const trace = fs.readFileSync(event.traceLogPath, 'utf8');
+    assert.match(trace, /\[assistant\]\nbg work/);
+    assert.match(trace, /-> Bash#b1 end \(3ms\): ok/);
+  } finally {
+    dispose();
+    await parent.cleanup();
+  }
+});
