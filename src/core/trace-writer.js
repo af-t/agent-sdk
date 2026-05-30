@@ -1,0 +1,59 @@
+import fs from 'node:fs';
+import { truncateOutput } from './utils.js';
+
+const TRACE_TOOL_OUTPUT_CAP = 2000;
+
+function safeStringify(v) {
+  if (typeof v === 'string') return v;
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
+}
+
+export function createTraceWriter(logPath, { toolOutputCap = TRACE_TOOL_OUTPUT_CAP } = {}) {
+  const stream = fs.createWriteStream(logPath, { flags: 'a' });
+  let turn = 0;
+  let lastReasoning = '';
+  let lastContent = '';
+
+  function flushTurn() {
+    turn += 1;
+    let block = `=== turn ${turn} ===\n`;
+    if (lastReasoning.trim()) block += `[reasoning]\n${lastReasoning}\n`;
+    if (lastContent.trim()) block += `[assistant]\n${lastContent}\n`;
+    stream.write(block);
+    lastReasoning = '';
+    lastContent = '';
+  }
+
+  function notify(event) {
+    if (!event || typeof event !== 'object') return;
+    if (typeof event.reasoning === 'string') lastReasoning = event.reasoning;
+    if (typeof event.content === 'string') lastContent = event.content;
+
+    if (event.tool_calls) {
+      flushTurn();
+      const names = event.tool_calls.map((tc) => tc.function?.name || tc.name || '?').join(', ');
+      stream.write(`[tool_calls] ${names}\n`);
+    }
+    if (event.tool_start) {
+      const { tool_call_id, name, input } = event.tool_start;
+      const inp = truncateOutput(safeStringify(input), toolOutputCap);
+      stream.write(`  -> ${name}#${tool_call_id} start: ${inp}\n`);
+    }
+    if (event.tool_end) {
+      const { tool_call_id, name, duration_ms, output, error } = event.tool_end;
+      const body = error ? `ERROR ${error}` : truncateOutput(safeStringify(output), toolOutputCap);
+      stream.write(`  -> ${name}#${tool_call_id} end (${duration_ms}ms): ${body}\n`);
+    }
+  }
+
+  function close() {
+    if (lastReasoning.trim() || lastContent.trim()) flushTurn();
+    return new Promise((resolve) => stream.end(resolve));
+  }
+
+  return { notify, close };
+}
