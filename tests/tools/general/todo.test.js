@@ -494,6 +494,30 @@ describe('Todo Tool', () => {
     await fsP.rm(tmpDir, { recursive: true });
   });
 
+  it('throws a clear error when neither todo_file nor ctx.agent._todoFile is provided', async () => {
+    const mod = await import('../../../src/tools/general/todo.js');
+    await assert.rejects(() => mod.execute({ action: 'list' }, {}), /configured storage path|todo_file/i);
+  });
+
+  it('auto-creates the parent directory of _todoFile when writing', async () => {
+    const fsP = await import('node:fs/promises');
+    const os_ = await import('node:os');
+    const path_ = await import('node:path');
+    const base = await fsP.mkdtemp(path_.join(os_.tmpdir(), 'todo-mkdir-'));
+    const nestedFile = path_.join(base, '.openrouter', 'todos.json');
+
+    const mod = await import('../../../src/tools/general/todo.js');
+    const ctx = { agent: { _todoFile: nestedFile, trustedPaths: new Set([base]) } };
+
+    const result = await mod.execute({ action: 'add', text: 'Nested todo' }, ctx);
+    assert.ok(result.includes('Nested todo'));
+
+    const raw = await fsP.readFile(nestedFile, 'utf8');
+    assert.strictEqual(JSON.parse(raw).length, 1);
+
+    await fsP.rm(base, { recursive: true });
+  });
+
   it('todo_file param takes precedence over ctx.agent._todoFile', async () => {
     const fsP = await import('node:fs/promises');
     const os_ = await import('node:os');

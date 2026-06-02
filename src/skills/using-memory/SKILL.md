@@ -43,7 +43,7 @@ LLM sees index on the very first turn → reads relevant files on demand
 
 ### Memory Directory
 
-The memory directory is configured via the `storagePaths.memoryDir` option (or the legacy `memoryDir` option) on the Agent constructor. The path is resolved to an absolute path at construction time, including `~` expansion. Default: **`.openrouter/memory/`** relative to the project root.
+The memory directory is configured via the `storagePaths.memoryDir` option on the Agent constructor. The path is resolved to an absolute path at construction time, including `~` expansion. Default: **`.openrouter/memory/`** relative to the project root.
 
 The directory is read from `agent._memoryDir` and is always an absolute path. If the configured directory is outside the project root, it is registered in `agent.trustedPaths` so Read/Write/Edit tools can access it normally — you do not need to do anything special to read or write memory files there.
 

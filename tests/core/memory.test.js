@@ -108,7 +108,7 @@ describe('Agent — memoryHint injector', () => {
     const agent = new Agent({
       apiKey: 'sk-test',
       injectors: { date: false, contextFiles: false, memoryIndex: false, skillList: false },
-      memoryDir: '/tmp/custom/memory',
+      storagePaths: { memoryDir: '/tmp/custom/memory' },
     });
     await agent.run('hi');
 
@@ -156,7 +156,7 @@ describe('Agent — memoryIndex injector', () => {
     const agent = new Agent({
       apiKey: 'sk-test',
       injectors: { date: false, contextFiles: false, memoryHint: false, skillList: false },
-      memoryDir: path.join(tempDir, 'does-not-exist'),
+      storagePaths: { memoryDir: path.join(tempDir, 'does-not-exist') },
     });
     await agent.run('hi');
 
@@ -174,7 +174,7 @@ describe('Agent — memoryIndex injector', () => {
     const agent = new Agent({
       apiKey: 'sk-test',
       injectors: { date: false, contextFiles: false, memoryHint: false, skillList: false },
-      memoryDir: subDir,
+      storagePaths: { memoryDir: subDir },
     });
     await agent.run('hi');
 
@@ -193,7 +193,7 @@ describe('Agent — memoryIndex injector', () => {
     const agent = new Agent({
       apiKey: 'sk-test',
       injectors: { date: false, contextFiles: false, memoryHint: false, skillList: false },
-      memoryDir: subDir,
+      storagePaths: { memoryDir: subDir },
     });
     await agent.run('hi');
 
@@ -209,7 +209,7 @@ describe('Agent — memoryIndex injector', () => {
     const agent = new Agent({
       apiKey: 'sk-test',
       injectors: { date: false, contextFiles: false, memoryHint: false, skillList: false },
-      memoryDir: '/etc/openrouter-memory',
+      storagePaths: { memoryDir: '/etc/openrouter-memory' },
     });
 
     // Should not throw — injector swallows the rejection.

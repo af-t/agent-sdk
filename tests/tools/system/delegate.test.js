@@ -64,7 +64,7 @@ describe('Delegate tool — execute()', () => {
       provider: {},
       tools: {},
       usage: { cost: 0, tokens: 0 },
-      maxTokens: undefined,
+      maxCompletionTokens: undefined,
       subagents: new Map(),
     };
 
@@ -75,6 +75,27 @@ describe('Delegate tool — execute()', () => {
     assert.ok(result.includes('(new)'));
     assert.strictEqual(Agent.prototype.run.mock.calls.length, 1);
     assert.ok(fakeAgent.usage.cost >= 0);
+  });
+
+  it('subagent inherits parent maxCompletionTokens (not the removed maxTokens)', async () => {
+    mock.method(Agent.prototype, 'run', async () => 'done');
+
+    const parent = new Agent({ apiKey: 'sk-test-key', maxCompletionTokens: 4096 });
+    await mod.execute({ description: 'Task', prompt: 'Work' }, { agent: parent });
+
+    const sub = [...parent.subagents.values()][0];
+    assert.strictEqual(sub.maxCompletionTokens, 4096);
+    assert.strictEqual(sub.maxTokens, undefined);
+  });
+
+  it('subagent defaults maxCompletionTokens to MAX_COMPLETION_TOKENS_SUBAGENT', async () => {
+    mock.method(Agent.prototype, 'run', async () => 'done');
+
+    const parent = new Agent({ apiKey: 'sk-test-key' });
+    await mod.execute({ description: 'Task', prompt: 'Work' }, { agent: parent });
+
+    const sub = [...parent.subagents.values()][0];
+    assert.strictEqual(sub.maxCompletionTokens, 32000);
   });
 
   it('should pass persona as systemPrompt to sub-agent', async () => {

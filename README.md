@@ -108,7 +108,6 @@ cp .env.example .env
 | ----------------------- | -------- | -------------------------------------------------------------- |
 | `OPENROUTER_API_KEY`    | Yes      | Your OpenRouter API key                                        |
 | `OPENROUTER_MODEL`      | No       | Default model (e.g. `inclusionai/ling-2.6-1t:free`)            |
-| `OPENROUTER_MAX_TOKENS` | No       | Maximum output tokens                                          |
 | `OPENROUTER_MAX_TURNS`  | No       | Maximum number of request cycles per `run()` (default: 25)     |
 | `OPENROUTER_ORDER`      | No       | Comma-separated provider priority order                        |
 | `OPENROUTER_ONLY`       | No       | Restrict to specific providers only                            |
@@ -116,7 +115,7 @@ cp .env.example .env
 | `DEBUG`                 | No       | Enable debug logging (`true`/`1`)                              |
 | `OPENROUTER_TEMPERATURE`, `OPENROUTER_TOP_P`, `OPENROUTER_MIN_P`, `OPENROUTER_TOP_K` | No | Sampling controls |
 | `OPENROUTER_FREQUENCY_PENALTY`, `OPENROUTER_PRESENCE_PENALTY`, `OPENROUTER_REPETITION_PENALTY` | No | Repetition controls |
-| `OPENROUTER_SEED`, `OPENROUTER_MAX_COMPLETION_TOKENS` | No | Deterministic seed; output token cap (supersedes `MAX_TOKENS`) |
+| `OPENROUTER_SEED`, `OPENROUTER_MAX_COMPLETION_TOKENS` | No | Deterministic seed; output token cap (`max_completion_tokens`) |
 | `OPENROUTER_REASONING_EFFORT`, `OPENROUTER_REASONING_MAX_TOKENS`, `OPENROUTER_REASONING_EXCLUDE`, `OPENROUTER_REASONING_ENABLED` | No | Reasoning controls |
 | `OPENROUTER_PROVIDER_AVOID`, `OPENROUTER_PROVIDER_SORT`, `OPENROUTER_PROVIDER_ALLOW_FALLBACKS`, `OPENROUTER_PROVIDER_REQUIRE_PARAMETERS`, `OPENROUTER_PROVIDER_DATA_COLLECTION` | No | Provider routing |
 
@@ -460,7 +459,7 @@ const agent = await createAgent({
 ```
 
 - `memoryDir` — directory for persistent memory files (`MEMORY.md` + individual memory files). Default: `.openrouter/memory` in the project root.
-- `tmpDir` — directory for temporary files. When set, the todo file is created as `todos-XXXXX.json` inside this directory with a random 5-character suffix per agent instance. Default: `.todos.json` in the project root.
+- `tmpDir` — directory for temporary files. When set, the todo file is created as `todos-XXXXX.json` inside this directory with a random 5-character suffix per agent instance. Default: `.openrouter/todos.json` in the project root.
 
 Paths support `~` expansion. Both accept paths inside or outside the project root.
 
@@ -500,7 +499,7 @@ try {
 └── ...
 ```
 
-The directory is **not auto-created**. The agent (or you) creates files on demand. Override the location via the `memoryDir` constructor option.
+The directory is **not auto-created**. The agent (or you) creates files on demand. Override the location via `storagePaths.memoryDir`.
 
 ### File Format
 
@@ -598,19 +597,17 @@ Factory function to create an Agent instance.
 | `temperature`, `topP`, `minP`, `topK` | number | Sampling controls. Option wins over env.                            |
 | `frequencyPenalty`, `presencePenalty`, `repetitionPenalty` | number | Repetition controls.                           |
 | `seed`               | number   | Deterministic sampling seed.                                                          |
-| `maxCompletionTokens`| number   | Output token cap; sent as `max_completion_tokens`, supersedes `maxTokens`.            |
+| `maxCompletionTokens`| number   | Output token cap; sent as `max_completion_tokens`.                                    |
 | `responseFormat`     | object   | Passed through as `response_format` (e.g. JSON mode).                                 |
 | `stop`               | string[] | Stop sequences.                                                                      |
 | `reasoning`          | object   | `{ effort, maxTokens, exclude, enabled }`. Maps to OpenRouter's `reasoning`.          |
 | `systemPrompt`       | string   | System prompt override. Falls back to `RULE.md`, then a built-in default.             |
 | `maxTurns`           | number   | Max request cycles per `run()`. Default `25`; `0` means unlimited.                    |
-| `maxTokens`          | number   | Maximum output tokens per request.                                                    |
 | `effort`             | string   | Reasoning effort: `'low'`, `'medium'`, `'high'`. Default `'high'`.                    |
 | `maxToolOutputChars` | number   | Cap (in chars) for tool output before truncation. Default `50_000`.                   |
 | `restricted`         | boolean  | Security mode. Default `true`. Set `false` to lift path-boundary checks, env filtering, and shell command blocks (logs a warning). |
 | `storagePaths`       | object   | `{ memoryDir?, tmpDir? }`. Paths support `~` expansion. External dirs are auto-added to `trustedPaths`. |
 | `contextFiles`       | string[] | Files to inject on the first turn. Default `['AGENT.md']`. Missing files are skipped. |
-| `memoryDir`          | string   | Legacy alias for `storagePaths.memoryDir`. `storagePaths.memoryDir` takes precedence. |
 | `memoryTypes`        | object   | Custom memory type descriptions; merged over the four built-in types.                 |
 | `injectors`          | object   | Disable built-in injectors by name, e.g. `{ date: false, skillList: false }`.         |
 

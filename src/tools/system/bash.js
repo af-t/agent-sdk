@@ -101,7 +101,7 @@ const SIGKILL_GRACE_MS = 2000;
 
 // spawn fallback (used when node-pty is unavailable)
 
-function runWithSpawn(command, cwd, env, timeout, signal, onTimeout, agent) {
+function runWithSpawn(command, cwd, env, timeout, signal, agent) {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
     const child = spawn('bash', ['-c', 'exec 2>&1; ' + command], {
@@ -135,7 +135,7 @@ function runWithSpawn(command, cwd, env, timeout, signal, onTimeout, agent) {
     });
 
     const timer = setTimeout(() => {
-      if (onTimeout === 'background' && agent) {
+      if (agent) {
         detachedToBackground = true;
         const id = generateJobId();
         const dir = agent._resolveBackgroundLogDir();
@@ -178,9 +178,7 @@ function runWithSpawn(command, cwd, env, timeout, signal, onTimeout, agent) {
             `Output so far (first 4KB):\n${output.slice(0, 4096)}`,
         );
       } else {
-        if (onTimeout === 'background' && !agent) {
-          logger.warn('on_timeout=background requires ctx.agent; falling back to kill behavior');
-        }
+        logger.warn('Bash timeout cannot detach to background without ctx.agent; killing the process');
         child.kill();
         reject(new Error(`Execution timed out after ${timeout}ms\n\nPartial Output:\n${output}`));
       }
@@ -217,7 +215,7 @@ function runWithSpawn(command, cwd, env, timeout, signal, onTimeout, agent) {
 
 // PTY mode (primary, uses node-pty)
 
-function runWithPty(command, cwd, env, timeout, signal, onTimeout, agent) {
+function runWithPty(command, cwd, env, timeout, signal, agent) {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
     let ptyProcess;
@@ -257,7 +255,7 @@ function runWithPty(command, cwd, env, timeout, signal, onTimeout, agent) {
     }
 
     const timer = setTimeout(() => {
-      if (onTimeout === 'background' && agent) {
+      if (agent) {
         detachedToBackground = true;
         const id = generateJobId();
         const dir = agent._resolveBackgroundLogDir();
@@ -299,9 +297,7 @@ function runWithPty(command, cwd, env, timeout, signal, onTimeout, agent) {
             `Output so far (first 4KB):\n${output.slice(0, 4096)}`,
         );
       } else {
-        if (onTimeout === 'background' && !agent) {
-          logger.warn('on_timeout=background requires ctx.agent; falling back to kill behavior');
-        }
+        logger.warn('Bash timeout cannot detach to background without ctx.agent; killing the process');
         ptyProcess.kill();
         reject(new Error(`Execution timed out after ${timeout}ms\n\nPartial Output:\n${output}`));
       }
@@ -500,25 +496,12 @@ export const input_schema = {
       description:
         'Start the command in the background. Returns immediately with a job ID and log path; the agent receives an exit notification when the process finishes.',
     },
-    on_timeout: {
-      type: 'string',
-      enum: ['kill', 'background'],
-      description:
-        "Action when the timeout fires: 'kill' aborts the process (original behavior), 'background' detaches it into a background job. Default 'background'.",
-    },
   },
   required: ['command'],
 };
 
 export const execute = async (
-  {
-    command,
-    cwd = process.cwd(),
-    env = process.env,
-    timeout = 300000,
-    background = false,
-    on_timeout: _on_timeout = 'background',
-  },
+  { command, cwd = process.cwd(), env = process.env, timeout = 300000, background = false },
   ctx = {},
 ) => {
   const signal = ctx.signal;
@@ -571,9 +554,9 @@ export const execute = async (
   }
 
   if (ptyMod) {
-    return runWithPty(command, cwd, safeEnv, timeout, signal, _on_timeout, ctx.agent);
+    return runWithPty(command, cwd, safeEnv, timeout, signal, ctx.agent);
   }
 
   logger.debug('node-pty unavailable, falling back to spawn');
-  return runWithSpawn(command, cwd, safeEnv, timeout, signal, _on_timeout, ctx.agent);
+  return runWithSpawn(command, cwd, safeEnv, timeout, signal, ctx.agent);
 };

@@ -542,18 +542,9 @@ describe('Agent — storagePaths option', () => {
     assert.ok(agent._memoryDir.endsWith(path.join('.config', 'test', 'memory')));
   });
 
-  it('storagePaths.memoryDir takes precedence over legacy memoryDir option', () => {
-    const agent = new Agent({
-      apiKey: 'sk-test',
-      memoryDir: '.old/memory',
-      storagePaths: { memoryDir: '~/.config/new/memory' },
-    });
-    assert.ok(agent._memoryDir.includes(path.join('.config', 'new', 'memory')));
-  });
-
-  it('legacy memoryDir still works when storagePaths is absent', () => {
+  it('ignores the removed top-level memoryDir option (defaults to .openrouter/memory)', () => {
     const agent = new Agent({ apiKey: 'sk-test', memoryDir: '.custom/memory' });
-    assert.ok(agent._memoryDir.endsWith('.custom/memory'));
+    assert.strictEqual(agent._memoryDir, path.resolve('.openrouter/memory'));
   });
 
   it('default _memoryDir is resolved .openrouter/memory when neither option is provided', () => {
@@ -573,9 +564,9 @@ describe('Agent — storagePaths option', () => {
     assert.notStrictEqual(a._todoFile, b._todoFile);
   });
 
-  it('without tmpDir, _todoFile defaults to .todos.json in process.cwd()', () => {
+  it('without tmpDir, _todoFile defaults to .openrouter/todos.json', () => {
     const agent = new Agent({ apiKey: 'sk-test' });
-    assert.strictEqual(agent._todoFile, path.join(process.cwd(), '.todos.json'));
+    assert.strictEqual(agent._todoFile, path.resolve('.openrouter/todos.json'));
   });
 
   it('trustedPaths contains external memoryDir', () => {

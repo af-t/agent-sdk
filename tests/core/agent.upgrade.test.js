@@ -156,7 +156,7 @@ describe('Agent Upgrade — modern parameters and reasoning', () => {
     });
   });
 
-  it('robustly extracts reasoning and reasoning_content from non-streaming response', async () => {
+  it('ignores the removed maxTokens option and never emits max_tokens in the payload', async () => {
     let capturedPayload = null;
 
     global.fetch = async (url, opts) => {
@@ -166,19 +166,30 @@ describe('Agent Upgrade — modern parameters and reasoning', () => {
         status: 200,
         text: async () =>
           JSON.stringify({
-            choices: [
-              {
-                message: {
-                  role: 'assistant',
-                  content: 'Final content',
-                  reasoning_content: 'Thought process here',
-                },
-              },
-            ],
-            usage: { cost: 0.001, total_tokens: 20 },
+            choices: [{ message: { role: 'assistant', content: 'ok' } }],
+            usage: { cost: 0, total_tokens: 1 },
           }),
       };
     };
+
+    const agent = new Agent({ apiKey: 'sk-custom', maxTokens: 999 });
+    assert.strictEqual(agent.maxTokens, undefined);
+
+    await agent.run('Hello');
+
+    assert.strictEqual(capturedPayload.max_tokens, undefined);
+  });
+
+  it('extracts the modern reasoning field from a non-streaming response', async () => {
+    global.fetch = async () => ({
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          choices: [{ message: { role: 'assistant', content: 'Final content', reasoning: 'Thought process here' } }],
+          usage: { cost: 0.001, total_tokens: 20 },
+        }),
+    });
 
     const agent = new Agent({ apiKey: 'sk-custom' });
     const res = await agent.run('Hello');
@@ -190,12 +201,30 @@ describe('Agent Upgrade — modern parameters and reasoning', () => {
     assert.strictEqual(lastMsg.content, 'Final content');
   });
 
-  it('robustly extracts reasoning and reasoning_content from streaming response', async () => {
-    global.fetch = async (url, opts) => {
+  it('ignores the legacy reasoning_content field in a non-streaming response', async () => {
+    global.fetch = async () => ({
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          choices: [{ message: { role: 'assistant', content: 'Final content', reasoning_content: 'Old reasoning' } }],
+          usage: { cost: 0.001, total_tokens: 20 },
+        }),
+    });
+
+    const agent = new Agent({ apiKey: 'sk-custom' });
+    await agent.run('Hello');
+
+    const lastMsg = agent.messages[agent.messages.length - 1];
+    assert.strictEqual(lastMsg.reasoning, undefined);
+  });
+
+  it('extracts the modern reasoning field from a streaming response', async () => {
+    global.fetch = async () => {
       const chunks = [
-        'data: {"choices": [{"delta": {"reasoning_content": "Thinking..."}}]}',
+        'data: {"choices": [{"delta": {"reasoning": "Thinking..."}}]}',
         'data: {"choices": [{"delta": {"content": "Hello "}}]}',
-        'data: {"choices": [{"delta": {"reasoning_content": " more thinking"}}]}',
+        'data: {"choices": [{"delta": {"reasoning": " more thinking"}}]}',
         'data: {"choices": [{"delta": {"content": "world!"}}]}',
         'data: [DONE]',
       ];
@@ -210,24 +239,45 @@ describe('Agent Upgrade — modern parameters and reasoning', () => {
         },
       });
 
-      return {
-        ok: true,
-        status: 200,
-        body: readable,
-      };
+      return { ok: true, status: 200, body: readable };
     };
 
     const agent = new Agent({ apiKey: 'sk-custom' });
-
-    const streamChunks = [];
-    const res = await agent.run('Hello', (update) => {
-      streamChunks.push(update);
-    });
+    const res = await agent.run('Hello', () => {});
 
     assert.strictEqual(res, 'Hello world!');
     const lastMsg = agent.messages[agent.messages.length - 1];
     assert.strictEqual(lastMsg.role, 'assistant');
     assert.strictEqual(lastMsg.reasoning, 'Thinking... more thinking');
     assert.strictEqual(lastMsg.content, 'Hello world!');
+  });
+
+  it('ignores the legacy reasoning_content field in a streaming response', async () => {
+    global.fetch = async () => {
+      const chunks = [
+        'data: {"choices": [{"delta": {"reasoning_content": "Thinking..."}}]}',
+        'data: {"choices": [{"delta": {"content": "Hello world!"}}]}',
+        'data: [DONE]',
+      ];
+
+      const encoder = new TextEncoder();
+      const readable = new ReadableStream({
+        start(controller) {
+          for (const chunk of chunks) {
+            controller.enqueue(encoder.encode(chunk + '\n'));
+          }
+          controller.close();
+        },
+      });
+
+      return { ok: true, status: 200, body: readable };
+    };
+
+    const agent = new Agent({ apiKey: 'sk-custom' });
+    const res = await agent.run('Hello', () => {});
+
+    assert.strictEqual(res, 'Hello world!');
+    const lastMsg = agent.messages[agent.messages.length - 1];
+    assert.strictEqual(lastMsg.reasoning, undefined);
   });
 });

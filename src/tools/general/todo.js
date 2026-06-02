@@ -21,6 +21,7 @@ const readTodos = async (filePath, trustedPaths = new Set()) => {
 
 const writeTodos = async (filePath, todos, trustedPaths = new Set()) => {
   const safePath = ensureSafePath(filePath, trustedPaths);
+  await fs.mkdir(path.dirname(safePath), { recursive: true });
   await fs.writeFile(safePath, JSON.stringify(todos, null, 2), 'utf8');
 };
 
@@ -78,7 +79,8 @@ export const input_schema = {
     },
     todo_file: {
       type: 'string',
-      description: 'Custom todo file path (optional, default: agent-configured path or .todos.json in project root)',
+      description:
+        'Custom todo file path (optional, default: agent-configured path — storagePaths.tmpDir or .openrouter/todos.json).',
     },
   },
   required: ['action'],
@@ -89,7 +91,12 @@ export const execute = async (
   ctx = {},
 ) => {
   const trustedPaths = ctx.agent?.trustedPaths;
-  const todoPath = todo_file || ctx.agent?._todoFile || path.join(process.cwd(), '.todos.json');
+  const todoPath = todo_file || ctx.agent?._todoFile;
+  if (!todoPath) {
+    throw new Error(
+      'Todo requires a configured storage path. Provide a "todo_file" or run within an agent (storagePaths.tmpDir or the default .openrouter/todos.json).',
+    );
+  }
 
   try {
     let todos = await readTodos(todoPath, trustedPaths);

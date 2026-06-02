@@ -75,7 +75,6 @@ class Agent {
       order,
       only,
       provider,
-      maxTokens,
       systemPrompt,
       maxTurns,
       effort,
@@ -83,7 +82,6 @@ class Agent {
       injectors,
       contextFiles,
       storagePaths,
-      memoryDir,
       memoryTypes,
       isSubagent,
       restricted,
@@ -210,7 +208,6 @@ class Agent {
       this.effort = effort || config.REASONING_EFFORT || 'high';
     }
 
-    this.maxTokens = parseInt(maxTokens || config.MAX_TOKENS || 0) || undefined;
     this.usage = { cost: 0, tokens: 0 };
     this.subagents = new Map();
     this.fileState = new Map();
@@ -257,10 +254,7 @@ class Agent {
       });
     }
 
-    const resolvedMemoryDir =
-      resolveStoragePath(storagePaths?.memoryDir) ||
-      resolveStoragePath(memoryDir) ||
-      path.resolve('.openrouter/memory');
+    const resolvedMemoryDir = resolveStoragePath(storagePaths?.memoryDir) || path.resolve('.openrouter/memory');
     const resolvedTmpDir = resolveStoragePath(storagePaths?.tmpDir) || null;
 
     this._memoryDir = resolvedMemoryDir;
@@ -268,7 +262,7 @@ class Agent {
     this._storagePaths = options.storagePaths ?? null;
     this._todoFile = resolvedTmpDir
       ? path.join(resolvedTmpDir, `todos-${Math.random().toString(36).slice(2, 7)}.json`)
-      : path.join(process.cwd(), '.todos.json');
+      : path.resolve('.openrouter/todos.json');
 
     const _projectRoot = path.resolve(process.cwd());
     this.trustedPaths = new Set();
@@ -552,8 +546,6 @@ class Agent {
 
     if (this.maxCompletionTokens !== undefined) {
       payload.max_completion_tokens = this.maxCompletionTokens;
-    } else if (this.maxTokens !== undefined) {
-      payload.max_tokens = this.maxTokens;
     }
 
     const reasoningPayload = {};
@@ -669,7 +661,7 @@ class Agent {
       if (!delta) return;
 
       const cd = delta.content || '';
-      const rd = delta.reasoning || delta.reasoning_content || '';
+      const rd = delta.reasoning || '';
       if (cd) content += cd;
       if (rd) reasoning += rd;
 
@@ -1150,7 +1142,7 @@ class Agent {
         }
 
         const { content, tool_calls } = message;
-        const reasoning = message.reasoning || message.reasoning_content || undefined;
+        const reasoning = message.reasoning || undefined;
 
         this.messages.push({ role: 'assistant', reasoning, content, tool_calls });
 

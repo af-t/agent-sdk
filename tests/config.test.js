@@ -21,7 +21,6 @@ describe('config', () => {
       'ORDER',
       'ONLY',
       'MODEL',
-      'MAX_TOKENS',
       'MAX_TURNS',
       'AUTO_WAKE',
       'TAVILY_API_KEY',
@@ -48,7 +47,7 @@ describe('config', () => {
     ]) {
       assert.ok(Object.prototype.hasOwnProperty.call(config, k), `missing key: ${k}`);
     }
-    assert.strictEqual(Object.keys(config).length, 28);
+    assert.strictEqual(Object.keys(config).length, 27);
   });
 
   it('top-level object is frozen', () => {
@@ -77,10 +76,6 @@ describe('config', () => {
 
   it('MODEL is string or undefined', () => {
     assert.ok(config.MODEL === undefined || typeof config.MODEL === 'string');
-  });
-
-  it('MAX_TOKENS is string or undefined', () => {
-    assert.ok(config.MAX_TOKENS === undefined || typeof config.MAX_TOKENS === 'string');
   });
 
   it('MAX_TURNS is string or undefined', () => {

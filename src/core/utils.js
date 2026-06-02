@@ -14,7 +14,7 @@ export const CONSTANTS = Object.freeze({
   MCP_TIMEOUT: 30000, // ms
   FETCH_TIMEOUT_MS: 15000, // ms
   FETCH_MAX_SIZE: 10 * 1024 * 1024, // 10MB — response body limit for WebFetch
-  MAX_TOKENS_SUBAGENT: 32000,
+  MAX_COMPLETION_TOKENS_SUBAGENT: 32000,
   MAX_TOOL_OUTPUT: 50_000,
 });
 

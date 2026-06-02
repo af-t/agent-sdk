@@ -2,15 +2,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import createAgent from '../../src/index.js';
-import { execute as bashExecute } from '../../src/tools/system/bash.js';
+import { execute as bashExecute, input_schema as bashSchema } from '../../src/tools/system/bash.js';
 
-test('Bash on_timeout=background detaches instead of killing', async () => {
+test('Bash schema no longer exposes the on_timeout parameter', () => {
+  assert.strictEqual(bashSchema.properties.on_timeout, undefined);
+});
+
+test('Bash detaches a timed-out command into the background by default', async () => {
   const agent = await createAgent({ apiKey: 'x' });
   try {
-    const out = await bashExecute(
-      { command: 'echo start; sleep 5; echo done', timeout: 200, on_timeout: 'background' },
-      { agent },
-    );
+    const out = await bashExecute({ command: 'echo start; sleep 5; echo done', timeout: 200 }, { agent });
     assert.match(out, /exceeded timeout/);
     assert.match(out, /transitioned to background/);
     assert.match(out, /Job ID: bg-/);
@@ -35,16 +36,8 @@ test('Bash on_timeout=background detaches instead of killing', async () => {
   }
 });
 
-test('Bash on_timeout=kill preserves legacy timeout behavior', async () => {
-  const agent = await createAgent({ apiKey: 'x' });
-  try {
-    await assert.rejects(
-      bashExecute({ command: 'sleep 5', timeout: 200, on_timeout: 'kill' }, { agent }),
-      /timed out/i,
-    );
-  } finally {
-    await agent.cleanup();
-  }
+test('Bash timeout without an agent kills and rejects (background not possible)', async () => {
+  await assert.rejects(bashExecute({ command: 'sleep 5', timeout: 200 }, {}), /timed out/i);
 });
 
 test('Bash background:true returns immediately with job id and log path', async () => {
