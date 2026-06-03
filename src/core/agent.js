@@ -850,7 +850,7 @@ class Agent {
     let toolError;
     const richParts = [];
     try {
-      const result = await this.tools.execute(name, input, { agent: this, signal });
+      const result = await this.tools.execute(name, input, { agent: this, signal, tool_call_id });
       if (Array.isArray(result)) {
         // Extract any non-text parts (multimodal blocks like image_url, file)
         const textParts = [];

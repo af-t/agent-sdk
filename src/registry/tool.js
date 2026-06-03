@@ -99,9 +99,15 @@ export class ToolRegistry {
     // Ensure ctx.signal is always defined so tool code can rely on it
     const ctx = { ...context, signal: context?.signal ?? new AbortController().signal };
 
-    // Run before-execute hooks (can throw to abort)
+    // Run before-execute hooks. A hook may throw to abort, or return
+    // { override: <result> } to short-circuit the call with a substitute
+    // result (used by Agent.replay to return recorded tool outputs).
     for (const hook of this.#hooks.beforeExecute) {
-      await hook({ name, input, context: ctx });
+      const hookResult = await hook({ name, input, context: ctx });
+      if (hookResult && typeof hookResult === 'object' && 'override' in hookResult) {
+        const limit = input.output_limit ?? ctx?.agent?.maxToolOutputChars ?? CONSTANTS.MAX_TOOL_OUTPUT;
+        return truncateOutput(hookResult.override, limit);
+      }
     }
 
     // Validate input against schema

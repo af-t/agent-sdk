@@ -426,6 +426,46 @@ describe('ToolRegistry', () => {
     await registry.execute('t', {}, { signal: controller.signal });
     assert.ok(toolSignal instanceof AbortSignal);
   });
+
+  it('onBeforeExecute returning { override } short-circuits the tool', async () => {
+    const registry = new ToolRegistry();
+    let executed = false;
+    registry.onBeforeExecute(() => ({ override: 'substituted' }));
+    registry.register({
+      name: 'real',
+      description: 'd',
+      input_schema: { type: 'object', properties: {} },
+      execute: async () => {
+        executed = true;
+        return 'real-result';
+      },
+    });
+
+    const out = await registry.execute('real', {}, {});
+    assert.equal(out, 'substituted');
+    assert.equal(executed, false, 'tool.execute must not run when overridden');
+  });
+
+  it('override respects output_limit truncation', async () => {
+    const registry = new ToolRegistry();
+    registry.onBeforeExecute(() => ({ override: 'abcdefghij' }));
+    registry.register({ name: 't', description: 'd', input_schema: {}, execute: async () => 'x' });
+    const out = await registry.execute('t', { output_limit: 4 }, {});
+    assert.ok(out.startsWith('abcd'), 'override output should be truncated to output_limit');
+    assert.match(out, /truncated/, 'override goes through the shared truncateOutput');
+  });
+
+  it('override skips after-execute hooks', async () => {
+    const registry = new ToolRegistry();
+    let afterRan = false;
+    registry.onBeforeExecute(() => ({ override: 'x' }));
+    registry.onAfterExecute(() => {
+      afterRan = true;
+    });
+    registry.register({ name: 't', description: 'd', input_schema: {}, execute: async () => 'r' });
+    await registry.execute('t', {}, {});
+    assert.equal(afterRan, false, 'after-execute hooks should not run on an overridden call');
+  });
 });
 
 test('ToolRegistry no longer exposes isParallelSafe', () => {
