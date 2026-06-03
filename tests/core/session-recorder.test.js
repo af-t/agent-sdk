@@ -112,3 +112,89 @@ test('unknown level falls back to snapshots', async () => {
   );
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('full level writes request and response records', async () => {
+  const dir = tmpDir();
+  const r = createSessionRecorder({ dir, level: 'full', model: 'm' });
+  r.request(1, { model: 'm', messages: [{ role: 'user', content: 'hi' }] });
+  r.response(1, { choices: [{ message: { content: 'hello' } }], usage: { cost: 1 } });
+  await r.close();
+
+  const recs = readRecords(dir);
+  const req = recs.find((x) => x.type === 'request');
+  const resp = recs.find((x) => x.type === 'response');
+  assert.ok(req, 'expected a request record at level full');
+  assert.equal(req.turn, 1);
+  assert.deepEqual(req.payload.messages, [{ role: 'user', content: 'hi' }]);
+  assert.ok(resp, 'expected a response record at level full');
+  assert.equal(resp.raw.choices[0].message.content, 'hello');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('snapshots level does not write request/response records', async () => {
+  const dir = tmpDir();
+  const r = createSessionRecorder({ dir, level: 'snapshots' });
+  r.request(1, { messages: [] });
+  r.response(1, { choices: [] });
+  await r.close();
+  const recs = readRecords(dir);
+  assert.ok(!recs.some((x) => x.type === 'request'), 'request must be gated to full');
+  assert.ok(!recs.some((x) => x.type === 'response'), 'response must be gated to full');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('request record deep-copies the payload at call time', async () => {
+  const dir = tmpDir();
+  const r = createSessionRecorder({ dir, level: 'full' });
+  const payload = { messages: [{ role: 'user', content: 'original' }] };
+  r.request(2, payload);
+  payload.messages[0].content = 'mutated after record';
+  await r.close();
+  const recs = readRecords(dir);
+  const req = recs.find((x) => x.type === 'request');
+  assert.equal(req.payload.messages[0].content, 'original', 'request must snapshot, not alias');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('redact hook scrubs records before write', async () => {
+  const dir = tmpDir();
+  const r = createSessionRecorder({
+    dir,
+    level: 'full',
+    redact: (rec) => (rec.type === 'request' ? { ...rec, payload: '[REDACTED]' } : rec),
+  });
+  r.request(1, { messages: [{ role: 'user', content: 'secret prompt' }] });
+  r.response(1, { choices: [{ message: { content: 'ok' } }] });
+  await r.close();
+  const recs = readRecords(dir);
+  const req = recs.find((x) => x.type === 'request');
+  const resp = recs.find((x) => x.type === 'response');
+  assert.equal(req.payload, '[REDACTED]', 'request payload must be redacted');
+  assert.equal(resp.raw.choices[0].message.content, 'ok', 'non-matching records pass through');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('redact returning falsy drops the record; a throwing redact drops it and keeps recording alive', async () => {
+  const dir = tmpDir();
+  const r = createSessionRecorder({
+    dir,
+    level: 'full',
+    redact: (rec) => {
+      if (rec.type === 'request') return null; // drop
+      if (rec.type === 'response') throw new Error('redact boom'); // drop, stay alive
+      return rec;
+    },
+  });
+  r.request(1, { messages: [] });
+  r.response(1, { choices: [] });
+  r.recordAssistant(2, { content: 'survives' });
+  await r.close();
+  const recs = readRecords(dir);
+  assert.ok(!recs.some((x) => x.type === 'request'), 'falsy redact drops record');
+  assert.ok(!recs.some((x) => x.type === 'response'), 'throwing redact drops record');
+  assert.ok(
+    recs.some((x) => x.type === 'assistant' && x.content === 'survives'),
+    'recording stays alive after a redact throw',
+  );
+  fs.rmSync(dir, { recursive: true, force: true });
+});

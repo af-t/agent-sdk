@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { logger } from './logger.js';
 
-const LEVELS = { events: 0, snapshots: 1, full: 2 }; // full reserved for phase 2
+const LEVELS = { events: 0, snapshots: 1, full: 2 };
 
 function now() {
   return new Date().toISOString();
@@ -15,7 +15,7 @@ function sessionId() {
   return `${ts}-${rand}`;
 }
 
-export function createSessionRecorder({ dir, level = 'snapshots', model } = {}) {
+export function createSessionRecorder({ dir, level = 'snapshots', model, redact } = {}) {
   const lvl = LEVELS[level] ?? LEVELS.snapshots;
   fs.mkdirSync(dir, { recursive: true });
   const id = sessionId();
@@ -33,8 +33,18 @@ export function createSessionRecorder({ dir, level = 'snapshots', model } = {}) 
 
   function write(obj) {
     if (!alive) return;
+    let rec = obj;
+    if (typeof redact === 'function') {
+      try {
+        rec = redact(obj);
+      } catch (err) {
+        logger.warn(`SessionRecorder redact threw, dropping record: ${err.message}`);
+        return;
+      }
+      if (!rec) return; // redact dropped the record
+    }
     try {
-      stream.write(JSON.stringify(obj) + '\n');
+      stream.write(JSON.stringify(rec) + '\n');
     } catch (err) {
       logger.warn(`SessionRecorder write failed, disabling recording: ${err.message}`);
       alive = false;
@@ -79,6 +89,18 @@ export function createSessionRecorder({ dir, level = 'snapshots', model } = {}) 
     }
   }
 
+  function request(turn, payload) {
+    if (!alive || lvl < LEVELS.full) return;
+    if (typeof turn === 'number') curTurn = turn;
+    write({ t: now(), type: 'request', turn: curTurn, payload: structuredClone(payload) });
+  }
+
+  function response(turn, raw) {
+    if (!alive || lvl < LEVELS.full) return;
+    if (typeof turn === 'number') curTurn = turn;
+    write({ t: now(), type: 'response', turn: curTurn, raw: structuredClone(raw) });
+  }
+
   function snapshot(turn, messages, usage) {
     if (!alive || lvl < LEVELS.snapshots) return;
     if (typeof turn === 'number') curTurn = turn;
@@ -91,5 +113,5 @@ export function createSessionRecorder({ dir, level = 'snapshots', model } = {}) 
     return new Promise((resolve) => stream.end(resolve));
   }
 
-  return { path: filePath, record, recordAssistant, snapshot, close };
+  return { path: filePath, record, recordAssistant, request, response, snapshot, close };
 }
