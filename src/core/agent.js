@@ -234,11 +234,7 @@ class Agent {
     this.autoWake = autoWake !== undefined ? !!autoWake : config.AUTO_WAKE === 'true' || config.AUTO_WAKE === '1';
 
     if (record) {
-      const cfg = record === true ? {} : record;
-      this.#recordConfig = {
-        dir: cfg.dir ? path.resolve(cfg.dir) : path.resolve('.openrouter/sessions'),
-        level: cfg.level || 'snapshots',
-      };
+      this.#recordConfig = this.#normalizeRecordConfig(record === true ? {} : record);
     }
 
     this.systemPrompt =
@@ -340,10 +336,7 @@ class Agent {
   }
 
   startRecording(opts = {}) {
-    this.#recordConfig = {
-      dir: opts.dir ? path.resolve(opts.dir) : path.resolve('.openrouter/sessions'),
-      level: opts.level || 'snapshots',
-    };
+    this.#recordConfig = this.#normalizeRecordConfig(opts);
     this.#recorder = createSessionRecorder({ ...this.#recordConfig, model: this.model });
     return this.#recorder.path;
   }
@@ -357,6 +350,7 @@ class Agent {
       logger.warn(`Failed to close session recorder: ${err.message}`);
     }
     this.#recorder = null;
+    this.#recordConfig = null;
     return p;
   }
 
@@ -460,6 +454,13 @@ class Agent {
       }
     }
     return out;
+  }
+
+  #normalizeRecordConfig(opts = {}) {
+    return {
+      dir: opts.dir ? path.resolve(opts.dir) : path.resolve('.openrouter/sessions'),
+      level: opts.level || 'snapshots',
+    };
   }
 
   #maybeStartRecorder() {
@@ -988,6 +989,7 @@ class Agent {
         logger.warn(`Failed to close session recorder: ${err.message}`);
       }
       this.#recorder = null;
+      this.#recordConfig = null;
     }
     const SIGKILL_GRACE_MS = 2000;
     const killing = [];
