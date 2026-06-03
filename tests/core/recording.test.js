@@ -84,3 +84,26 @@ test('forkAt seeds a new independent Agent from the snapshot', async () => {
   assert.throws(() => parent.forkAt(rec, 99), /No snapshot/);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('renderTrace reconstructs the human trace from recorded events', async () => {
+  const { dir, file } = writeFixture([
+    { t: 'x', type: 'session_start', id: 's1', level: 'events', model: 'm' },
+    { t: 'x', type: 'assistant', turn: 1, content: 'I will read the file', reasoning: 'thinking about the task' },
+    { t: 'x', type: 'tool_calls', turn: 1, calls: [{ id: 'abc', name: 'Read' }] },
+    { t: 'x', type: 'tool_start', turn: 1, tool_call_id: 'abc', name: 'Read', input: { file_path: '/x.txt' } },
+    { t: 'x', type: 'tool_end', turn: 1, tool_call_id: 'abc', name: 'Read', duration_ms: 12, output: 'file body' },
+    { t: 'x', type: 'assistant', turn: 2, content: 'final answer', reasoning: '' },
+  ]);
+
+  const rec = await Recording.load(file);
+  const trace = rec.renderTrace();
+  assert.match(trace, /=== turn 1 ===/);
+  assert.match(trace, /\[reasoning\]\nthinking about the task/);
+  assert.match(trace, /\[assistant\]\nI will read the file/);
+  assert.match(trace, /\[tool_calls\] Read/);
+  assert.match(trace, /-> Read#abc start: \{"file_path":"\/x.txt"\}/);
+  assert.match(trace, /-> Read#abc end \(12ms\): file body/);
+  assert.match(trace, /=== turn 2 ===/);
+  assert.match(trace, /\[assistant\]\nfinal answer/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

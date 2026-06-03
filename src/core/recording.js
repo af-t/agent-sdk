@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { logger } from './logger.js';
+import { createTraceFormatter } from './trace-writer.js';
 
 export class Recording {
   constructor({ id, level, model, events, snapshots }) {
@@ -42,5 +43,31 @@ export class Recording {
   snapshotAt(turn) {
     const s = this.snapshots.find((x) => x.turn === turn);
     return s ? { messages: s.messages, usage: s.usage } : null;
+  }
+
+  renderTrace(opts = {}) {
+    const fmt = createTraceFormatter(opts);
+    let out = '';
+    for (const rec of this.events) {
+      if (rec.type === 'assistant') {
+        out += fmt.step({ content: rec.content, reasoning: rec.reasoning });
+      } else if (rec.type === 'tool_calls') {
+        out += fmt.step({ tool_calls: rec.calls.map((c) => ({ function: { name: c.name } })) });
+      } else if (rec.type === 'tool_start') {
+        out += fmt.step({ tool_start: { tool_call_id: rec.tool_call_id, name: rec.name, input: rec.input } });
+      } else if (rec.type === 'tool_end') {
+        out += fmt.step({
+          tool_end: {
+            tool_call_id: rec.tool_call_id,
+            name: rec.name,
+            duration_ms: rec.duration_ms,
+            output: rec.output,
+            error: rec.error,
+          },
+        });
+      }
+    }
+    out += fmt.flush();
+    return out;
   }
 }
