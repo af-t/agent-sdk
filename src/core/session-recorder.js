@@ -27,6 +27,12 @@ export function createSessionRecorder({ dir, level = 'snapshots', model } = {}) 
   let lastContent = '';
   let curTurn = 0;
 
+  // catch async stream errors
+  stream.on('error', (err) => {
+    alive = false;
+    logger.warn(`SessionRecorder stream error, disabling recording: ${err.message}`);
+  });
+
   function write(obj) {
     if (!alive) return;
     try {

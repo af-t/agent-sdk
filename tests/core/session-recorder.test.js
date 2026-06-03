@@ -72,3 +72,14 @@ test('events level does not write snapshots', async () => {
   assert.ok(!recs.some((x) => x.type === 'turn_snapshot'));
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('operations after close do not throw', async () => {
+  const dir = tmpDir();
+  const r = createSessionRecorder({ dir, level: 'snapshots' });
+  await r.close();
+  assert.doesNotThrow(() => {
+    r.record({ content: 'late' }, 1);
+    r.snapshot(2, [{ role: 'user', content: 'x' }], { cost: 0, tokens: 0 });
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
