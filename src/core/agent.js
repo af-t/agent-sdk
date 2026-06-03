@@ -335,6 +335,43 @@ class Agent {
     return true;
   }
 
+  forkAt(recording, turn) {
+    const snap = recording.snapshotAt(turn);
+    if (!snap) {
+      throw new Error(`No snapshot at turn ${turn} (record at level 'snapshots' or 'full' to enable forking)`);
+    }
+    const child = new Agent({
+      apiKey: this.#apiKey,
+      model: this.model,
+      tools: this.tools,
+      restricted: this.restricted,
+      systemPrompt: this.systemPrompt,
+      maxTurns: this.maxTurns,
+    });
+    const carry = [
+      'temperature',
+      'topP',
+      'minP',
+      'topK',
+      'frequencyPenalty',
+      'presencePenalty',
+      'repetitionPenalty',
+      'seed',
+      'maxCompletionTokens',
+      'responseFormat',
+      'stop',
+      'effort',
+      'autoWake',
+      'maxToolOutputChars',
+    ];
+    for (const k of carry) child[k] = this[k];
+    child.reasoning = this.reasoning ? { ...this.reasoning } : undefined;
+    child.provider = { ...this.provider };
+    child.messages = structuredClone(snap.messages);
+    child.usage = { ...snap.usage };
+    return child;
+  }
+
   startRecording(opts = {}) {
     this.#recordConfig = this.#normalizeRecordConfig(opts);
     this.#recorder = createSessionRecorder({ ...this.#recordConfig, model: this.model });
