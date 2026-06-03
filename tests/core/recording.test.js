@@ -49,7 +49,7 @@ test('forkAt seeds a new independent Agent from the snapshot', async () => {
       type: 'turn_snapshot',
       turn: 2,
       messages: [
-        { role: 'user', content: 'hi' },
+        { role: 'user', content: [{ type: 'text', text: 'hi' }] },
         { role: 'assistant', content: 'hello' },
       ],
       usage: { cost: 0.3, tokens: 7 },
@@ -73,7 +73,13 @@ test('forkAt seeds a new independent Agent from the snapshot', async () => {
   assert.equal(child.tools, parent.tools, 'fork shares the parent tool registry');
 
   child.messages.push({ role: 'user', content: 'new branch' });
-  assert.equal(parent.messages.length, 0, 'forking must not mutate the parent');
+  assert.equal(parent.messages.length, 0, 'forking must not push into the parent');
+  child.messages[0].content[0].text = 'mutated';
+  assert.equal(
+    rec.snapshotAt(2).messages[0].content[0].text,
+    'hi',
+    'forking must deep-clone, not alias the recording snapshot',
+  );
 
   assert.throws(() => parent.forkAt(rec, 99), /No snapshot/);
   fs.rmSync(dir, { recursive: true, force: true });

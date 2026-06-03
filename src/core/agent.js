@@ -340,6 +340,7 @@ class Agent {
     if (!snap) {
       throw new Error(`No snapshot at turn ${turn} (record at level 'snapshots' or 'full' to enable forking)`);
     }
+    // storagePaths/trustedPaths intentionally not forwarded
     const child = new Agent({
       apiKey: this.#apiKey,
       model: this.model,
@@ -348,6 +349,7 @@ class Agent {
       systemPrompt: this.systemPrompt,
       maxTurns: this.maxTurns,
     });
+    // keep in sync with sampling params in constructor
     const carry = [
       'temperature',
       'topP',
