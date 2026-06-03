@@ -22,12 +22,14 @@ function readRecords(dir) {
 test('writes session_start, event records, and session_end', async () => {
   const dir = tmpDir();
   const r = createSessionRecorder({ dir, level: 'events', model: 'm' });
-  r.record({ reasoning: 'thinking' }, 1);
-  r.record({ content: 'calling tool' }, 1);
-  r.record({ tool_calls: [{ id: 'c1', function: { name: 'Echo' } }] }, 1);
+  r.recordAssistant(1, {
+    content: 'calling tool',
+    reasoning: 'thinking',
+    tool_calls: [{ id: 'c1', function: { name: 'Echo' } }],
+  });
   r.record({ tool_start: { tool_call_id: 'c1', name: 'Echo', input: { msg: 'hi' } } }, 1);
   r.record({ tool_end: { tool_call_id: 'c1', name: 'Echo', duration_ms: 5, output: 'hi' } }, 1);
-  r.record({ content: 'final' }, 2);
+  r.recordAssistant(2, { content: 'final' });
   await r.close();
 
   const recs = readRecords(dir);
@@ -78,7 +80,8 @@ test('operations after close do not throw', async () => {
   const r = createSessionRecorder({ dir, level: 'snapshots' });
   await r.close();
   assert.doesNotThrow(() => {
-    r.record({ content: 'late' }, 1);
+    r.record({ tool_end: { tool_call_id: 'x', name: 'X', duration_ms: 1, output: 'y' } }, 1);
+    r.recordAssistant(1, { content: 'late' });
     r.snapshot(2, [{ role: 'user', content: 'x' }], { cost: 0, tokens: 0 });
   });
   fs.rmSync(dir, { recursive: true, force: true });

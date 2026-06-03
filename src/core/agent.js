@@ -341,6 +341,7 @@ class Agent {
       throw new Error(`No snapshot at turn ${turn} (record at level 'snapshots' or 'full' to enable forking)`);
     }
     // storagePaths/trustedPaths intentionally not forwarded
+    // the fork does not inherit recording
     const child = new Agent({
       apiKey: this.#apiKey,
       model: this.model,
@@ -375,6 +376,7 @@ class Agent {
   }
 
   startRecording(opts = {}) {
+    if (this.#recorder) this.#recorder.close().catch(() => {});
     this.#recordConfig = this.#normalizeRecordConfig(opts);
     this.#recorder = createSessionRecorder({ ...this.#recordConfig, model: this.model });
     return this.#recorder.path;
@@ -1240,6 +1242,7 @@ class Agent {
         const reasoning = message.reasoning || undefined;
 
         this.messages.push({ role: 'assistant', reasoning, content, tool_calls });
+        this.#recorder?.recordAssistant(loopCount, { content, reasoning, tool_calls });
 
         if (!tool_calls || tool_calls.length === 0) {
           this.#recorder?.snapshot(loopCount, this.messages, this.usage);

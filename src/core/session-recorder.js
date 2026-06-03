@@ -23,8 +23,6 @@ export function createSessionRecorder({ dir, level = 'snapshots', model } = {}) 
   const stream = fs.createWriteStream(filePath, { flags: 'a' });
 
   let alive = true;
-  let lastReasoning = '';
-  let lastContent = '';
   let curTurn = 0;
 
   // catch async stream errors
@@ -43,26 +41,28 @@ export function createSessionRecorder({ dir, level = 'snapshots', model } = {}) 
     }
   }
 
-  function flushAssistant(turn) {
-    if (!lastReasoning.trim() && !lastContent.trim()) return;
-    write({ t: now(), type: 'assistant', turn, content: lastContent, reasoning: lastReasoning });
-    lastReasoning = '';
-    lastContent = '';
-  }
-
   write({ t: now(), type: 'session_start', id, level, model });
 
+  // assistant + tool_calls recorded from the run loop
+  // so capture is identical in stream and non-stream modes
+  function recordAssistant(turn, message) {
+    if (!alive || !message) return;
+    if (typeof turn === 'number') curTurn = turn;
+    const content = typeof message.content === 'string' ? message.content : '';
+    const reasoning = typeof message.reasoning === 'string' ? message.reasoning : '';
+    if (content.trim() || reasoning.trim()) {
+      write({ t: now(), type: 'assistant', turn: curTurn, content, reasoning });
+    }
+    if (message.tool_calls && message.tool_calls.length) {
+      const calls = message.tool_calls.map((tc) => ({ id: tc.id, name: tc.function?.name || tc.name || '?' }));
+      write({ t: now(), type: 'tool_calls', turn: curTurn, calls });
+    }
+  }
+
+  // tool + steer events arrive via broadcast in both modes
   function record(event, turn) {
     if (!alive || !event || typeof event !== 'object') return;
     if (typeof turn === 'number') curTurn = turn;
-    if (typeof event.reasoning === 'string') lastReasoning = event.reasoning;
-    if (typeof event.content === 'string') lastContent = event.content;
-
-    if (event.tool_calls) {
-      flushAssistant(curTurn);
-      const calls = event.tool_calls.map((tc) => ({ id: tc.id, name: tc.function?.name || tc.name || '?' }));
-      write({ t: now(), type: 'tool_calls', turn: curTurn, calls });
-    }
     if (event.tool_start) {
       const { tool_call_id, name, input } = event.tool_start;
       write({ t: now(), type: 'tool_start', turn: curTurn, tool_call_id, name, input });
@@ -82,16 +82,14 @@ export function createSessionRecorder({ dir, level = 'snapshots', model } = {}) 
   function snapshot(turn, messages, usage) {
     if (!alive || lvl < LEVELS.snapshots) return;
     if (typeof turn === 'number') curTurn = turn;
-    flushAssistant(turn);
     write({ t: now(), type: 'turn_snapshot', turn, messages: structuredClone(messages), usage: { ...usage } });
   }
 
   function close() {
-    flushAssistant(curTurn);
     write({ t: now(), type: 'session_end', reason: 'closed' });
     alive = false;
     return new Promise((resolve) => stream.end(resolve));
   }
 
-  return { path: filePath, record, snapshot, close };
+  return { path: filePath, record, recordAssistant, snapshot, close };
 }
