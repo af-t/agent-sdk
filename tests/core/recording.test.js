@@ -107,3 +107,14 @@ test('renderTrace reconstructs the human trace from recorded events', async () =
   assert.match(trace, /\[assistant\]\nfinal answer/);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('renderTrace shows tool errors', async () => {
+  const { dir, file } = writeFixture([
+    { t: 'x', type: 'session_start', id: 's1', level: 'events', model: 'm' },
+    { t: 'x', type: 'tool_calls', turn: 1, calls: [{ id: 'e1', name: 'Bash' }] },
+    { t: 'x', type: 'tool_end', turn: 1, tool_call_id: 'e1', name: 'Bash', duration_ms: 5, error: 'boom' },
+  ]);
+  const rec = await Recording.load(file);
+  assert.match(rec.renderTrace(), /-> Bash#e1 end \(5ms\): ERROR boom/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

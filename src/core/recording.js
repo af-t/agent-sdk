@@ -48,6 +48,7 @@ export class Recording {
   renderTrace(opts = {}) {
     const fmt = createTraceFormatter(opts);
     let out = '';
+    // steer records carry no trace text
     for (const rec of this.events) {
       if (rec.type === 'assistant') {
         out += fmt.step({ content: rec.content, reasoning: rec.reasoning });
