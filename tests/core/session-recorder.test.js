@@ -34,9 +34,9 @@ test('writes session_start, event records, and session_end', async () => {
   const types = recs.map((x) => x.type);
   assert.equal(recs[0].type, 'session_start');
   assert.equal(recs[0].model, 'm');
-  assert.ok(types.includes('tool_calls'));
-  assert.ok(types.includes('tool_start'));
-  assert.ok(types.includes('tool_end'));
+  assert.ok(types.includes('tool_calls'), 'expected tool_calls record');
+  assert.ok(types.includes('tool_start'), 'expected tool_start record');
+  assert.ok(types.includes('tool_end'), 'expected tool_end record');
   const assistantRecs = recs.filter((x) => x.type === 'assistant');
   assert.equal(assistantRecs[0].content, 'calling tool');
   assert.equal(assistantRecs[0].turn, 1);
@@ -81,5 +81,31 @@ test('operations after close do not throw', async () => {
     r.record({ content: 'late' }, 1);
     r.snapshot(2, [{ role: 'user', content: 'x' }], { cost: 0, tokens: 0 });
   });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('records steer events', async () => {
+  const dir = tmpDir();
+  const r = createSessionRecorder({ dir, level: 'events' });
+  r.record({ steer_applied: { count: 2 } }, 3);
+  await r.close();
+  const recs = readRecords(dir);
+  const steer = recs.find((x) => x.type === 'steer');
+  assert.ok(steer, 'expected a steer record');
+  assert.equal(steer.count, 2);
+  assert.equal(steer.turn, 3);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('unknown level falls back to snapshots', async () => {
+  const dir = tmpDir();
+  const r = createSessionRecorder({ dir, level: 'bogus' });
+  r.snapshot(1, [{ role: 'user', content: 'x' }], { cost: 0, tokens: 0 });
+  await r.close();
+  const recs = readRecords(dir);
+  assert.ok(
+    recs.some((x) => x.type === 'turn_snapshot'),
+    'bogus level should behave like snapshots',
+  );
   fs.rmSync(dir, { recursive: true, force: true });
 });

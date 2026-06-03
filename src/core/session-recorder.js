@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { logger } from './logger.js';
 
-const LEVELS = { events: 0, snapshots: 1, full: 2 };
+const LEVELS = { events: 0, snapshots: 1, full: 2 }; // full reserved for phase 2
 
 function now() {
   return new Date().toISOString();
@@ -89,6 +89,7 @@ export function createSessionRecorder({ dir, level = 'snapshots', model } = {}) 
   function close() {
     flushAssistant(curTurn);
     write({ t: now(), type: 'session_end', reason: 'closed' });
+    alive = false;
     return new Promise((resolve) => stream.end(resolve));
   }
 
