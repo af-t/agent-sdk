@@ -118,3 +118,32 @@ test('renderTrace shows tool errors', async () => {
   assert.match(rec.renderTrace(), /-> Bash#e1 end \(5ms\): ERROR boom/);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('reads request/response payloads and tool results from a full recording', async () => {
+  const { dir, file } = writeFixture([
+    { t: 'x', type: 'session_start', id: 's1', level: 'full', model: 'm' },
+    { t: 'x', type: 'request', turn: 1, payload: { model: 'm', messages: [{ role: 'user', content: 'hi' }] } },
+    {
+      t: 'x',
+      type: 'response',
+      turn: 1,
+      raw: { choices: [{ message: { content: 'a', tool_calls: [{ id: 'c1', function: { name: 'Echo' } }] } }] },
+    },
+    { t: 'x', type: 'tool_end', turn: 1, tool_call_id: 'c1', name: 'Echo', duration_ms: 4, output: 'echoed' },
+    { t: 'x', type: 'tool_end', turn: 1, tool_call_id: 'c2', name: 'Bash', duration_ms: 9, error: 'boom' },
+    { t: 'x', type: 'response', turn: 2, raw: { choices: [{ message: { content: 'done' } }] } },
+    { t: 'x', type: 'session_end', reason: 'closed' },
+  ]);
+
+  const rec = await Recording.load(file);
+  assert.equal(rec.level, 'full');
+  assert.equal(rec.responseAt(1).choices[0].message.content, 'a');
+  assert.equal(rec.responseAt(2).choices[0].message.content, 'done');
+  assert.equal(rec.responseAt(99), null);
+  assert.deepEqual(rec.requestAt(1).messages, [{ role: 'user', content: 'hi' }]);
+  assert.equal(rec.requestAt(99), null);
+  assert.deepEqual(rec.toolResult('c1'), { output: 'echoed' });
+  assert.deepEqual(rec.toolResult('c2'), { error: 'boom' });
+  assert.equal(rec.toolResult('missing'), null);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

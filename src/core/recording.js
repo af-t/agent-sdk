@@ -45,6 +45,22 @@ export class Recording {
     return s ? { messages: s.messages, usage: s.usage } : null;
   }
 
+  responseAt(turn) {
+    const r = this.events.find((e) => e.type === 'response' && e.turn === turn);
+    return r ? r.raw : null;
+  }
+
+  requestAt(turn) {
+    const r = this.events.find((e) => e.type === 'request' && e.turn === turn);
+    return r ? r.payload : null;
+  }
+
+  toolResult(toolCallId) {
+    const r = this.events.find((e) => e.type === 'tool_end' && e.tool_call_id === toolCallId);
+    if (!r) return null;
+    return r.error !== undefined ? { error: r.error } : { output: r.output };
+  }
+
   renderTrace(opts = {}) {
     const fmt = createTraceFormatter(opts);
     let out = '';
