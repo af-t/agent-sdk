@@ -2,6 +2,7 @@ import { withRetry, getDirname, CONSTANTS, ensureSafePath, payloadHasMultimodal,
 import { ToolRegistry } from '../registry/tool.js';
 import { ApiError, ConfigError } from './errors.js';
 import logger from './logger.js';
+import { createSessionRecorder } from './session-recorder.js';
 import config from '../config.js';
 import skillRegistry from '../registry/skill.js';
 import crypto from 'node:crypto';
@@ -55,6 +56,8 @@ class Agent {
   #bgRawListeners;
   #pendingBgDrains;
   #wakeScheduled = false;
+  #recorder = null;
+  #recordConfig = null;
   #envInfo = [
     '',
     '',
@@ -98,6 +101,7 @@ class Agent {
       stop,
       reasoning,
       autoWake,
+      record,
     } = options;
 
     this.restricted = restricted !== false;
@@ -228,6 +232,15 @@ class Agent {
     }
     this.maxToolOutputChars = maxToolOutputChars ?? CONSTANTS.MAX_TOOL_OUTPUT;
     this.autoWake = autoWake !== undefined ? !!autoWake : config.AUTO_WAKE === 'true' || config.AUTO_WAKE === '1';
+
+    if (record) {
+      const cfg = record === true ? {} : record;
+      this.#recordConfig = {
+        dir: cfg.dir ? path.resolve(cfg.dir) : path.resolve('.openrouter/sessions'),
+        level: cfg.level || 'snapshots',
+      };
+    }
+
     this.systemPrompt =
       systemPrompt ||
       (() => {
@@ -324,6 +337,27 @@ class Agent {
     if (Array.isArray(prompt) && prompt.length === 0) return false;
     this.#pending.push(normalizePrompt(prompt));
     return true;
+  }
+
+  startRecording(opts = {}) {
+    this.#recordConfig = {
+      dir: opts.dir ? path.resolve(opts.dir) : path.resolve('.openrouter/sessions'),
+      level: opts.level || 'snapshots',
+    };
+    this.#recorder = createSessionRecorder({ ...this.#recordConfig, model: this.model });
+    return this.#recorder.path;
+  }
+
+  async stopRecording() {
+    if (!this.#recorder) return null;
+    const p = this.#recorder.path;
+    try {
+      await this.#recorder.close();
+    } catch (err) {
+      logger.warn(`Failed to close session recorder: ${err.message}`);
+    }
+    this.#recorder = null;
+    return p;
   }
 
   onBackgroundExit(fn) {
@@ -428,7 +462,18 @@ class Agent {
     return out;
   }
 
+  #maybeStartRecorder() {
+    if (!this.#recordConfig || this.#recorder) return;
+    try {
+      this.#recorder = createSessionRecorder({ ...this.#recordConfig, model: this.model });
+    } catch (err) {
+      logger.warn(`Failed to start session recorder: ${err.message}`);
+      this.#recordConfig = null;
+    }
+  }
+
   async #broadcast(event) {
+    this.#recorder?.record(event, this.currentTurn);
     const promises = [];
     for (const notify of this.#notifyCallbacks) {
       if (typeof notify === 'function') {
@@ -936,6 +981,14 @@ class Agent {
   }
 
   async cleanup() {
+    if (this.#recorder) {
+      try {
+        await this.#recorder.close();
+      } catch (err) {
+        logger.warn(`Failed to close session recorder: ${err.message}`);
+      }
+      this.#recorder = null;
+    }
     const SIGKILL_GRACE_MS = 2000;
     const killing = [];
     for (const job of this.backgroundJobs.values()) {
@@ -1018,6 +1071,7 @@ class Agent {
   async #runLoop(prompt, options = {}) {
     try {
       const { signal } = options;
+      this.#maybeStartRecorder();
       const isStreaming = this.#notifyCallbacks.size > 0;
 
       // freeze before prompt append
@@ -1147,6 +1201,7 @@ class Agent {
         this.messages.push({ role: 'assistant', reasoning, content, tool_calls });
 
         if (!tool_calls || tool_calls.length === 0) {
+          this.#recorder?.snapshot(loopCount, this.messages, this.usage);
           // A steer delivered during the final turn keeps the loop alive.
           if (await this.#drainPending()) continue;
           // Fold any late bg exits into messages before terminating.
@@ -1199,6 +1254,7 @@ class Agent {
         this.#drainBgExits();
         // Flush any steer queued during this turn's tool execution.
         await this.#drainPending();
+        this.#recorder?.snapshot(loopCount, this.messages, this.usage);
       }
 
       return this.messages[this.messages.length - 1].content;
