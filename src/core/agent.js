@@ -335,6 +335,66 @@ class Agent {
     return true;
   }
 
+  // Rebuild an Agent that re-drives a recorded run with no network calls.
+  // Each turn's transport yields the recorded response via the _sendForTest
+  // seam. toolMode 'replay' (default) returns recorded tool outputs (no side
+  // effects re-run); 'live' re-executes the provided tools for real.
+  static replay(recording, { tools, toolMode = 'replay' } = {}) {
+    if (!recording || recording.level !== 'full') {
+      throw new Error("Agent.replay requires a 'full'-level recording (record at level 'full' to capture responses)");
+    }
+    if (toolMode !== 'replay' && toolMode !== 'live') {
+      throw new Error(`Agent.replay: unknown toolMode '${toolMode}' (expected 'replay' or 'live')`);
+    }
+    const agent = new Agent({
+      apiKey: 'replay',
+      model: recording.model,
+      tools,
+      maxTurns: 0,
+      injectors: { date: false, contextFiles: false, memoryIndex: false, memoryHint: false, skillList: false },
+    });
+
+    // return the recorded response for the turn the loop is on
+    agent._sendForTest = async () => {
+      const raw = recording.responseAt(agent.currentTurn);
+      if (!raw) {
+        // tag non-retryable so withRetry fails fast
+        const err = new Error(`replay: no recorded response for turn ${agent.currentTurn}`);
+        err.status = 400;
+        throw err;
+      }
+      return raw;
+    };
+
+    if (toolMode === 'replay') {
+      // stub any recorded tool the registry lacks, so execute()
+      // finds a tool before the override hook supplies its output
+      const known = new Set(agent.tools.listTools().map((t) => t.name));
+      for (const ev of recording.events) {
+        if (ev.type !== 'tool_calls') continue;
+        for (const c of ev.calls) {
+          if (known.has(c.name)) continue;
+          agent.tools.register({
+            name: c.name,
+            description: 'replay stub',
+            input_schema: { type: 'object', properties: {} },
+            execute: async () => '',
+          });
+          known.add(c.name);
+        }
+      }
+      // short-circuit each tool with its recorded output, by call id
+      agent.tools.onBeforeExecute(({ context }) => {
+        const rec = recording.toolResult(context?.tool_call_id);
+        if (!rec) return;
+        if (rec.error !== undefined) throw new Error(rec.error);
+        return { override: rec.output };
+      });
+    }
+
+    return agent;
+  }
+
   forkAt(recording, turn) {
     const snap = recording.snapshotAt(turn);
     if (!snap) {
