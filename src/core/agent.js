@@ -50,6 +50,7 @@ class Agent {
   #activeRunPromise = null;
   #multimodalUnsupported = false;
   #notifyCallbacks = new Set();
+  #subscribedCallbacks = new Set();
   #pendingRichCallIds = new Set();
   #richUserMsgIdx = -1;
   #bgExitListeners;
@@ -461,6 +462,15 @@ class Agent {
     return () => this.#bgExitListeners.delete(fn);
   }
 
+  // Persistent event listener, independent of run(). Returns a disposer.
+  // Note: an active subscription makes #subscribedCallbacks non-empty, so run()
+  // selects the SSE streaming transport for its duration (intended).
+  subscribe(fn) {
+    if (typeof fn !== 'function') throw new TypeError('subscribe expects a function');
+    this.#subscribedCallbacks.add(fn);
+    return () => this.#subscribedCallbacks.delete(fn);
+  }
+
   _fireBackgroundExit(event) {
     for (const fn of this.#bgRawListeners) {
       try {
@@ -578,7 +588,8 @@ class Agent {
   async #broadcast(event) {
     this.#recorder?.record(event, this.currentTurn);
     const promises = [];
-    for (const notify of this.#notifyCallbacks) {
+    const allCallbacks = new Set([...this.#notifyCallbacks, ...this.#subscribedCallbacks]);
+    for (const notify of allCallbacks) {
       if (typeof notify === 'function') {
         promises.push(
           (async () => {
@@ -1176,7 +1187,7 @@ class Agent {
     try {
       const { signal } = options;
       this.#maybeStartRecorder();
-      const isStreaming = this.#notifyCallbacks.size > 0;
+      const isStreaming = this.#notifyCallbacks.size > 0 || this.#subscribedCallbacks.size > 0;
 
       // freeze before prompt append
       const wasFresh = this.messages.length < 1;
@@ -1309,6 +1320,7 @@ class Agent {
 
         if (!tool_calls || tool_calls.length === 0) {
           this.#recorder?.snapshot(loopCount, this.messages, this.usage);
+          await this.#broadcast({ turn_end: { turn: loopCount, terminal: true } });
           // A steer delivered during the final turn keeps the loop alive.
           if (await this.#drainPending()) continue;
           // Fold any late bg exits into messages before terminating.
@@ -1362,6 +1374,7 @@ class Agent {
         // Flush any steer queued during this turn's tool execution.
         await this.#drainPending();
         this.#recorder?.snapshot(loopCount, this.messages, this.usage);
+        await this.#broadcast({ turn_end: { turn: loopCount, terminal: false } });
       }
 
       return this.messages[this.messages.length - 1].content;
