@@ -1,7 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import Agent from '../../src/core/agent.js';
-import { createCopilot, extractGoal, renderWindow, buildInput } from '../../src/core/copilot.js';
+import {
+  createCopilot,
+  extractGoal,
+  renderWindow,
+  buildInput,
+  normalizeTriggers,
+  buildReasons,
+} from '../../src/core/copilot.js';
 
 test('subscribe registers a persistent listener and returns a disposer', async () => {
   const agent = new Agent({ apiKey: 'x', model: 'm' });
@@ -150,4 +157,76 @@ test('buildInput includes goal, trigger reasons, and trace', () => {
   assert.match(input, /GOAL: reach the moon/);
   assert.match(input, /TRIGGER: toolError, everyNTurns/);
   assert.match(input, /JSON object/);
+});
+
+function ctxWith(over = {}) {
+  return {
+    turn: 1,
+    terminal: false,
+    recentTurns: [],
+    lastTurn: { callSigs: [], hadError: false },
+    usage: { cost: 0 },
+    costSinceLast: 0,
+    maxTurns: 25,
+    hadError: false,
+    ...over,
+  };
+}
+
+test('normalizeTriggers applies defaults and honors toggles', () => {
+  const t = normalizeTriggers();
+  assert.equal(t.toolError, true);
+  assert.deepEqual(t.repeatedCall, { times: 3 });
+  assert.equal(t.costDelta, false);
+  assert.deepEqual(t.everyNTurns, { n: 5 });
+  assert.deepEqual(t.nearMaxTurns, { within: 2 });
+
+  const off = normalizeTriggers({ toolError: false, everyNTurns: false });
+  assert.equal(off.toolError, false);
+  assert.equal(off.everyNTurns, false);
+
+  const over = normalizeTriggers({ repeatedCall: { times: 2 }, costDelta: { threshold: 0.5 } });
+  assert.deepEqual(over.repeatedCall, { times: 2 });
+  assert.deepEqual(over.costDelta, { threshold: 0.5 });
+});
+
+test('buildReasons fires toolError, everyNTurns, nearMaxTurns, costDelta', () => {
+  const t = normalizeTriggers({ costDelta: { threshold: 0.1 } });
+  assert.ok(buildReasons(ctxWith({ hadError: true }), t).includes('toolError'));
+  assert.ok(buildReasons(ctxWith({ turn: 5 }), t).includes('everyNTurns'));
+  assert.ok(buildReasons(ctxWith({ turn: 24, maxTurns: 25 }), t).includes('nearMaxTurns'));
+  assert.ok(buildReasons(ctxWith({ costSinceLast: 0.2 }), t).includes('costDelta'));
+  assert.equal(buildReasons(ctxWith({ turn: 2 }), t).length, 0);
+});
+
+test('buildReasons fires repeatedCall from window counts', () => {
+  const t = normalizeTriggers({ everyNTurns: false, nearMaxTurns: false });
+  const recentTurns = [{ callSigs: ['Bash:{}'] }, { callSigs: ['Bash:{}'] }, { callSigs: ['Bash:{}'] }];
+  assert.ok(buildReasons(ctxWith({ recentTurns }), t).includes('repeatedCall'));
+});
+
+test('buildReasons supports custom predicates (boolean and string)', () => {
+  const t = normalizeTriggers({
+    toolError: false,
+    everyNTurns: false,
+    nearMaxTurns: false,
+    custom: [() => true, () => 'budget-rule', () => false],
+  });
+  const r = buildReasons(ctxWith({ turn: 2 }), t);
+  assert.ok(r.includes('custom'));
+  assert.ok(r.includes('budget-rule'));
+});
+
+test('buildReasons swallows throwing custom predicate', () => {
+  const t = normalizeTriggers({
+    toolError: false,
+    everyNTurns: false,
+    nearMaxTurns: false,
+    custom: [
+      () => {
+        throw new Error('bad');
+      },
+    ],
+  });
+  assert.equal(buildReasons(ctxWith({ turn: 2 }), t).length, 0);
 });

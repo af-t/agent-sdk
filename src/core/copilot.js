@@ -46,6 +46,59 @@ export function buildInput(goal, reasons, win, traceCap) {
   ].join('\n');
 }
 
+function resolveTrigger(val, dflt) {
+  if (val === false) return false;
+  if (val === undefined || val === true) return dflt;
+  if (typeof val === 'object') return { ...dflt, ...val };
+  return dflt;
+}
+
+export function normalizeTriggers(cfg = {}) {
+  return {
+    toolError: cfg.toolError === false ? false : true,
+    repeatedCall: resolveTrigger(cfg.repeatedCall, { times: 3 }),
+    costDelta: cfg.costDelta ? resolveTrigger(cfg.costDelta, { threshold: 0 }) : false,
+    everyNTurns: resolveTrigger(cfg.everyNTurns, { n: 5 }),
+    nearMaxTurns: resolveTrigger(cfg.nearMaxTurns, { within: 2 }),
+    custom: Array.isArray(cfg.custom) ? cfg.custom : [],
+  };
+}
+
+export function buildReasons(ctx, t) {
+  const reasons = [];
+  if (t.toolError && ctx.hadError) reasons.push('toolError');
+  if (t.repeatedCall) {
+    const counts = new Map();
+    for (const w of ctx.recentTurns) {
+      for (const s of w.callSigs || []) {
+        counts.set(s, (counts.get(s) || 0) + 1);
+      }
+    }
+    for (const c of counts.values()) {
+      if (c >= t.repeatedCall.times) {
+        reasons.push('repeatedCall');
+        break;
+      }
+    }
+  }
+  if (t.costDelta && ctx.costSinceLast > t.costDelta.threshold) reasons.push('costDelta');
+  if (t.everyNTurns && ctx.turn % t.everyNTurns.n === 0) reasons.push('everyNTurns');
+  if (t.nearMaxTurns && ctx.maxTurns > 0 && ctx.maxTurns - ctx.turn <= t.nearMaxTurns.within)
+    reasons.push('nearMaxTurns');
+  for (const fn of t.custom) {
+    let r;
+    try {
+      r = fn(ctx);
+    } catch (err) {
+      logger.warn(`copilot custom trigger threw: ${err.message}`);
+      continue;
+    }
+    if (r === true) reasons.push('custom');
+    else if (typeof r === 'string' && r) reasons.push(r);
+  }
+  return reasons;
+}
+
 function isAgentLike(a) {
   return (
     a &&
