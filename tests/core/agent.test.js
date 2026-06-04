@@ -44,6 +44,16 @@ describe('Agent', () => {
       assert.equal(agent.apiKey, 'sk-test-key');
     });
 
+    it('accepts baseUrl option', () => {
+      const agent = new Agent({ apiKey: 'sk-test-key', baseUrl: 'https://example.com/api' });
+      assert.equal(agent.baseUrl, 'https://example.com/api');
+    });
+
+    it('defaults to config.BASE_URL if no baseUrl option is provided', () => {
+      const agent = new Agent({ apiKey: 'sk-test-key' });
+      assert.equal(agent.baseUrl, 'https://openrouter.ai/api/v1');
+    });
+
     it('sets default values', () => {
       const agent = new Agent({ apiKey: 'sk-key' });
       assert.ok(agent.tools instanceof ToolRegistry);
@@ -1025,6 +1035,55 @@ describe('run() — steering applied in-loop', () => {
       assert.equal(runMock.mock.callCount(), 0);
       assert.equal(fired, true);
       runMock.mock.restore();
+    });
+  });
+
+  describe('baseUrl routing', () => {
+    let Agent;
+    let originalFetch;
+
+    before(async () => {
+      const mod = await import('../../src/core/agent.js');
+      Agent = mod.default;
+      originalFetch = global.fetch;
+    });
+
+    after(() => {
+      global.fetch = originalFetch;
+    });
+
+    it('sends non-streaming fetch to custom baseUrl', async () => {
+      let requestedUrl = null;
+      global.fetch = async (url) => {
+        requestedUrl = url;
+        return makeJsonResponse({
+          choices: [{ message: { content: 'Hello custom baseUrl!', reasoning: null } }],
+          usage: { cost: 0.001, total_tokens: 50 },
+        });
+      };
+
+      const agent = new Agent({ apiKey: 'sk-test', baseUrl: 'https://custom-proxy.com/api' });
+      await agent.run('test');
+      assert.strictEqual(requestedUrl, 'https://custom-proxy.com/api/chat/completions');
+    });
+
+    it('sends streaming fetch to custom baseUrl', async () => {
+      let requestedUrl = null;
+      global.fetch = async (url) => {
+        requestedUrl = url;
+        return makeSseResponse([
+          'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Stream from custom baseUrl' } }] }),
+          'data: [DONE]',
+        ]);
+      };
+
+      const agent = new Agent({ apiKey: 'sk-test', baseUrl: 'https://custom-proxy.com/api' });
+      const updates = [];
+      await agent.run('test', (ev) => {
+        if (ev.content_delta) updates.push(ev.content_delta);
+      });
+      assert.strictEqual(requestedUrl, 'https://custom-proxy.com/api/chat/completions');
+      assert.strictEqual(updates.join(''), 'Stream from custom baseUrl');
     });
   });
 });

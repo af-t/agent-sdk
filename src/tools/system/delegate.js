@@ -57,6 +57,7 @@ export const execute = async ({ description, prompt, persona, id, background = f
   if (isNew) {
     subagent = new Agent({
       apiKey: agent.apiKey,
+      baseUrl: agent.baseUrl,
       model: agent.model,
       provider: agent.provider,
       tools: agent.tools,

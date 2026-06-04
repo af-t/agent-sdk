@@ -17,6 +17,7 @@ async function createAgent(options = {}) {
   return new Agent({
     ...options,
     apiKey: config.API_KEY || options.apiKey,
+    baseUrl: config.BASE_URL || options.baseUrl,
     model: config.MODEL || options.model,
     order: config.ORDER || options.order,
     only: config.ONLY || options.only,

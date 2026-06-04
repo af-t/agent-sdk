@@ -42,6 +42,7 @@ const VALID_INJECTOR_SCOPES = new Set(['first-turn', 'per-turn']);
 
 class Agent {
   #apiKey;
+  #baseUrl;
   #instructionCache;
   #injectors = { 'first-turn': [], 'per-turn': [] };
   #beforeRequestHooks = [];
@@ -74,6 +75,7 @@ class Agent {
   constructor(options = {}) {
     const {
       apiKey,
+      baseUrl,
       model,
       tools,
       order,
@@ -116,6 +118,7 @@ class Agent {
       throw new ConfigError('OPENROUTER_API_KEY is required. Set it in .env or pass it as an option.');
     }
     this.#apiKey = apiKey || config.API_KEY;
+    this.#baseUrl = baseUrl || config.BASE_URL || 'https://openrouter.ai/api/v1';
     this.model = model;
     this.isSubagent = !!isSubagent;
 
@@ -321,6 +324,10 @@ class Agent {
     return this.#apiKey;
   }
 
+  get baseUrl() {
+    return this.#baseUrl;
+  }
+
   // Whether a run loop is currently active.
   get isRunning() {
     return this.#running;
@@ -405,6 +412,7 @@ class Agent {
     // the fork does not inherit recording
     const child = new Agent({
       apiKey: this.#apiKey,
+      baseUrl: this.#baseUrl,
       model: this.model,
       tools: this.tools,
       restricted: this.restricted,
@@ -612,7 +620,7 @@ class Agent {
     const controller = new AbortController();
     const idle = makeIdleTimer(REQUEST_TIMEOUT, controller);
     try {
-      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      const res = await fetch(`${this.#baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.#apiKey}`,
@@ -778,7 +786,7 @@ class Agent {
 
     let res;
     try {
-      res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      res = await fetch(`${this.#baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.#apiKey}`,

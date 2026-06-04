@@ -18,6 +18,7 @@ describe('config', () => {
   it('exports expected keys', () => {
     for (const k of [
       'API_KEY',
+      'BASE_URL',
       'ORDER',
       'ONLY',
       'MODEL',
@@ -47,7 +48,7 @@ describe('config', () => {
     ]) {
       assert.ok(Object.prototype.hasOwnProperty.call(config, k), `missing key: ${k}`);
     }
-    assert.strictEqual(Object.keys(config).length, 27);
+    assert.strictEqual(Object.keys(config).length, 28);
   });
 
   it('top-level object is frozen', () => {

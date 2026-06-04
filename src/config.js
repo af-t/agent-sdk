@@ -20,6 +20,7 @@ function deepFreeze(obj) {
 
 export default deepFreeze({
   API_KEY: process.env.OPENROUTER_API_KEY,
+  BASE_URL: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
   ORDER: process.env.OPENROUTER_ORDER?.split?.(','),
   ONLY: process.env.OPENROUTER_ONLY?.split?.(','),
   MODEL: process.env.OPENROUTER_MODEL,
