@@ -501,6 +501,7 @@ class Agent {
     return {
       dir: opts.dir ? path.resolve(opts.dir) : path.resolve('.openrouter/sessions'),
       level: opts.level || 'snapshots',
+      redact: typeof opts.redact === 'function' ? opts.redact : undefined,
     };
   }
 
@@ -1184,6 +1185,7 @@ class Agent {
         // withRetry retries the network call only — injectors and hooks do not re-fire.
         const payload = await this.#buildPayload();
         if (this.#multimodalUnsupported) degradePayload(payload);
+        this.#recorder?.request(loopCount, payload);
         let response;
         try {
           response = await withRetry(() => (isStreaming ? this.#sendStream(payload) : this.#send(payload)), 5);
@@ -1232,6 +1234,7 @@ class Agent {
             throw err;
           }
         }
+        this.#recorder?.response(loopCount, response);
         const message = response.choices?.[0]?.message;
         if (!message) {
           logger.warn('Agent: LLM returned no message in response. Breaking loop.');
