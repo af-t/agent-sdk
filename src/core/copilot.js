@@ -9,6 +9,14 @@ export function extractGoal(messages) {
     if (!m || m.role !== 'user') continue;
     if (typeof m.content === 'string') return m.content;
     if (Array.isArray(m.content)) {
+      for (let j = m.content.length - 1; j >= 0; j--) {
+        const p = m.content[j];
+        if (p && p.type === 'text' && typeof p.text === 'string') {
+          if (!p.text.startsWith('<system-reminder>')) {
+            return p.text;
+          }
+        }
+      }
       const t = m.content.find((p) => p && p.type === 'text' && typeof p.text === 'string');
       if (t) return t.text;
     }

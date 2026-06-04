@@ -588,8 +588,11 @@ class Agent {
   async #broadcast(event) {
     this.#recorder?.record(event, this.currentTurn);
     const promises = [];
-    const allCallbacks = new Set([...this.#notifyCallbacks, ...this.#subscribedCallbacks]);
-    for (const notify of allCallbacks) {
+    const targets =
+      event && event.turn_end
+        ? this.#subscribedCallbacks
+        : new Set([...this.#notifyCallbacks, ...this.#subscribedCallbacks]);
+    for (const notify of targets) {
       if (typeof notify === 'function') {
         promises.push(
           (async () => {

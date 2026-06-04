@@ -330,3 +330,61 @@ test('overlap guard: only one evaluation while one is in flight', async () => {
   release();
   await flush();
 });
+
+test('createCopilot is re-exported from the package entry', async () => {
+  const mod = await import('../../src/index.js');
+  assert.equal(typeof mod.createCopilot, 'function');
+});
+
+function makeSseResponse(lines) {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      for (const line of lines) {
+        controller.enqueue(encoder.encode(line + '\n'));
+      }
+      controller.close();
+    },
+  });
+  return { ok: true, status: 200, body: stream };
+}
+
+test('end-to-end: real Agent run, tool error triggers a steer', async () => {
+  const originalFetch = global.fetch;
+  try {
+    const primary = new Agent({ apiKey: 'x', model: 'm' });
+    // turn 1: call a failing tool; turn 2: finish
+    primary.use({
+      name: 'Boom',
+      description: 'always throws. Side effect: none',
+      input_schema: { type: 'object', properties: {} },
+      execute: async () => {
+        throw new Error('kaboom');
+      },
+    });
+    let turn = 0;
+    global.fetch = async () => {
+      turn++;
+      if (turn === 1) {
+        return makeSseResponse([
+          'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a1","type":"function","function":{"name":"Boom","arguments":"{}"}}]}}],"usage":null}',
+          'data: [DONE]',
+        ]);
+      }
+      return makeSseResponse(['data: {"choices":[{"delta":{"content":"all done"}}],"usage":null}', 'data: [DONE]']);
+    };
+
+    const supervisor = fakeSupervisor('{"action":"steer","prompt":"handle the failure"}');
+    const copilot = createCopilot({ primary, supervisor });
+    const signal = copilot.start();
+    await primary.run('do the task', null, { signal });
+    copilot.stop();
+
+    // Deterministic: the supervisor was invoked with the failing turn's trace.
+    assert.match(supervisor.lastInput, /Boom#a1/);
+    assert.match(supervisor.lastInput, /ERROR/);
+    assert.match(supervisor.lastInput, /GOAL: do the task/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
