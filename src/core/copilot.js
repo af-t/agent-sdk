@@ -99,6 +99,37 @@ export function buildReasons(ctx, t) {
   return reasons;
 }
 
+function coerceDecision(obj) {
+  if (!obj || typeof obj !== 'object') return { action: 'none' };
+  if (obj.action === 'steer') {
+    if (typeof obj.prompt === 'string' && obj.prompt.trim()) {
+      return { action: 'steer', prompt: obj.prompt, reason: obj.reason };
+    }
+    return { action: 'none', reason: obj.reason };
+  }
+  if (obj.action === 'abort') return { action: 'abort', reason: obj.reason };
+  return { action: 'none', reason: obj.reason };
+}
+
+export function parseDecision(text) {
+  if (text && typeof text === 'object') return coerceDecision(text);
+  if (typeof text !== 'string') return { action: 'none' };
+  let obj = null;
+  try {
+    obj = JSON.parse(text);
+  } catch {
+    const m = text.match(/\{[\s\S]*\}/);
+    if (m) {
+      try {
+        obj = JSON.parse(m[0]);
+      } catch {
+        obj = null;
+      }
+    }
+  }
+  return coerceDecision(obj);
+}
+
 function isAgentLike(a) {
   return (
     a &&
@@ -134,6 +165,10 @@ export function createCopilot({
 
   let cur = freshTurn();
   const winBuf = [];
+  let evaluating = false;
+  let lastCost = 0;
+  let capturedGoal = typeof goal === 'string' ? goal : '';
+  const trig = normalizeTriggers(triggers);
 
   function onEvent(event) {
     try {
@@ -157,7 +192,7 @@ export function createCopilot({
     }
   }
 
-  function finalizeTurn(_meta) {
+  function finalizeTurn(meta) {
     const turn = cur;
     cur = freshTurn();
     winBuf.push({
@@ -168,7 +203,58 @@ export function createCopilot({
       callSigs: turn.callSigs,
     });
     while (winBuf.length > window) winBuf.shift();
-    // gate + evaluation wired in later tasks
+
+    if (!capturedGoal) capturedGoal = extractGoal(primary.messages);
+
+    const costNow = primary.usage?.cost || 0;
+    const ctx = {
+      turn: meta.turn,
+      terminal: !!meta.terminal,
+      recentTurns: winBuf,
+      lastTurn: turn,
+      usage: primary.usage,
+      costSinceLast: costNow - lastCost,
+      maxTurns: primary.maxTurns,
+      hadError: turn.hadError,
+    };
+    const reasons = buildReasons(ctx, trig);
+    if (reasons.length === 0) return;
+    if (evaluating) return;
+
+    lastCost = costNow;
+    evaluating = true;
+    evaluate(reasons)
+      .catch((err) => logger.warn(`copilot evaluation failed: ${err.message}`))
+      .finally(() => {
+        evaluating = false;
+      });
+  }
+
+  function emitDecision(decision, reasons) {
+    if (typeof onDecision !== 'function') return;
+    try {
+      onDecision({ ...decision, triggers: reasons });
+    } catch (err) {
+      logger.warn(`copilot onDecision threw: ${err.message}`);
+    }
+  }
+
+  async function evaluate(reasons) {
+    const input = buildInput(capturedGoal, reasons, winBuf, traceCap);
+    if (supervisor.responseFormat === undefined) supervisor.responseFormat = { type: 'json_object' };
+    supervisor.messages = []; // independent evaluation; usage preserved
+    let raw;
+    try {
+      raw = await supervisor.run(input);
+    } catch (err) {
+      logger.warn(`copilot supervisor.run threw: ${err.message}`);
+      emitDecision({ action: 'none', reason: `supervisor error: ${err.message}` }, reasons);
+      return;
+    }
+    const decision = parseDecision(raw);
+    emitDecision(decision, reasons);
+    if (decision.action === 'steer') primary.steer(decision.prompt);
+    else if (decision.action === 'abort') controller?.abort();
   }
 
   function start() {

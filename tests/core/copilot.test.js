@@ -8,6 +8,7 @@ import {
   buildInput,
   normalizeTriggers,
   buildReasons,
+  parseDecision,
 } from '../../src/core/copilot.js';
 
 test('subscribe registers a persistent listener and returns a disposer', async () => {
@@ -229,4 +230,103 @@ test('buildReasons swallows throwing custom predicate', () => {
     ],
   });
   assert.equal(buildReasons(ctxWith({ turn: 2 }), t).length, 0);
+});
+
+const flush = () => new Promise((r) => setTimeout(r, 15));
+
+test('parseDecision coerces malformed/unknown to none, validates steer prompt', () => {
+  assert.deepEqual(parseDecision('{"action":"none"}').action, 'none');
+  assert.equal(parseDecision('not json').action, 'none');
+  assert.equal(parseDecision('{"action":"frobnicate"}').action, 'none');
+  assert.equal(parseDecision('{"action":"steer"}').action, 'none'); // missing prompt
+  const steer = parseDecision('{"action":"steer","prompt":"focus on X"}');
+  assert.equal(steer.action, 'steer');
+  assert.equal(steer.prompt, 'focus on X');
+  assert.equal(parseDecision('garbage {"action":"abort"} trailing').action, 'abort');
+});
+
+test('gate closed => supervisor never called', async () => {
+  const primary = fakePrimary();
+  const supervisor = fakeSupervisor('{"action":"steer","prompt":"no"}');
+  const copilot = createCopilot({
+    primary,
+    supervisor,
+    triggers: { toolError: false, everyNTurns: false, nearMaxTurns: false, repeatedCall: false },
+  });
+  copilot.start();
+  await primary.emit({ turn_end: { turn: 2, terminal: false } });
+  await flush();
+  assert.equal(supervisor.lastInput, undefined);
+  assert.deepEqual(primary.steers, []);
+});
+
+test('toolError trigger => supervisor steers the primary', async () => {
+  const primary = fakePrimary();
+  const supervisor = fakeSupervisor('{"action":"steer","prompt":"retry with sudo"}');
+  const decisions = [];
+  const copilot = createCopilot({ primary, supervisor, onDecision: (d) => decisions.push(d) });
+  copilot.start();
+  await primary.emit({ tool_end: { tool_call_id: 'a1', name: 'Bash', duration_ms: 3, error: 'denied' } });
+  await primary.emit({ turn_end: { turn: 1, terminal: false } });
+  await flush();
+  assert.deepEqual(primary.steers, ['retry with sudo']);
+  assert.equal(decisions[0].action, 'steer');
+  assert.ok(decisions[0].triggers.includes('toolError'));
+  assert.match(supervisor.lastInput, /GOAL: do the task/);
+});
+
+test('abort decision aborts the run signal', async () => {
+  const primary = fakePrimary();
+  const supervisor = fakeSupervisor('{"action":"abort","reason":"unrecoverable"}');
+  const copilot = createCopilot({ primary, supervisor });
+  const signal = copilot.start();
+  await primary.emit({ tool_end: { tool_call_id: 'a1', name: 'Bash', duration_ms: 3, error: 'x' } });
+  await primary.emit({ turn_end: { turn: 1, terminal: false } });
+  await flush();
+  assert.equal(signal.aborted, true);
+});
+
+test('supervisor throw is best-effort: run unaffected, decision coerced to none', async () => {
+  const primary = fakePrimary();
+  const supervisor = fakeSupervisor(() => {
+    throw new Error('supervisor down');
+  });
+  const decisions = [];
+  const copilot = createCopilot({ primary, supervisor, onDecision: (d) => decisions.push(d) });
+  copilot.start();
+  await primary.emit({ tool_end: { tool_call_id: 'a1', name: 'Bash', duration_ms: 3, error: 'x' } });
+  await primary.emit({ turn_end: { turn: 1, terminal: false } });
+  await flush();
+  assert.deepEqual(primary.steers, []);
+  assert.equal(decisions[0].action, 'none');
+});
+
+test('overlap guard: only one evaluation while one is in flight', async () => {
+  const primary = fakePrimary();
+  let calls = 0;
+  let release;
+  const gate = new Promise((r) => (release = r));
+  const supervisor = {
+    usage: { cost: 0 },
+    currentTurn: 0,
+    messages: [],
+    responseFormat: undefined,
+    subscribe: () => () => {},
+    steer: () => false,
+    async run() {
+      calls++;
+      await gate;
+      return '{"action":"none"}';
+    },
+  };
+  const copilot = createCopilot({ primary, supervisor });
+  copilot.start();
+  await primary.emit({ tool_end: { tool_call_id: 'a1', name: 'B', duration_ms: 1, error: 'x' } });
+  await primary.emit({ turn_end: { turn: 1, terminal: false } });
+  await primary.emit({ tool_end: { tool_call_id: 'a2', name: 'B', duration_ms: 1, error: 'x' } });
+  await primary.emit({ turn_end: { turn: 2, terminal: false } });
+  await flush();
+  assert.equal(calls, 1, 'second evaluation skipped while first in flight');
+  release();
+  await flush();
 });
