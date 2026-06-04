@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import Agent from '../../src/core/agent.js';
-import { createCopilot } from '../../src/core/copilot.js';
+import { createCopilot, extractGoal, renderWindow, buildInput } from '../../src/core/copilot.js';
 
 test('subscribe registers a persistent listener and returns a disposer', async () => {
   const agent = new Agent({ apiKey: 'x', model: 'm' });
@@ -114,4 +114,40 @@ test('aborting the consumer signal aborts the copilot signal', () => {
   assert.equal(signal.aborted, false);
   consumer.abort();
   assert.equal(signal.aborted, true);
+});
+
+test('extractGoal returns the last user message text (string or parts)', () => {
+  assert.equal(extractGoal([{ role: 'user', content: 'hello world' }]), 'hello world');
+  assert.equal(
+    extractGoal([
+      { role: 'assistant', content: 'hi' },
+      { role: 'user', content: [{ type: 'text', text: 'parts goal' }, { type: 'image_url' }] },
+    ]),
+    'parts goal',
+  );
+  assert.equal(extractGoal([{ role: 'assistant', content: 'x' }]), '');
+});
+
+test('renderWindow formats turns with tool calls and results', () => {
+  const win = [
+    {
+      content: 'thinking then acting',
+      reasoning: '',
+      toolCalls: [{ function: { name: 'Bash', arguments: '{}' } }],
+      toolEvents: [{ tool_end: { tool_call_id: 'a1', name: 'Bash', duration_ms: 5, error: 'boom' } }],
+      callSigs: ['Bash:{}'],
+    },
+  ];
+  const out = renderWindow(win, 2000);
+  assert.match(out, /\[tool_calls\] Bash/);
+  assert.match(out, /Bash#a1/);
+  assert.match(out, /ERROR boom/);
+  assert.match(out, /thinking then acting/);
+});
+
+test('buildInput includes goal, trigger reasons, and trace', () => {
+  const input = buildInput('reach the moon', ['toolError', 'everyNTurns'], [], 2000);
+  assert.match(input, /GOAL: reach the moon/);
+  assert.match(input, /TRIGGER: toolError, everyNTurns/);
+  assert.match(input, /JSON object/);
 });

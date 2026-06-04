@@ -1,5 +1,50 @@
 import { ConfigError } from './errors.js';
 import { logger } from './logger.js';
+import { createTraceFormatter } from './trace-writer.js';
+
+export function extractGoal(messages) {
+  if (!Array.isArray(messages)) return '';
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (!m || m.role !== 'user') continue;
+    if (typeof m.content === 'string') return m.content;
+    if (Array.isArray(m.content)) {
+      const t = m.content.find((p) => p && p.type === 'text' && typeof p.text === 'string');
+      if (t) return t.text;
+    }
+  }
+  return '';
+}
+
+export function renderWindow(win, traceCap) {
+  const fmt = createTraceFormatter({ toolOutputCap: traceCap });
+  let out = '';
+  for (const t of win) {
+    fmt.step({ content: t.content, reasoning: t.reasoning });
+    if (t.toolCalls) {
+      out += fmt.step({ tool_calls: t.toolCalls });
+      for (const ev of t.toolEvents) out += fmt.step(ev);
+    }
+  }
+  out += fmt.flush();
+  return out;
+}
+
+export function buildInput(goal, reasons, win, traceCap) {
+  const trace = renderWindow(win, traceCap);
+  return [
+    'You are a supervising co-pilot watching another AI agent work toward a GOAL.',
+    'Decide whether to intervene. Prefer doing nothing.',
+    'Respond with ONLY a JSON object: {"action":"steer"|"abort"|"none","prompt":"...","reason":"..."}.',
+    'Use "steer" with a short, concrete corrective instruction (in "prompt") when the agent drifts or loops.',
+    'Use "abort" only when the task is unrecoverable or clearly wasteful. Otherwise use "none".',
+    '',
+    `GOAL: ${goal || '(unknown)'}`,
+    `TRIGGER: ${reasons.join(', ')}`,
+    '--- recent trace (last turns) ---',
+    trace,
+  ].join('\n');
+}
 
 function isAgentLike(a) {
   return (
