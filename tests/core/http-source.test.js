@@ -360,3 +360,42 @@ test('hmac auth: passes with a valid signature, 401 on mismatch', async () => {
   assert.equal(badRes.statusCode, 401);
   src.stop();
 });
+
+// Task 6 Tests
+
+test('parses a JSON body into event.body when content-type is application/json', async () => {
+  const ft = fakeTransport();
+  let seen;
+  const src = createHttpSource({ port: 0, routes: [{ path: '/c', type: 'c' }], _transport: ft.transport });
+  src.start((e) => {
+    seen = e;
+    e.respond({ status: 200 });
+  });
+  ft.onRequest()(
+    mockReq({ method: 'POST', url: '/c?x=1&y=two', headers: { 'content-type': 'application/json' }, body: '{"a":1}' }),
+    mockRes(),
+  );
+  await tick();
+  assert.deepEqual(seen.body, { a: 1 });
+  assert.deepEqual(seen.query, { x: '1', y: 'two' });
+  assert.equal(typeof seen.requestId, 'string');
+  assert.equal(seen.method, 'POST');
+  assert.equal(seen.headers['content-type'], 'application/json');
+  src.stop();
+});
+
+test('returns 400 on malformed JSON', async () => {
+  const ft = fakeTransport();
+  const emitted = [];
+  const src = createHttpSource({ port: 0, routes: [{ path: '/c', type: 'c' }], _transport: ft.transport });
+  src.start((e) => emitted.push(e));
+  const res = mockRes();
+  ft.onRequest()(
+    mockReq({ method: 'POST', url: '/c', headers: { 'content-type': 'application/json' }, body: '{bad json' }),
+    res,
+  );
+  await tick();
+  assert.equal(res.statusCode, 400);
+  assert.equal(emitted.length, 0);
+  src.stop();
+});

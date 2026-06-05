@@ -185,7 +185,16 @@ export function createHttpSource(options = {}) {
         return;
       }
 
-      const body = rawBody;
+      let body = rawBody;
+      const contentType = headers['content-type'] ?? '';
+      if (contentType.includes('application/json')) {
+        try {
+          body = rawBody.length ? JSON.parse(rawBody) : {};
+        } catch {
+          writeResponse(res, { status: 400, body: { error: 'invalid json' } });
+          return;
+        }
+      }
       const query = Object.fromEntries(url.searchParams.entries());
       const requestId = crypto.randomBytes(4).toString('hex');
 
