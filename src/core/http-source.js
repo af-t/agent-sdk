@@ -62,11 +62,6 @@ export function createHttpSource(options = {}) {
   let boundAddress = null;
   const pending = new Set();
 
-  void authToken;
-  void hmacSecret;
-  void signatureHeader;
-  void signaturePrefix;
-
   function safeEmit(event) {
     if (!emitFn) return;
     try {
@@ -85,6 +80,30 @@ export function createHttpSource(options = {}) {
       }
     }
     return pathSeen ? 'method-not-allowed' : null;
+  }
+
+  function constantTimeEqual(a, b) {
+    const ba = Buffer.from(String(a));
+    const bb = Buffer.from(String(b));
+    if (ba.length !== bb.length) return false;
+    return crypto.timingSafeEqual(ba, bb);
+  }
+
+  function checkAuth(route, headers, rawBody) {
+    if (route.auth === 'none') return true;
+    if (route.auth === 'token') {
+      const raw = headers['authorization'];
+      const provided = raw != null ? raw.replace(/^Bearer\s+/i, '') : headers['x-auth-token'];
+      return provided != null && constantTimeEqual(provided, authToken);
+    }
+    if (route.auth === 'hmac') {
+      const sig = headers[signatureHeader.toLowerCase()];
+      if (sig == null) return false;
+      const expected = crypto.createHmac('sha256', hmacSecret).update(rawBody).digest('hex');
+      const provided = sig.startsWith(signaturePrefix) ? sig.slice(signaturePrefix.length) : sig;
+      return constantTimeEqual(provided, expected);
+    }
+    return false;
   }
 
   function readBody(req) {
@@ -159,6 +178,13 @@ export function createHttpSource(options = {}) {
         }
         throw err;
       }
+
+      if (!checkAuth(route, headers, rawBody)) {
+        logger.warn(`http-source: auth failed for ${method} ${path}`);
+        writeResponse(res, { status: 401, body: { error: 'unauthorized' } });
+        return;
+      }
+
       const body = rawBody;
       const query = Object.fromEntries(url.searchParams.entries());
       const requestId = crypto.randomBytes(4).toString('hex');

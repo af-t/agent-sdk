@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import http from 'node:http';
+import crypto from 'node:crypto';
 import { createHttpSource } from '../../src/core/http-source.js';
 import { logger } from '../../src/core/logger.js';
 
@@ -286,5 +287,76 @@ test('a body over bodyLimitBytes returns 413 and emits nothing', async () => {
   await tick();
   assert.equal(res.statusCode, 413);
   assert.equal(emitted.length, 0);
+  src.stop();
+});
+
+// Task 5 Tests
+
+test('token auth: passes with the right Bearer token, 401 otherwise', async () => {
+  const ft = fakeTransport();
+  const emitted = [];
+  const src = createHttpSource({
+    port: 0,
+    authToken: 'sekret',
+    routes: [{ path: '/c', type: 'c', auth: 'token' }],
+    _transport: ft.transport,
+  });
+  src.start((e) => {
+    emitted.push(e);
+    e.respond({ status: 200 });
+  });
+
+  const okRes = mockRes();
+  ft.onRequest()(mockReq({ method: 'POST', url: '/c', headers: { authorization: 'Bearer sekret' } }), okRes);
+  await tick();
+  assert.equal(okRes.statusCode, 200);
+
+  const badRes = mockRes();
+  ft.onRequest()(mockReq({ method: 'POST', url: '/c', headers: { authorization: 'Bearer nope' } }), badRes);
+  await tick();
+  assert.equal(badRes.statusCode, 401);
+
+  const noneRes = mockRes();
+  ft.onRequest()(mockReq({ method: 'POST', url: '/c' }), noneRes);
+  await tick();
+  assert.equal(noneRes.statusCode, 401);
+
+  assert.equal(emitted.length, 1); // only the authorized request emitted
+  src.stop();
+});
+
+test('hmac auth: passes with a valid signature, 401 on mismatch', async () => {
+  const ft = fakeTransport();
+  const secret = 'whsec';
+  const body = JSON.stringify({ event: 'push' });
+  const sig = 'sha256=' + crypto.createHmac('sha256', secret).update(body).digest('hex');
+  const src = createHttpSource({
+    port: 0,
+    hmacSecret: secret,
+    routes: [{ path: '/wh', type: 'wh', auth: 'hmac' }],
+    _transport: ft.transport,
+  });
+  src.start((e) => e.respond({ status: 202 }));
+
+  const okRes = mockRes();
+  ft.onRequest()(
+    mockReq({
+      method: 'POST',
+      url: '/wh',
+      headers: { 'content-type': 'application/json', 'x-signature-256': sig },
+      body,
+    }),
+    okRes,
+  );
+  await tick();
+  assert.equal(okRes.statusCode, 202);
+
+  const badRes = mockRes();
+  ft.onRequest()(
+    mockReq({ method: 'POST', url: '/wh', headers: { 'x-signature-256': 'sha256=deadbeef' }, body }),
+    badRes,
+  );
+  await tick();
+  assert.equal(badRes.statusCode, 401);
   src.stop();
 });
