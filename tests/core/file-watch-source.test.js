@@ -89,3 +89,60 @@ test('passes the resolved absolute config paths to the backend', () => {
   src.stop();
 });
 
+test('ignore drops paths whose absolute path contains a substring', async () => {
+  const fb = fakeBackend();
+  const events = [];
+  const src = createFileWatchSource({
+    paths: 'a',
+    debounceMs: 15,
+    ignore: ['node_modules', '.log'],
+    _backend: fb.backend,
+  });
+  src.start((e) => events.push(e));
+  fb.trigger('/proj/node_modules/x.js', 'change');
+  fb.trigger('/proj/app.log', 'change');
+  fb.trigger('/proj/src/main.js', 'change');
+  await tick();
+  assert.deepEqual(events.map((e) => e.path), ['/proj/src/main.js']);
+  src.stop();
+});
+
+test('filter runs after ignore and can drop or pass events', async () => {
+  const fb = fakeBackend();
+  const events = [];
+  const seen = [];
+  const src = createFileWatchSource({
+    paths: 'a',
+    debounceMs: 15,
+    ignore: ['node_modules'],
+    filter: (p, eventType) => {
+      seen.push([p, eventType]);
+      return p.endsWith('.js');
+    },
+    _backend: fb.backend,
+  });
+  src.start((e) => events.push(e));
+  fb.trigger('/proj/node_modules/x.js', 'change'); // dropped by ignore, never reaches filter
+  fb.trigger('/proj/readme.md', 'change'); // reaches filter, dropped
+  fb.trigger('/proj/main.js', 'rename'); // reaches filter, passes
+  await tick();
+  assert.deepEqual(events.map((e) => e.path), ['/proj/main.js']);
+  assert.deepEqual(
+    seen.map((s) => s[0]),
+    ['/proj/readme.md', '/proj/main.js'],
+  );
+  src.stop();
+});
+
+test('type option overrides the emitted event.type', async () => {
+  const fb = fakeBackend();
+  const events = [];
+  const src = createFileWatchSource({ paths: 'a', debounceMs: 15, type: 'fs', _backend: fb.backend });
+  src.start((e) => events.push(e));
+  fb.trigger('/abs/x', 'change');
+  await tick();
+  assert.equal(events[0].type, 'fs');
+  src.stop();
+});
+
+

@@ -71,7 +71,16 @@ export function createFileWatchSource(options = {}) {
     perPathTimers.set(absPath, { timer, eventType: merged });
   }
 
+  function passesFilters(absPath, eventType) {
+    for (const sub of ignore) {
+      if (typeof sub === 'string' && absPath.includes(sub)) return false;
+    }
+    if (filter && !filter(absPath, eventType)) return false;
+    return true;
+  }
+
   function onRaw(absPath, eventType) {
+    if (!passesFilters(absPath, eventType)) return;
     emitPerPath(absPath, eventType);
   }
 
