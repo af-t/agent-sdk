@@ -1,16 +1,74 @@
 import { ConfigError } from './errors.js';
+import { logger } from './logger.js';
 
 function isAgentLike(a) {
   return a && typeof a.run === 'function' && typeof a.steer === 'function' && typeof a.isRunning === 'boolean';
 }
 
-export function createDaemon({ agent, handler, signal } = {}) {
+export function createDaemon({ agent, handler, sources = [], signal, onAction } = {}) {
   if (!isAgentLike(agent)) throw new ConfigError('createDaemon: agent must be an Agent-like object');
   if (typeof handler !== 'function') throw new ConfigError('createDaemon: handler must be a function');
+  const allSources = Array.isArray(sources) ? sources : [];
 
   let controller = null;
   let consumerAbortHandler = null;
   let started = false;
+
+  const queue = [];
+  let draining = false;
+
+  function emit(event) {
+    if (!started) {
+      logger.warn('daemon.emit called while not started; event ignored');
+      return;
+    }
+    queue.push({ ...event, receivedAt: Date.now() });
+    drain();
+  }
+
+  async function drain() {
+    if (draining) return;
+    draining = true;
+    try {
+      while (queue.length > 0) {
+        const event = queue.shift();
+        await dispatch(event);
+      }
+    } finally {
+      draining = false;
+    }
+  }
+
+  async function dispatch(event) {
+    let action;
+    try {
+      action = await handler(event, makeCtx());
+    } catch (err) {
+      logger.warn(`daemon handler threw: ${err.message}`);
+      return;
+    }
+    if (action == null) return;
+    if (typeof onAction === 'function') {
+      try {
+        onAction(action, event);
+      } catch (err) {
+        logger.warn(`daemon onAction threw: ${err.message}`);
+      }
+    }
+    // action execution is added in Task 3
+  }
+
+  function makeCtx() {
+    return {
+      agent,
+      get isRunning() {
+        return agent.isRunning;
+      },
+      emit,
+      daemon: api,
+      signal: controller ? controller.signal : undefined,
+    };
+  }
 
   function start() {
     if (started) return controller.signal;
@@ -26,12 +84,31 @@ export function createDaemon({ agent, handler, signal } = {}) {
       };
       signal.addEventListener('abort', consumerAbortHandler);
     }
+    for (const src of allSources) {
+      try {
+        const r = src.start(emit);
+        if (r && typeof r.then === 'function') {
+          r.catch((err) => logger.warn(`daemon source start rejected: ${err.message}`));
+        }
+      } catch (err) {
+        logger.warn(`daemon source start threw: ${err.message}`);
+      }
+    }
     return controller.signal;
   }
 
   async function stop() {
     if (!started) return;
     started = false;
+    await Promise.all(
+      allSources.map(async (src) => {
+        try {
+          await src.stop();
+        } catch (err) {
+          logger.warn(`daemon source stop threw: ${err.message}`);
+        }
+      }),
+    );
     if (signal && consumerAbortHandler) {
       signal.removeEventListener('abort', consumerAbortHandler);
       consumerAbortHandler = null;
@@ -39,9 +116,10 @@ export function createDaemon({ agent, handler, signal } = {}) {
     if (controller) controller.abort();
   }
 
-  return {
+  const api = {
     start,
     stop,
+    emit,
     get isRunning() {
       return started;
     },
@@ -49,6 +127,7 @@ export function createDaemon({ agent, handler, signal } = {}) {
       return controller ? controller.signal : null;
     },
   };
+  return api;
 }
 
 // stub — replaced in Task 5
