@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createFileWatchSource } from '../../src/core/file-watch-source.js';
+import { logger } from '../../src/core/logger.js';
+
 
 // A fake backend captures onRaw so tests drive synthetic fs events.
 function fakeBackend() {
@@ -176,5 +178,44 @@ test('coalesce false emits one event per path for the same burst', async () => {
   assert.deepEqual(events.map((e) => e.path).sort(), ['/abs/a', '/abs/b']);
   src.stop();
 });
+
+test('stop before a pending debounce fires emits nothing and tears down the backend', async () => {
+  const fb = fakeBackend();
+  const events = [];
+  const src = createFileWatchSource({ paths: 'a', debounceMs: 50, _backend: fb.backend });
+  src.start((e) => events.push(e));
+  fb.trigger('/abs/x', 'change');
+  src.stop();
+  await tick(80);
+  assert.equal(events.length, 0);
+  assert.equal(fb.stops(), 1);
+});
+
+test('stop is idempotent and safe before start', () => {
+  const fb = fakeBackend();
+  const src = createFileWatchSource({ paths: 'a', _backend: fb.backend });
+  src.stop(); // before start
+  src.start(() => {});
+  src.stop();
+  src.stop();
+  assert.equal(fb.stops(), 1);
+});
+
+test('a second start warns and does not start the backend twice', () => {
+  const fb = fakeBackend();
+  const warns = [];
+  const orig = logger.warn;
+  logger.warn = (m) => warns.push(m);
+  try {
+    const src = createFileWatchSource({ paths: 'a', _backend: fb.backend });
+    src.start(() => {});
+    src.start(() => {});
+    assert.ok(warns.some((m) => /already started/.test(m)));
+    src.stop();
+  } finally {
+    logger.warn = orig;
+  }
+});
+
 
 
