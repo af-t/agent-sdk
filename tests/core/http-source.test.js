@@ -5,6 +5,7 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import { createHttpSource } from '../../src/core/http-source.js';
 import { logger } from '../../src/core/logger.js';
+import { createDaemon } from '../../src/core/daemon.js';
 
 // Appendix B test helpers
 
@@ -482,4 +483,79 @@ test('stop() resolves an in-flight request with 503', async () => {
   await tick();
   assert.equal(res.statusCode, 503);
   assert.equal(res.ended, true);
+});
+
+// Task 9 Tests
+
+test('createHttpSource is re-exported from the package entry', async () => {
+  const mod = await import('../../src/index.js');
+  assert.equal(typeof mod.createHttpSource, 'function');
+});
+
+test('drives a daemon: handler awaits agent.run and replies with the result', async () => {
+  const ft = fakeTransport();
+  const agent = fakeAgent();
+  const source = createHttpSource({
+    port: 0,
+    routes: [{ path: '/control', type: 'http-control' }],
+    _transport: ft.transport,
+  });
+  const daemon = createDaemon({
+    agent,
+    sources: [source],
+    handler: async (event, ctx) => {
+      if (event.type === 'http-control') {
+        const out = await ctx.agent.run(event.body.prompt, null, { signal: ctx.signal });
+        event.respond({ status: 200, body: { result: out } });
+        return null;
+      }
+    },
+  });
+  daemon.start();
+  const res = mockRes();
+  ft.onRequest()(
+    mockReq({
+      method: 'POST',
+      url: '/control',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: 'hi' }),
+    }),
+    res,
+  );
+  for (let i = 0; i < 50 && !res.ended; i++) await tick(5);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(JSON.parse(res.body), { result: 'ran' });
+  assert.equal(agent.runs[0].prompt, 'hi');
+  await daemon.stop();
+});
+
+test('real loopback: GET /health 200, an authorized control round-trip, then releases the port', async () => {
+  const src = createHttpSource({
+    port: 0,
+    authToken: 'secret',
+    routes: [{ path: '/control', type: 'http-control', auth: 'token' }],
+  });
+  src.start((e) => e.respond({ status: 200, body: { ok: true, prompt: e.body.prompt } }));
+  for (let i = 0; i < 50 && !src.address(); i++) await tick(10);
+  const { port } = src.address();
+
+  const health = await request(port, { path: '/health' });
+  assert.equal(health.status, 200);
+  assert.deepEqual(JSON.parse(health.body), { status: 'ok' });
+
+  const ctrl = await request(port, {
+    method: 'POST',
+    path: '/control',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer secret' },
+    body: JSON.stringify({ prompt: 'hello' }),
+  });
+  assert.equal(ctrl.status, 200);
+  assert.deepEqual(JSON.parse(ctrl.body), { ok: true, prompt: 'hello' });
+
+  const unauth = await request(port, { method: 'POST', path: '/control', body: '{}' });
+  assert.equal(unauth.status, 401);
+
+  src.stop();
+  await tick(40);
+  await assert.rejects(() => request(port, { path: '/health' }));
 });

@@ -30,3 +30,4 @@ export default createAgent;
 export { createCopilot } from './core/copilot.js';
 export { createDaemon, createTimerSource } from './core/daemon.js';
 export { createFileWatchSource } from './core/file-watch-source.js';
+export { createHttpSource } from './core/http-source.js';
