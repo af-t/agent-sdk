@@ -238,7 +238,6 @@ test('a known path with the wrong method returns 405', async () => {
   assert.equal(res.statusCode, 405);
   src.stop();
 });
-
 test('a matched route emits an event and respond writes the HTTP response', async () => {
   const ft = fakeTransport();
   const src = createHttpSource({
@@ -252,5 +251,40 @@ test('a matched route emits an event and respond writes the HTTP response', asyn
   await tick();
   assert.equal(res.statusCode, 200);
   assert.deepEqual(JSON.parse(res.body), { saw: 'http-control', path: '/control' });
+  src.stop();
+});
+
+// Task 4 Tests
+
+test('exposes the raw body and parsed body for a matched route', async () => {
+  const ft = fakeTransport();
+  let seen;
+  const src = createHttpSource({ port: 0, routes: [{ path: '/c', type: 'c' }], _transport: ft.transport });
+  src.start((e) => {
+    seen = e;
+    e.respond({ status: 200 });
+  });
+  ft.onRequest()(mockReq({ method: 'POST', url: '/c', body: 'hello-raw' }), mockRes());
+  await tick();
+  assert.equal(seen.rawBody, 'hello-raw');
+  assert.equal(seen.body, 'hello-raw'); // no JSON content-type -> body is the raw string
+  src.stop();
+});
+
+test('a body over bodyLimitBytes returns 413 and emits nothing', async () => {
+  const ft = fakeTransport();
+  const emitted = [];
+  const src = createHttpSource({
+    port: 0,
+    routes: [{ path: '/c', type: 'c' }],
+    bodyLimitBytes: 8,
+    _transport: ft.transport,
+  });
+  src.start((e) => emitted.push(e));
+  const res = mockRes();
+  ft.onRequest()(mockReq({ method: 'POST', url: '/c', body: 'way-too-much-data' }), res);
+  await tick();
+  assert.equal(res.statusCode, 413);
+  assert.equal(emitted.length, 0);
   src.stop();
 });

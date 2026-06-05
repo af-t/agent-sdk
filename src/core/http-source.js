@@ -66,7 +66,6 @@ export function createHttpSource(options = {}) {
   void hmacSecret;
   void signatureHeader;
   void signaturePrefix;
-  void bodyLimitBytes;
 
   function safeEmit(event) {
     if (!emitFn) return;
@@ -90,8 +89,17 @@ export function createHttpSource(options = {}) {
 
   function readBody(req) {
     return new Promise((resolve, reject) => {
+      let size = 0;
       const chunks = [];
-      req.on('data', (c) => chunks.push(c));
+      req.on('data', (c) => {
+        size += c.length;
+        if (size > bodyLimitBytes) {
+          reject(Object.assign(new Error('body too large'), { httpStatus: 413 }));
+          req.destroy();
+          return;
+        }
+        chunks.push(c);
+      });
       req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
       req.on('error', reject);
     });
@@ -140,7 +148,17 @@ export function createHttpSource(options = {}) {
         return;
       }
 
-      const rawBody = await readBody(req);
+      let rawBody;
+      try {
+        rawBody = await readBody(req);
+      } catch (err) {
+        if (err.httpStatus === 413) {
+          logger.warn('http-source: request body exceeded limit');
+          writeResponse(res, { status: 413, body: { error: 'payload too large' } });
+          return;
+        }
+        throw err;
+      }
       const body = rawBody;
       const query = Object.fromEntries(url.searchParams.entries());
       const requestId = crypto.randomBytes(4).toString('hex');
