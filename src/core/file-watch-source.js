@@ -38,16 +38,71 @@ export function createFileWatchSource(options = {}) {
   }
 
   const absPaths = list.map((p) => path.resolve(p));
-  void absPaths;
-  void recursive;
-  void usePolling;
   void coalesce;
-  void type;
-  void _backend;
+
+  let emitFn = null;
+  let stopBackend = null;
+  let started = false;
+
+  const perPathTimers = new Map(); // path -> { timer, eventType }
+
+  function mergeEventType(prev, next) {
+    return prev === 'rename' || next === 'rename' ? 'rename' : next;
+  }
+
+  function safeEmit(event) {
+    if (!emitFn) return;
+    try {
+      emitFn(event);
+    } catch (err) {
+      logger.warn(`file-watch-source emit threw: ${err.message}`);
+    }
+  }
+
+  function emitPerPath(absPath, eventType) {
+    const existing = perPathTimers.get(absPath);
+    const merged = existing ? mergeEventType(existing.eventType, eventType) : eventType;
+    if (existing) clearTimeout(existing.timer);
+    const timer = setTimeout(() => {
+      perPathTimers.delete(absPath);
+      safeEmit({ type, path: absPath, eventType: merged });
+    }, debounceMs);
+    if (typeof timer.unref === 'function') timer.unref();
+    perPathTimers.set(absPath, { timer, eventType: merged });
+  }
+
+  function onRaw(absPath, eventType) {
+    emitPerPath(absPath, eventType);
+  }
 
   return {
-    start(_emit) {},
-    stop() {},
+    start(emit) {
+      if (started) {
+        logger.warn('file-watch-source already started; ignoring');
+        return;
+      }
+      started = true;
+      emitFn = emit;
+      try {
+        stopBackend = _backend({ paths: absPaths, recursive, usePolling, pollIntervalMs }, onRaw);
+      } catch (err) {
+        logger.warn(`file-watch-source backend start threw: ${err.message}`);
+      }
+    },
+    stop() {
+      started = false;
+      if (typeof stopBackend === 'function') {
+        try {
+          stopBackend();
+        } catch (err) {
+          logger.warn(`file-watch-source backend stop threw: ${err.message}`);
+        }
+      }
+      stopBackend = null;
+      for (const { timer } of perPathTimers.values()) clearTimeout(timer);
+      perPathTimers.clear();
+      emitFn = null;
+    },
   };
 }
 
