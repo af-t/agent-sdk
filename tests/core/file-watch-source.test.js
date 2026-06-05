@@ -5,6 +5,8 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { createFileWatchSource } from '../../src/core/file-watch-source.js';
 import { logger } from '../../src/core/logger.js';
+import { createDaemon } from '../../src/core/daemon.js';
+
 
 
 
@@ -241,6 +243,54 @@ test('real fs.watch backend emits on a real file change, then stops cleanly', as
   assert.equal(events.length, countAtStop, 'no events after stop');
   rmSync(dir, { recursive: true, force: true });
 });
+
+// Minimal Agent-like double (mirrors daemon.test.js fakeAgent).
+function fakeAgent({ running = false } = {}) {
+  let _running = running;
+  const runs = [];
+  const steers = [];
+  return {
+    get isRunning() {
+      return _running;
+    },
+    setRunning(v) {
+      _running = v;
+    },
+    async run(prompt, notify, opts) {
+      runs.push({ prompt, notify, opts });
+      return 'ran';
+    },
+    steer(prompt) {
+      steers.push(prompt);
+      return _running;
+    },
+    runs,
+    steers,
+  };
+}
+
+test('createFileWatchSource is re-exported from the package entry', async () => {
+  const mod = await import('../../src/index.js');
+  assert.equal(typeof mod.createFileWatchSource, 'function');
+});
+
+test('a file-watch source drives a daemon run on a synthetic change', async () => {
+  const fb = fakeBackend();
+  const agent = fakeAgent();
+  const source = createFileWatchSource({ paths: 'a', debounceMs: 15, _backend: fb.backend });
+  const daemon = createDaemon({
+    agent,
+    handler: (e) => ({ type: 'run', prompt: e.path }),
+    sources: [source],
+  });
+  daemon.start();
+  fb.trigger('/abs/changed.js', 'change');
+  await tick();
+  assert.equal(agent.runs.length, 1);
+  assert.equal(agent.runs[0].prompt, '/abs/changed.js');
+  await daemon.stop();
+});
+
 
 
 
