@@ -179,3 +179,88 @@ test('start runs sources and stop tears them down', async () => {
   await daemon.stop();
   assert.equal(stopped, 1);
 });
+
+test('run action calls agent.run with a signal when idle', async () => {
+  const agent = fakeAgent();
+  const daemon = createDaemon({ agent, handler: (e) => ({ type: 'run', prompt: e.data }) });
+  daemon.start();
+  daemon.emit({ type: 'go', data: 'hello' });
+  await tick();
+  assert.equal(agent.runs.length, 1);
+  assert.equal(agent.runs[0].prompt, 'hello');
+  assert.ok(agent.runs[0].opts.signal instanceof AbortSignal);
+  await daemon.stop();
+});
+
+test('steer action calls agent.steer while running', async () => {
+  const agent = fakeAgent({ running: true });
+  const daemon = createDaemon({ agent, handler: () => ({ type: 'steer', prompt: 'nudge' }) });
+  daemon.start();
+  daemon.emit({ type: 'go' });
+  await tick();
+  assert.deepEqual(agent.steers, ['nudge']);
+  assert.equal(agent.runs.length, 0);
+  await daemon.stop();
+});
+
+test('prompt action auto-routes: run when idle, steer when running', async () => {
+  const agent = fakeAgent({ running: false });
+  const daemon = createDaemon({ agent, handler: (e) => ({ type: 'prompt', text: e.data }) });
+  daemon.start();
+  daemon.emit({ type: 'go', data: 'first' });
+  await tick();
+  assert.equal(agent.runs.length, 1);
+  assert.equal(agent.runs[0].prompt, 'first');
+  agent.setRunning(true);
+  daemon.emit({ type: 'go', data: 'second' });
+  await tick();
+  assert.deepEqual(agent.steers, ['second']);
+  await daemon.stop();
+});
+
+test('abort action aborts the current run; a later run gets a fresh signal', async () => {
+  const agent = fakeAgent();
+  const daemon = createDaemon({
+    agent,
+    handler: (e) => (e.type === 'abort' ? { type: 'abort' } : { type: 'run', prompt: e.type }),
+  });
+  daemon.start();
+  daemon.emit({ type: 'r1' });
+  await tick();
+  const sig1 = agent.runs[0].opts.signal;
+  daemon.emit({ type: 'abort' });
+  await tick();
+  assert.equal(sig1.aborted, true);
+  daemon.emit({ type: 'r2' });
+  await tick();
+  const sig2 = agent.runs[1].opts.signal;
+  assert.equal(sig2.aborted, false);
+  assert.notEqual(sig1, sig2);
+  await daemon.stop();
+});
+
+test('onAction observes produced actions', async () => {
+  const agent = fakeAgent();
+  const seen = [];
+  const daemon = createDaemon({
+    agent,
+    handler: () => ({ type: 'ignore' }),
+    onAction: (action, event) => seen.push([action.type, event.type]),
+  });
+  daemon.start();
+  daemon.emit({ type: 'go' });
+  await tick();
+  assert.deepEqual(seen, [['ignore', 'go']]);
+  await daemon.stop();
+});
+
+test('an unknown action type is ignored without crashing', async () => {
+  const agent = fakeAgent();
+  const daemon = createDaemon({ agent, handler: () => ({ type: 'frobnicate' }) });
+  daemon.start();
+  daemon.emit({ type: 'go' });
+  await tick();
+  assert.equal(agent.runs.length, 0);
+  assert.equal(agent.steers.length, 0);
+  await daemon.stop();
+});

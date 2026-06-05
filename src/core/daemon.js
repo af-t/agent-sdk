@@ -13,6 +13,7 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction } 
   let controller = null;
   let consumerAbortHandler = null;
   let started = false;
+  let runController = null;
 
   const queue = [];
   let draining = false;
@@ -55,7 +56,48 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction } 
         logger.warn(`daemon onAction threw: ${err.message}`);
       }
     }
-    // action execution is added in Task 3
+    try {
+      executeAction(action);
+    } catch (err) {
+      logger.warn(`daemon action execution threw: ${err.message}`);
+    }
+  }
+
+  function ensureRunController() {
+    if (!runController || runController.signal.aborted) runController = new AbortController();
+    return runController;
+  }
+
+  function startRun(prompt, notify) {
+    const c = ensureRunController();
+    Promise.resolve(agent.run(prompt, notify, { signal: c.signal })).catch((err) =>
+      logger.warn(`daemon run rejected: ${err.message}`),
+    );
+  }
+
+  function executeAction(action) {
+    switch (action.type) {
+      case undefined:
+      case 'ignore':
+        return;
+      case 'run':
+        startRun(action.prompt, action.notify);
+        return;
+      case 'steer': {
+        const ok = agent.steer(action.prompt);
+        if (!ok) logger.warn('daemon steer action while agent idle; no-op');
+        return;
+      }
+      case 'prompt':
+        if (agent.isRunning) agent.steer(action.text);
+        else startRun(action.text);
+        return;
+      case 'abort':
+        if (runController) runController.abort();
+        return;
+      default:
+        logger.warn(`daemon unknown action type '${action.type}'; ignored`);
+    }
   }
 
   function makeCtx() {
@@ -97,7 +139,7 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction } 
     return controller.signal;
   }
 
-  async function stop() {
+  async function stop({ abort = false } = {}) {
     if (!started) return;
     started = false;
     await Promise.all(
@@ -113,6 +155,7 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction } 
       signal.removeEventListener('abort', consumerAbortHandler);
       consumerAbortHandler = null;
     }
+    if (abort && runController) runController.abort();
     if (controller) controller.abort();
   }
 
