@@ -467,3 +467,19 @@ test('a request times out with 504 when the handler never responds', async () =>
   assert.equal(res.statusCode, 504);
   src.stop();
 });
+
+// Task 8 Tests
+
+test('stop() resolves an in-flight request with 503', async () => {
+  const ft = fakeTransport();
+  const src = createHttpSource({ port: 0, routes: [{ path: '/c', type: 'c' }], _transport: ft.transport });
+  src.start(() => {}); // hold the request open (never responds)
+  const res = mockRes();
+  ft.onRequest()(mockReq({ method: 'POST', url: '/c' }), res);
+  await tick();
+  assert.equal(res.ended, false); // still pending
+  src.stop();
+  await tick();
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.ended, true);
+});
