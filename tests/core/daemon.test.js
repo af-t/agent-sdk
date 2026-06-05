@@ -264,3 +264,38 @@ test('an unknown action type is ignored without crashing', async () => {
   assert.equal(agent.steers.length, 0);
   await daemon.stop();
 });
+
+test('queue backpressure warns once past the soft cap', async () => {
+  const agent = fakeAgent();
+  let release;
+  const gate = new Promise((r) => (release = r));
+  let first = true;
+  const daemon = createDaemon({
+    agent,
+    handler: async () => {
+      if (first) {
+        first = false;
+        await gate;
+      }
+      return null;
+    },
+  });
+  const warns = [];
+  const origWarn = logger.warn;
+  logger.warn = (m) => warns.push(m);
+  try {
+    daemon.start();
+    daemon.emit({ type: 'blocker' });
+    await tick();
+    for (let i = 0; i < 1001; i++) daemon.emit({ type: 'flood', data: i });
+    release();
+    await tick(30);
+    assert.ok(
+      warns.some((m) => /queue exceeded/.test(m)),
+      `expected a backpressure warning, got: ${JSON.stringify(warns)}`,
+    );
+  } finally {
+    logger.warn = origWarn;
+    await daemon.stop();
+  }
+});

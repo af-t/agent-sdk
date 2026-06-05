@@ -1,6 +1,8 @@
 import { ConfigError } from './errors.js';
 import { logger } from './logger.js';
 
+const SOFT_CAP = 1000;
+
 function isAgentLike(a) {
   return a && typeof a.run === 'function' && typeof a.steer === 'function' && typeof a.isRunning === 'boolean';
 }
@@ -17,6 +19,7 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction } 
 
   const queue = [];
   let draining = false;
+  let warnedCap = false;
 
   function emit(event) {
     if (!started) {
@@ -24,6 +27,10 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction } 
       return;
     }
     queue.push({ ...event, receivedAt: Date.now() });
+    if (queue.length > SOFT_CAP && !warnedCap) {
+      warnedCap = true;
+      logger.warn(`daemon queue exceeded ${SOFT_CAP} pending events; handler may be too slow`);
+    }
     drain();
   }
 
@@ -34,6 +41,7 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction } 
       while (queue.length > 0) {
         const event = queue.shift();
         await dispatch(event);
+        if (warnedCap && queue.length <= SOFT_CAP) warnedCap = false;
       }
     } finally {
       draining = false;
