@@ -1,7 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import os from 'node:os';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 import { createFileWatchSource } from '../../src/core/file-watch-source.js';
 import { logger } from '../../src/core/logger.js';
+
 
 
 // A fake backend captures onRaw so tests drive synthetic fs events.
@@ -216,6 +220,28 @@ test('a second start warns and does not start the backend twice', () => {
     logger.warn = orig;
   }
 });
+
+test('real fs.watch backend emits on a real file change, then stops cleanly', async () => {
+  const dir = mkdtempSync(join(os.tmpdir(), 'fws-'));
+  const file = join(dir, 'watched.txt');
+  writeFileSync(file, 'init');
+  const events = [];
+  const src = createFileWatchSource({ paths: dir, debounceMs: 20 });
+  src.start((e) => events.push(e));
+  await tick(20);
+  writeFileSync(file, 'changed');
+  // Poll for the event (fs.watch timing varies by platform).
+  for (let i = 0; i < 50 && events.length === 0; i++) await tick(20);
+  assert.ok(events.length >= 1, 'expected at least one fs event');
+  assert.ok(events.some((e) => e.path === file || e.path.endsWith('watched.txt')));
+  src.stop();
+  const countAtStop = events.length;
+  writeFileSync(file, 'after-stop');
+  await tick(60);
+  assert.equal(events.length, countAtStop, 'no events after stop');
+  rmSync(dir, { recursive: true, force: true });
+});
+
 
 
 

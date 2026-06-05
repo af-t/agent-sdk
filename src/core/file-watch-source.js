@@ -135,6 +135,86 @@ export function createFileWatchSource(options = {}) {
   };
 }
 
-function defaultBackend() {
-  return () => {};
+function defaultBackend({ paths, recursive, usePolling, pollIntervalMs }, onRaw) {
+  if (usePolling) return startPolling({ paths, recursive, pollIntervalMs }, onRaw);
+  return startNativeWatch({ paths, recursive }, onRaw);
+}
+
+function startNativeWatch({ paths, recursive }, onRaw) {
+  const watchers = [];
+  for (const p of paths) {
+    let stat;
+    try {
+      stat = fs.statSync(p);
+    } catch (err) {
+      logger.warn(`file-watch-source: cannot watch ${p}: ${err.message}`);
+      continue;
+    }
+    const isDir = stat.isDirectory();
+    try {
+      const watcher = fs.watch(p, { recursive: isDir && recursive, persistent: false }, (eventType, filename) => {
+        const abs = isDir && filename ? path.resolve(p, filename) : p;
+        onRaw(abs, eventType === 'rename' ? 'rename' : 'change');
+      });
+      watcher.on('error', (err) => logger.warn(`file-watch-source watcher error on ${p}: ${err.message}`));
+      watchers.push(watcher);
+    } catch (err) {
+      logger.warn(`file-watch-source: fs.watch failed on ${p}: ${err.message}`);
+    }
+  }
+  return () => {
+    for (const w of watchers) {
+      try {
+        w.close();
+      } catch {
+        // best-effort teardown
+      }
+    }
+  };
+}
+
+function startPolling({ paths, recursive, pollIntervalMs }, onRaw) {
+  const watched = new Set();
+  function watchOne(file) {
+    if (watched.has(file)) return;
+    watched.add(file);
+    fs.watchFile(file, { interval: pollIntervalMs, persistent: false }, (curr, prev) => {
+      const existed = prev.mtimeMs !== 0;
+      const exists = curr.mtimeMs !== 0;
+      onRaw(file, existed !== exists ? 'rename' : 'change');
+    });
+  }
+  function expand(p) {
+    let stat;
+    try {
+      stat = fs.statSync(p);
+    } catch (err) {
+      logger.warn(`file-watch-source: cannot poll ${p}: ${err.message}`);
+      return;
+    }
+    if (!stat.isDirectory()) {
+      watchOne(p);
+      return;
+    }
+    let entries;
+    try {
+      entries = fs.readdirSync(p, { withFileTypes: true });
+    } catch (err) {
+      logger.warn(`file-watch-source: cannot read dir ${p}: ${err.message}`);
+      return;
+    }
+    for (const entry of entries) {
+      const child = path.join(p, entry.name);
+      if (entry.isDirectory()) {
+        if (recursive) expand(child);
+      } else {
+        watchOne(child);
+      }
+    }
+  }
+  for (const p of paths) expand(p);
+  return () => {
+    for (const file of watched) fs.unwatchFile(file);
+    watched.clear();
+  };
 }
