@@ -7,9 +7,6 @@ import { createFileWatchSource } from '../../src/core/file-watch-source.js';
 import { logger } from '../../src/core/logger.js';
 import { createDaemon } from '../../src/core/daemon.js';
 
-
-
-
 // A fake backend captures onRaw so tests drive synthetic fs events.
 function fakeBackend() {
   let raw = null;
@@ -111,7 +108,10 @@ test('ignore drops paths whose absolute path contains a substring', async () => 
   fb.trigger('/proj/app.log', 'change');
   fb.trigger('/proj/src/main.js', 'change');
   await tick();
-  assert.deepEqual(events.map((e) => e.path), ['/proj/src/main.js']);
+  assert.deepEqual(
+    events.map((e) => e.path),
+    ['/proj/src/main.js'],
+  );
   src.stop();
 });
 
@@ -134,7 +134,10 @@ test('filter runs after ignore and can drop or pass events', async () => {
   fb.trigger('/proj/readme.md', 'change'); // reaches filter, dropped
   fb.trigger('/proj/main.js', 'rename'); // reaches filter, passes
   await tick();
-  assert.deepEqual(events.map((e) => e.path), ['/proj/main.js']);
+  assert.deepEqual(
+    events.map((e) => e.path),
+    ['/proj/main.js'],
+  );
   assert.deepEqual(
     seen.map((s) => s[0]),
     ['/proj/readme.md', '/proj/main.js'],
@@ -290,8 +293,3 @@ test('a file-watch source drives a daemon run on a synthetic change', async () =
   assert.equal(agent.runs[0].prompt, '/abs/changed.js');
   await daemon.stop();
 });
-
-
-
-
-
