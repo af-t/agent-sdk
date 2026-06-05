@@ -399,3 +399,71 @@ test('returns 400 on malformed JSON', async () => {
   assert.equal(emitted.length, 0);
   src.stop();
 });
+
+// Task 7 Tests
+
+test('respond() with a string sends text/plain 200', async () => {
+  const ft = fakeTransport();
+  const src = createHttpSource({ port: 0, routes: [{ path: '/c', type: 'c' }], _transport: ft.transport });
+  src.start((e) => e.respond('pong'));
+  const res = mockRes();
+  ft.onRequest()(mockReq({ method: 'POST', url: '/c' }), res);
+  await tick();
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body, 'pong');
+  assert.match(res.headers['content-type'], /text\/plain/);
+  src.stop();
+});
+
+test('respond() with an object spec sets status, headers, and a JSON body', async () => {
+  const ft = fakeTransport();
+  const src = createHttpSource({ port: 0, routes: [{ path: '/c', type: 'c' }], _transport: ft.transport });
+  src.start((e) => e.respond({ status: 202, headers: { 'x-extra': 'yes' }, body: { queued: true } }));
+  const res = mockRes();
+  ft.onRequest()(mockReq({ method: 'POST', url: '/c' }), res);
+  await tick();
+  assert.equal(res.statusCode, 202);
+  assert.equal(res.headers['x-extra'], 'yes');
+  assert.equal(res.headers['content-type'], 'application/json');
+  assert.deepEqual(JSON.parse(res.body), { queued: true });
+  src.stop();
+});
+
+test('a second respond() call is ignored', async () => {
+  const ft = fakeTransport();
+  const warns = [];
+  const orig = logger.warn;
+  logger.warn = (m) => warns.push(m);
+  try {
+    const src = createHttpSource({ port: 0, routes: [{ path: '/c', type: 'c' }], _transport: ft.transport });
+    src.start((e) => {
+      e.respond({ status: 200, body: { first: true } });
+      e.respond({ status: 500, body: { second: true } });
+    });
+    const res = mockRes();
+    ft.onRequest()(mockReq({ method: 'POST', url: '/c' }), res);
+    await tick();
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(JSON.parse(res.body), { first: true });
+    assert.ok(warns.some((m) => /respond called more than once/.test(m)));
+    src.stop();
+  } finally {
+    logger.warn = orig;
+  }
+});
+
+test('a request times out with 504 when the handler never responds', async () => {
+  const ft = fakeTransport();
+  const src = createHttpSource({
+    port: 0,
+    routes: [{ path: '/c', type: 'c' }],
+    responseTimeoutMs: 20,
+    _transport: ft.transport,
+  });
+  src.start(() => {}); // never calls respond
+  const res = mockRes();
+  ft.onRequest()(mockReq({ method: 'POST', url: '/c' }), res);
+  await tick(60);
+  assert.equal(res.statusCode, 504);
+  src.stop();
+});
