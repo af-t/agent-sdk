@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { logger } from '../../src/core/logger.js';
-import Agent from '../../src/core/agent.js';
 import { createDaemon, createTimerSource } from '../../src/core/daemon.js';
 
 function fakeAgent({ running = false } = {}) {
@@ -298,4 +297,36 @@ test('queue backpressure warns once past the soft cap', async () => {
     logger.warn = origWarn;
     await daemon.stop();
   }
+});
+
+test('createTimerSource validates its inputs', () => {
+  assert.throws(() => createTimerSource({ intervalMs: 0, event: { type: 't' } }), /intervalMs/);
+  assert.throws(() => createTimerSource({ intervalMs: 10 }), /event is required/);
+});
+
+test('createTimerSource emits immediately and on the interval, then stops cleanly', async () => {
+  const emits = [];
+  const src = createTimerSource({ intervalMs: 10, event: { type: 'tick' }, immediate: true });
+  src.start((e) => emits.push(e));
+  await tick(35);
+  src.stop();
+  const countAtStop = emits.length;
+  await tick(30);
+  assert.ok(countAtStop >= 2, `expected immediate + >=1 interval emit, got ${countAtStop}`);
+  assert.equal(emits.length, countAtStop, 'no emits after stop');
+  assert.equal(emits[0].type, 'tick');
+});
+
+test('createTimerSource drives a daemon run', async () => {
+  const agent = fakeAgent();
+  const daemon = createDaemon({
+    agent,
+    handler: () => ({ type: 'run', prompt: 'beat' }),
+    sources: [createTimerSource({ intervalMs: 10, event: { type: 'tick' }, immediate: true })],
+  });
+  daemon.start();
+  await tick(15);
+  assert.ok(agent.runs.length >= 1);
+  assert.equal(agent.runs[0].prompt, 'beat');
+  await daemon.stop();
 });

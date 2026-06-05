@@ -181,7 +181,24 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction } 
   return api;
 }
 
-// stub — replaced in Task 5
-export function createTimerSource() {
-  throw new ConfigError('createTimerSource: not implemented yet');
+export function createTimerSource({ intervalMs, event, immediate = false } = {}) {
+  if (!(typeof intervalMs === 'number' && intervalMs > 0)) {
+    throw new ConfigError('createTimerSource: intervalMs must be a positive number');
+  }
+  if (event == null) throw new ConfigError('createTimerSource: event is required');
+  const make = () => (typeof event === 'function' ? event() : event);
+  let timer = null;
+  return {
+    start(emit) {
+      if (immediate) emit(make());
+      timer = setInterval(() => emit(make()), intervalMs);
+      if (timer && typeof timer.unref === 'function') timer.unref();
+    },
+    stop() {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    },
+  };
 }
