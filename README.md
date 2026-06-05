@@ -104,20 +104,20 @@ Copy `.env.example` to `.env` and fill in your values:
 cp .env.example .env
 ```
 
-| Variable                | Required | Description                                                    |
-| ----------------------- | -------- | -------------------------------------------------------------- |
-| `OPENROUTER_API_KEY`    | Yes      | Your OpenRouter API key                                        |
-| `OPENROUTER_MODEL`      | No       | Default model (e.g. `inclusionai/ling-2.6-1t:free`)            |
-| `OPENROUTER_MAX_TURNS`  | No       | Maximum number of request cycles per `run()` (default: 25)     |
-| `OPENROUTER_ORDER`      | No       | Comma-separated provider priority order                        |
-| `OPENROUTER_ONLY`       | No       | Restrict to specific providers only                            |
-| `TAVILY_API_KEY`        | No       | API key for WebSearch tool (from [Tavily](https://tavily.com)) |
-| `DEBUG`                 | No       | Enable debug logging (`true`/`1`)                              |
-| `OPENROUTER_TEMPERATURE`, `OPENROUTER_TOP_P`, `OPENROUTER_MIN_P`, `OPENROUTER_TOP_K` | No | Sampling controls |
-| `OPENROUTER_FREQUENCY_PENALTY`, `OPENROUTER_PRESENCE_PENALTY`, `OPENROUTER_REPETITION_PENALTY` | No | Repetition controls |
-| `OPENROUTER_SEED`, `OPENROUTER_MAX_COMPLETION_TOKENS` | No | Deterministic seed; output token cap (`max_completion_tokens`) |
-| `OPENROUTER_REASONING_EFFORT`, `OPENROUTER_REASONING_MAX_TOKENS`, `OPENROUTER_REASONING_EXCLUDE`, `OPENROUTER_REASONING_ENABLED` | No | Reasoning controls |
-| `OPENROUTER_PROVIDER_AVOID`, `OPENROUTER_PROVIDER_SORT`, `OPENROUTER_PROVIDER_ALLOW_FALLBACKS`, `OPENROUTER_PROVIDER_REQUIRE_PARAMETERS`, `OPENROUTER_PROVIDER_DATA_COLLECTION` | No | Provider routing |
+| Variable                                                                                                                                                                        | Required | Description                                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------------------------------------------------------------- |
+| `OPENROUTER_API_KEY`                                                                                                                                                            | Yes      | Your OpenRouter API key                                        |
+| `OPENROUTER_MODEL`                                                                                                                                                              | No       | Default model (e.g. `inclusionai/ling-2.6-1t:free`)            |
+| `OPENROUTER_MAX_TURNS`                                                                                                                                                          | No       | Maximum number of request cycles per `run()` (default: 25)     |
+| `OPENROUTER_ORDER`                                                                                                                                                              | No       | Comma-separated provider priority order                        |
+| `OPENROUTER_ONLY`                                                                                                                                                               | No       | Restrict to specific providers only                            |
+| `TAVILY_API_KEY`                                                                                                                                                                | No       | API key for WebSearch tool (from [Tavily](https://tavily.com)) |
+| `DEBUG`                                                                                                                                                                         | No       | Enable debug logging (`true`/`1`)                              |
+| `OPENROUTER_TEMPERATURE`, `OPENROUTER_TOP_P`, `OPENROUTER_MIN_P`, `OPENROUTER_TOP_K`                                                                                            | No       | Sampling controls                                              |
+| `OPENROUTER_FREQUENCY_PENALTY`, `OPENROUTER_PRESENCE_PENALTY`, `OPENROUTER_REPETITION_PENALTY`                                                                                  | No       | Repetition controls                                            |
+| `OPENROUTER_SEED`, `OPENROUTER_MAX_COMPLETION_TOKENS`                                                                                                                           | No       | Deterministic seed; output token cap (`max_completion_tokens`) |
+| `OPENROUTER_REASONING_EFFORT`, `OPENROUTER_REASONING_MAX_TOKENS`, `OPENROUTER_REASONING_EXCLUDE`, `OPENROUTER_REASONING_ENABLED`                                                | No       | Reasoning controls                                             |
+| `OPENROUTER_PROVIDER_AVOID`, `OPENROUTER_PROVIDER_SORT`, `OPENROUTER_PROVIDER_ALLOW_FALLBACKS`, `OPENROUTER_PROVIDER_REQUIRE_PARAMETERS`, `OPENROUTER_PROVIDER_DATA_COLLECTION` | No       | Provider routing                                               |
 
 ## Basic Usage
 
@@ -217,7 +217,7 @@ const daemon = createDaemon({
 const stopSignal = daemon.start();
 daemon.emit({ type: 'manual', data: 'kick' }); // programmatic source, always available
 // ... later:
-await daemon.stop();   // pass { abort: true } to also cancel an in-flight run
+await daemon.stop(); // pass { abort: true } to also cancel an in-flight run
 await agent.cleanup(); // the daemon does not own the Agent's lifecycle
 ```
 
@@ -226,6 +226,38 @@ Actions a handler may return: `{ type: 'ignore' }`, `{ type: 'run', prompt, noti
 agent is running, otherwise run), and `{ type: 'abort' }`. The handler may also act on
 `ctx` directly (`ctx.agent`, `ctx.isRunning`, `ctx.emit`, `ctx.daemon`, `ctx.signal`) and
 return `null`. A source is any `{ start(emit), stop() }`; `createTimerSource` is built in.
+
+#### File-watch source
+
+`createFileWatchSource(options)` is a zero-dependency daemon source that emits filesystem-change events. It implements the same `{ start(emit), stop() }` interface as `createTimerSource`.
+
+```js
+import createAgent, { createDaemon, createFileWatchSource } from '@af-t/openrouter-agent-sdk';
+
+const daemon = createDaemon({
+  agent: await createAgent(),
+  handler: (event) => ({
+    type: 'prompt',
+    text: `Changed: ${event.path ?? event.paths.join(', ')}. Re-run the tests.`,
+  }),
+  sources: [
+    createFileWatchSource({
+      paths: ['src', 'tests'],
+      recursive: true,
+      ignore: ['node_modules', '.git', '.log'],
+      coalesce: true,
+    }),
+  ],
+});
+
+daemon.start();
+```
+
+Options: `paths` (string or array, required), `recursive` (default `false`), `usePolling` + `pollIntervalMs` (use `fs.watchFile` for WSL2 `/mnt/c`, network FS, Docker mounts; default `false` / `1000`), `debounceMs` (default `50`; collapses an editor's save burst per path, and is the batch window when `coalesce` is set), `coalesce` (default `false`; `true` emits one batched `{ type, paths, changes }` event per window), `ignore` (substring list), `filter` (`(path, eventType) => boolean`), and `type` (default `'file-change'`).
+
+Per-file events are `{ type, path, eventType }`; coalesced events are `{ type, paths, changes }`. `eventType` is `'rename'` (create/delete/rename) or `'change'` (content).
+
+Note: in `usePolling` mode, directories are expanded to the files present at `start()`; files created afterward are not auto-detected (a `fs.watchFile` limitation). Use the default `fs.watch` backend, or list explicit file paths, when that matters.
 
 ## Background Jobs
 
@@ -344,20 +376,20 @@ await agent.tools.connectMcpServer({
 
 ## Available Tools
 
-| Tool        | Category | Description                                                                      |
-| ----------- | -------- | -------------------------------------------------------------------------------- |
-| `Read`      | File     | Read text, notebooks, images, PDFs & binary files                                |
-| `Write`     | File     | Write a new file (overwrite)                                                     |
-| `Edit`      | File     | Edit a file with find-and-replace                                                |
-| `Find`      | File     | Search for files by name or content                                              |
-| `List`      | File     | List directory contents (ls alternative)                                         |
-| `Todo`      | General  | Manage a todo list (add, list, complete, delete, update, clear) with persistence |
+| Tool        | Category | Description                                                                           |
+| ----------- | -------- | ------------------------------------------------------------------------------------- |
+| `Read`      | File     | Read text, notebooks, images, PDFs & binary files                                     |
+| `Write`     | File     | Write a new file (overwrite)                                                          |
+| `Edit`      | File     | Edit a file with find-and-replace                                                     |
+| `Find`      | File     | Search for files by name or content                                                   |
+| `List`      | File     | List directory contents (ls alternative)                                              |
+| `Todo`      | General  | Manage a todo list (add, list, complete, delete, update, clear) with persistence      |
 | `Bash`      | System   | Execute shell commands (pty with fallback to child_process); supports background mode |
-| `Delegate`  | System   | Delegate tasks to a sub-agent; supports background mode                          |
-| `Remind`    | System   | Pause execution until a duration elapses or an absolute time is reached          |
-| `Skill`     | System   | Manage and load skills                                                           |
-| `WebSearch` | Web      | Web search via Tavily API                                                        |
-| `WebFetch`  | Web      | Extract content from URLs                                                        |
+| `Delegate`  | System   | Delegate tasks to a sub-agent; supports background mode                               |
+| `Remind`    | System   | Pause execution until a duration elapses or an absolute time is reached               |
+| `Skill`     | System   | Manage and load skills                                                                |
+| `WebSearch` | Web      | Web search via Tavily API                                                             |
+| `WebFetch`  | Web      | Extract content from URLs                                                             |
 
 ### Reading non-text files
 
@@ -620,29 +652,29 @@ openrouter/
 
 Factory function to create an Agent instance.
 
-| Option               | Type     | Description                                                                           |
-| -------------------- | -------- | ------------------------------------------------------------------------------------- |
-| `apiKey`             | string   | OpenRouter API key (overrides `.env`).                                                |
-| `model`              | string   | Model identifier.                                                                     |
-| `order`              | string[] | Provider routing order.                                                               |
-| `only`               | string[] | Restrict to specific providers.                                                       |
-| `provider`           | object   | Provider routing: `{ order, only, avoid, sort, allowFallbacks, requireParameters, dataCollection }`. Merged with env. |
-| `temperature`, `topP`, `minP`, `topK` | number | Sampling controls. Option wins over env.                            |
-| `frequencyPenalty`, `presencePenalty`, `repetitionPenalty` | number | Repetition controls.                           |
-| `seed`               | number   | Deterministic sampling seed.                                                          |
-| `maxCompletionTokens`| number   | Output token cap; sent as `max_completion_tokens`.                                    |
-| `responseFormat`     | object   | Passed through as `response_format` (e.g. JSON mode).                                 |
-| `stop`               | string[] | Stop sequences.                                                                      |
-| `reasoning`          | object   | `{ effort, maxTokens, exclude, enabled }`. Maps to OpenRouter's `reasoning`.          |
-| `systemPrompt`       | string   | System prompt override. Falls back to `RULE.md`, then a built-in default.             |
-| `maxTurns`           | number   | Max request cycles per `run()`. Default `25`; `0` means unlimited.                    |
-| `effort`             | string   | Reasoning effort: `'low'`, `'medium'`, `'high'`. Default `'high'`.                    |
-| `maxToolOutputChars` | number   | Cap (in chars) for tool output before truncation. Default `50_000`.                   |
-| `restricted`         | boolean  | Security mode. Default `true`. Set `false` to lift path-boundary checks, env filtering, and shell command blocks (logs a warning). |
-| `storagePaths`       | object   | `{ memoryDir?, tmpDir? }`. Paths support `~` expansion. External dirs are auto-added to `trustedPaths`. |
-| `contextFiles`       | string[] | Files to inject on the first turn. Default `['AGENT.md']`. Missing files are skipped. |
-| `memoryTypes`        | object   | Custom memory type descriptions; merged over the four built-in types.                 |
-| `injectors`          | object   | Disable built-in injectors by name, e.g. `{ date: false, skillList: false }`.         |
+| Option                                                     | Type     | Description                                                                                                                        |
+| ---------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `apiKey`                                                   | string   | OpenRouter API key (overrides `.env`).                                                                                             |
+| `model`                                                    | string   | Model identifier.                                                                                                                  |
+| `order`                                                    | string[] | Provider routing order.                                                                                                            |
+| `only`                                                     | string[] | Restrict to specific providers.                                                                                                    |
+| `provider`                                                 | object   | Provider routing: `{ order, only, avoid, sort, allowFallbacks, requireParameters, dataCollection }`. Merged with env.              |
+| `temperature`, `topP`, `minP`, `topK`                      | number   | Sampling controls. Option wins over env.                                                                                           |
+| `frequencyPenalty`, `presencePenalty`, `repetitionPenalty` | number   | Repetition controls.                                                                                                               |
+| `seed`                                                     | number   | Deterministic sampling seed.                                                                                                       |
+| `maxCompletionTokens`                                      | number   | Output token cap; sent as `max_completion_tokens`.                                                                                 |
+| `responseFormat`                                           | object   | Passed through as `response_format` (e.g. JSON mode).                                                                              |
+| `stop`                                                     | string[] | Stop sequences.                                                                                                                    |
+| `reasoning`                                                | object   | `{ effort, maxTokens, exclude, enabled }`. Maps to OpenRouter's `reasoning`.                                                       |
+| `systemPrompt`                                             | string   | System prompt override. Falls back to `RULE.md`, then a built-in default.                                                          |
+| `maxTurns`                                                 | number   | Max request cycles per `run()`. Default `25`; `0` means unlimited.                                                                 |
+| `effort`                                                   | string   | Reasoning effort: `'low'`, `'medium'`, `'high'`. Default `'high'`.                                                                 |
+| `maxToolOutputChars`                                       | number   | Cap (in chars) for tool output before truncation. Default `50_000`.                                                                |
+| `restricted`                                               | boolean  | Security mode. Default `true`. Set `false` to lift path-boundary checks, env filtering, and shell command blocks (logs a warning). |
+| `storagePaths`                                             | object   | `{ memoryDir?, tmpDir? }`. Paths support `~` expansion. External dirs are auto-added to `trustedPaths`.                            |
+| `contextFiles`                                             | string[] | Files to inject on the first turn. Default `['AGENT.md']`. Missing files are skipped.                                              |
+| `memoryTypes`                                              | object   | Custom memory type descriptions; merged over the four built-in types.                                                              |
+| `injectors`                                                | object   | Disable built-in injectors by name, e.g. `{ date: false, skillList: false }`.                                                      |
 
 ### `agent.run(prompt, notify?, options?)`
 
@@ -660,18 +692,18 @@ Queue a prompt for an already-running loop without waiting for it to finish — 
 
 ### Agent Properties
 
-| Property         | Type         | Description                                                      |
-| ---------------- | ------------ | ---------------------------------------------------------------- |
-| `messages`       | array        | Conversation history                                             |
-| `maxTurns`       | number       | Max LLM request cycles                                           |
-| `isSubagent`     | boolean      | Whether the agent is a sub-agent                                 |
-| `restricted`     | boolean      | Security mode flag (set at construction)                         |
-| `tools`          | ToolRegistry | Registry of registered tools                                     |
-| `usage`          | object       | `{ cost: number, tokens: number }`                               |
-| `systemPrompt`   | string       | System prompt (can be overridden)                                |
-| `isRunning`      | boolean      | Whether a run loop is currently active                           |
-| `backgroundJobs` | Map          | Active background jobs keyed by job ID (`bg-<5-hex>`)            |
-| `subagents`      | Map          | Named subagent instances keyed by ID (scoped to this agent)      |
+| Property         | Type         | Description                                                 |
+| ---------------- | ------------ | ----------------------------------------------------------- |
+| `messages`       | array        | Conversation history                                        |
+| `maxTurns`       | number       | Max LLM request cycles                                      |
+| `isSubagent`     | boolean      | Whether the agent is a sub-agent                            |
+| `restricted`     | boolean      | Security mode flag (set at construction)                    |
+| `tools`          | ToolRegistry | Registry of registered tools                                |
+| `usage`          | object       | `{ cost: number, tokens: number }`                          |
+| `systemPrompt`   | string       | System prompt (can be overridden)                           |
+| `isRunning`      | boolean      | Whether a run loop is currently active                      |
+| `backgroundJobs` | Map          | Active background jobs keyed by job ID (`bg-<5-hex>`)       |
+| `subagents`      | Map          | Named subagent instances keyed by ID (scoped to this agent) |
 
 ### Agent Methods
 
