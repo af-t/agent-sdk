@@ -259,6 +259,44 @@ Per-file events are `{ type, path, eventType }`; coalesced events are `{ type, p
 
 Note: in `usePolling` mode, directories are expanded to the files present at `start()`; files created afterward are not auto-detected (a `fs.watchFile` limitation). Use the default `fs.watch` backend, or list explicit file paths, when that matters.
 
+#### HTTP/webhook source
+
+`createHttpSource(options)` is a zero-dependency daemon source that turns inbound HTTP requests into events. It owns a `node:http` server and implements the same `{ start(emit), stop() }` interface as `createTimerSource` and `createFileWatchSource` (plus `address()` for the bound port).
+
+```js
+import createAgent, { createDaemon, createHttpSource } from '@af-t/openrouter-agent-sdk';
+
+const daemon = createDaemon({
+  agent: await createAgent(),
+  sources: [
+    createHttpSource({
+      port: 8787,
+      authToken: process.env.CTRL_TOKEN,
+      hmacSecret: process.env.WEBHOOK_SECRET,
+      routes: [
+        { path: '/control', type: 'http-control', auth: 'token' },
+        { path: '/webhook', type: 'http-webhook', auth: 'hmac' },
+      ],
+    }),
+  ],
+  handler: async (event, ctx) => {
+    if (event.type === 'http-control') {
+      const out = await ctx.agent.run(event.body.prompt, null, { signal: ctx.signal });
+      event.respond(out); // replies with the agent's result
+      return null; // already handled
+    }
+    event.respond({ status: 202, body: { queued: true } });
+    return { type: 'run', prompt: `Webhook: ${JSON.stringify(event.body)}` };
+  },
+});
+
+daemon.start();
+```
+
+Options: `port` (required; `0` = ephemeral, read back via `source.address()`), `host` (default `127.0.0.1`), `routes` (array of `{ path, type, auth?, method? }`; `auth` is `none`/`token`/`hmac`, `method` defaults to `POST`), `authToken` (enables `auth:'token'`), `hmacSecret` (enables `auth:'hmac'`), `signatureHeader` (default `x-signature-256`), `signaturePrefix` (default `sha256=`), `healthPath` (default `/health`, `GET` -> `200`, no auth, no event; `null` disables), `responseTimeoutMs` (default `30000`), `bodyLimitBytes` (default `1_000_000`).
+
+Each matched request emits `{ type, method, path, query, headers, body, rawBody, ip, requestId, respond }`. Call `event.respond(value)` to reply: a string -> `200 text/plain`; an object -> a `{ status, headers, body }` spec (wrap a JSON payload as `respond({ body: {...} })`). Because the daemon awaits the handler, awaiting `ctx.agent.run(...)` before calling `respond` returns the agent's result to the HTTP caller; returning a bare `run` action is fire-and-forget and will `504` unless you also call `respond`. Auth (token + HMAC) uses constant-time comparison; bind stays on `127.0.0.1` by default — terminate TLS upstream before exposing it.
+
 ## Background Jobs
 
 Bash commands and Delegate subagents can run detached from the current turn. The agent returns immediately with a job ID and log path, and delivers a `<system-reminder>` to the run loop when the job finishes.
