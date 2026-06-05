@@ -28,3 +28,4 @@ async function createAgent(options = {}) {
 
 export default createAgent;
 export { createCopilot } from './core/copilot.js';
+export { createDaemon, createTimerSource } from './core/daemon.js';

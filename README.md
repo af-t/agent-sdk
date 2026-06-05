@@ -194,6 +194,39 @@ const result = await runPromise; // resolves after the steered work finishes too
 
 `steer()` returns `true` when the prompt is queued, or `false` when the agent is idle (there is no loop to steer) or the prompt is empty. When a streaming `notify` callback is set, a `{ steer_applied: { count } }` event fires each time queued prompts are drained into the conversation.
 
+### Reactive daemon
+
+`createDaemon` keeps an Agent alive as a long-running process and drives it from
+external events. Each event runs through a programmatic handler you write; the
+handler returns an action that the daemon actuates against the Agent.
+
+```js
+import createAgent, { createDaemon, createTimerSource } from '@af-t/openrouter-agent-sdk';
+
+const agent = await createAgent();
+
+const daemon = createDaemon({
+  agent,
+  handler: (event, ctx) => {
+    if (event.type === 'tick') return { type: 'run', prompt: 'Do the periodic check.' };
+    return { type: 'ignore' };
+  },
+  sources: [createTimerSource({ intervalMs: 60_000, event: { type: 'tick' }, immediate: true })],
+});
+
+const stopSignal = daemon.start();
+daemon.emit({ type: 'manual', data: 'kick' }); // programmatic source, always available
+// ... later:
+await daemon.stop();   // pass { abort: true } to also cancel an in-flight run
+await agent.cleanup(); // the daemon does not own the Agent's lifecycle
+```
+
+Actions a handler may return: `{ type: 'ignore' }`, `{ type: 'run', prompt, notify? }`,
+`{ type: 'steer', prompt }`, `{ type: 'prompt', text }` (auto-routes to steer while the
+agent is running, otherwise run), and `{ type: 'abort' }`. The handler may also act on
+`ctx` directly (`ctx.agent`, `ctx.isRunning`, `ctx.emit`, `ctx.daemon`, `ctx.signal`) and
+return `null`. A source is any `{ start(emit), stop() }`; `createTimerSource` is built in.
+
 ## Background Jobs
 
 Bash commands and Delegate subagents can run detached from the current turn. The agent returns immediately with a job ID and log path, and delivers a `<system-reminder>` to the run loop when the job finishes.

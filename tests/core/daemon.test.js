@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { logger } from '../../src/core/logger.js';
+import Agent from '../../src/core/agent.js';
 import { createDaemon, createTimerSource } from '../../src/core/daemon.js';
 
 function fakeAgent({ running = false } = {}) {
@@ -328,5 +329,22 @@ test('createTimerSource drives a daemon run', async () => {
   await tick(15);
   assert.ok(agent.runs.length >= 1);
   assert.equal(agent.runs[0].prompt, 'beat');
+  await daemon.stop();
+});
+
+test('createDaemon and createTimerSource are re-exported from the package entry', async () => {
+  const mod = await import('../../src/index.js');
+  assert.equal(typeof mod.createDaemon, 'function');
+  assert.equal(typeof mod.createTimerSource, 'function');
+});
+
+test('daemon drives a real Agent end-to-end with no network', async () => {
+  const agent = new Agent({ apiKey: 'x', model: 'm' });
+  agent._sendForTest = async () => ({ choices: [{ message: { content: 'done' } }] });
+  const daemon = createDaemon({ agent, handler: (e) => ({ type: 'run', prompt: e.data }) });
+  daemon.start();
+  daemon.emit({ type: 'go', data: 'hello' });
+  for (let i = 0; i < 50 && agent.messages.at(-1)?.content !== 'done'; i++) await tick(5);
+  assert.equal(agent.messages.at(-1).content, 'done');
   await daemon.stop();
 });
