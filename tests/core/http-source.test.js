@@ -200,3 +200,57 @@ test('stop is idempotent and safe before start', () => {
   src.stop();
   assert.equal(ft.stops(), 1);
 });
+
+// Task 3 Tests
+
+test('GET healthPath returns 200 {status:ok} and emits nothing', async () => {
+  const ft = fakeTransport();
+  const emitted = [];
+  const src = createHttpSource({ port: 0, healthPath: '/health', _transport: ft.transport });
+  src.start((e) => emitted.push(e));
+  const res = mockRes();
+  ft.onRequest()(mockReq({ method: 'GET', url: '/health' }), res);
+  await tick();
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(JSON.parse(res.body), { status: 'ok' });
+  assert.equal(emitted.length, 0);
+  src.stop();
+});
+
+test('an unmatched path returns 404', async () => {
+  const ft = fakeTransport();
+  const src = createHttpSource({ port: 0, routes: [{ path: '/control', type: 'ctl' }], _transport: ft.transport });
+  src.start(() => {});
+  const res = mockRes();
+  ft.onRequest()(mockReq({ method: 'POST', url: '/nope' }), res);
+  await tick();
+  assert.equal(res.statusCode, 404);
+  src.stop();
+});
+
+test('a known path with the wrong method returns 405', async () => {
+  const ft = fakeTransport();
+  const src = createHttpSource({ port: 0, routes: [{ path: '/control', type: 'ctl' }], _transport: ft.transport });
+  src.start(() => {});
+  const res = mockRes();
+  ft.onRequest()(mockReq({ method: 'GET', url: '/control' }), res);
+  await tick();
+  assert.equal(res.statusCode, 405);
+  src.stop();
+});
+
+test('a matched route emits an event and respond writes the HTTP response', async () => {
+  const ft = fakeTransport();
+  const src = createHttpSource({
+    port: 0,
+    routes: [{ path: '/control', type: 'http-control' }],
+    _transport: ft.transport,
+  });
+  src.start((e) => e.respond({ status: 200, body: { saw: e.type, path: e.path } }));
+  const res = mockRes();
+  ft.onRequest()(mockReq({ method: 'POST', url: '/control' }), res);
+  await tick();
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(JSON.parse(res.body), { saw: 'http-control', path: '/control' });
+  src.stop();
+});

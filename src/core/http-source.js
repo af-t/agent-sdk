@@ -62,13 +62,10 @@ export function createHttpSource(options = {}) {
   let boundAddress = null;
   const pending = new Set();
 
-  void normRoutes;
   void authToken;
   void hmacSecret;
   void signatureHeader;
   void signaturePrefix;
-  void healthPath;
-  void responseTimeoutMs;
   void bodyLimitBytes;
 
   function safeEmit(event) {
@@ -79,7 +76,26 @@ export function createHttpSource(options = {}) {
       logger.warn(`http-source: emit threw: ${err.message}`);
     }
   }
-  void safeEmit;
+
+  function matchRoute(method, path) {
+    let pathSeen = false;
+    for (const r of normRoutes) {
+      if (r.path === path) {
+        pathSeen = true;
+        if (r.method === method) return r;
+      }
+    }
+    return pathSeen ? 'method-not-allowed' : null;
+  }
+
+  function readBody(req) {
+    return new Promise((resolve, reject) => {
+      const chunks = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+      req.on('error', reject);
+    });
+  }
 
   function writeResponse(res, spec) {
     let status = 200;
@@ -102,9 +118,76 @@ export function createHttpSource(options = {}) {
     res.end(body);
   }
 
-  // Replaced with the full pipeline in Task 3.
   async function onRequest(req, res) {
-    writeResponse(res, { status: 404, body: { error: 'not found' } });
+    try {
+      const url = new URL(req.url ?? '/', 'http://localhost');
+      const path = url.pathname;
+      const method = (req.method ?? 'GET').toUpperCase();
+      const headers = req.headers ?? {};
+
+      if (healthPath != null && method === 'GET' && path === healthPath) {
+        writeResponse(res, { status: 200, body: { status: 'ok' } });
+        return;
+      }
+
+      const route = matchRoute(method, path);
+      if (route == null) {
+        writeResponse(res, { status: 404, body: { error: 'not found' } });
+        return;
+      }
+      if (route === 'method-not-allowed') {
+        writeResponse(res, { status: 405, body: { error: 'method not allowed' } });
+        return;
+      }
+
+      const rawBody = await readBody(req);
+      const body = rawBody;
+      const query = Object.fromEntries(url.searchParams.entries());
+      const requestId = crypto.randomBytes(4).toString('hex');
+
+      await new Promise((resolve) => {
+        let settled = false;
+        const respond = (spec) => {
+          if (settled) {
+            logger.warn('http-source: respond called more than once; ignoring');
+            return;
+          }
+          settled = true;
+          clearTimeout(timer);
+          pending.delete(entry);
+          try {
+            writeResponse(res, spec);
+          } catch (err) {
+            logger.warn(`http-source: failed to write response: ${err.message}`);
+          }
+          resolve();
+        };
+        const timer = setTimeout(() => respond({ status: 504, body: { error: 'timeout' } }), responseTimeoutMs);
+        if (typeof timer.unref === 'function') timer.unref();
+        const entry = { respond };
+        pending.add(entry);
+
+        safeEmit({
+          type: route.type,
+          method,
+          path,
+          query,
+          headers,
+          body,
+          rawBody,
+          ip: req.socket?.remoteAddress,
+          requestId,
+          respond,
+        });
+      });
+    } catch (err) {
+      logger.warn(`http-source: request pipeline threw: ${err.message}`);
+      try {
+        writeResponse(res, { status: 500, body: { error: 'internal error' } });
+      } catch {
+        // best-effort
+      }
+    }
   }
 
   return {
