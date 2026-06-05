@@ -56,9 +56,13 @@ export function createHttpSource(options = {}) {
     auth: r.auth ?? 'none',
   }));
 
-  // Wired up in later tasks; referenced here so the closure compiles.
+  let emitFn = null;
+  let stopTransport = null;
+  let started = false;
+  let boundAddress = null;
+  const pending = new Set();
+
   void normRoutes;
-  void host;
   void authToken;
   void hmacSecret;
   void signatureHeader;
@@ -66,17 +70,92 @@ export function createHttpSource(options = {}) {
   void healthPath;
   void responseTimeoutMs;
   void bodyLimitBytes;
-  void _transport;
+
+  function safeEmit(event) {
+    if (!emitFn) return;
+    try {
+      emitFn(event);
+    } catch (err) {
+      logger.warn(`http-source: emit threw: ${err.message}`);
+    }
+  }
+  void safeEmit;
+
+  function writeResponse(res, spec) {
+    let status = 200;
+    let headers = {};
+    let body;
+    if (typeof spec === 'string') {
+      headers['content-type'] = 'text/plain; charset=utf-8';
+      body = spec;
+    } else if (spec && typeof spec === 'object') {
+      status = spec.status ?? 200;
+      headers = { ...(spec.headers ?? {}) };
+      if (typeof spec.body === 'string') {
+        body = spec.body;
+      } else if (spec.body !== undefined) {
+        if (headers['content-type'] == null) headers['content-type'] = 'application/json';
+        body = JSON.stringify(spec.body);
+      }
+    }
+    res.writeHead(status, headers);
+    res.end(body);
+  }
+
+  // Replaced with the full pipeline in Task 3.
+  async function onRequest(req, res) {
+    writeResponse(res, { status: 404, body: { error: 'not found' } });
+  }
 
   return {
-    start() {},
-    stop() {},
+    start(emit) {
+      if (started) {
+        logger.warn('http-source already started; ignoring');
+        return;
+      }
+      started = true;
+      emitFn = emit;
+      try {
+        stopTransport = _transport({ host, port }, onRequest, (addr) => {
+          boundAddress = addr;
+        });
+      } catch (err) {
+        logger.warn(`http-source backend start threw: ${err.message}`);
+      }
+    },
+    stop() {
+      started = false;
+      if (typeof stopTransport === 'function') {
+        try {
+          stopTransport();
+        } catch (err) {
+          logger.warn(`http-source backend stop threw: ${err.message}`);
+        }
+      }
+      stopTransport = null;
+      for (const entry of [...pending]) {
+        entry.respond({ status: 503, body: { error: 'shutting down' } });
+      }
+      pending.clear();
+      boundAddress = null;
+      emitFn = null;
+    },
     address() {
-      return null;
+      return boundAddress;
     },
   };
 }
 
-function defaultTransport() {
-  return () => {};
+function defaultTransport({ host, port }, onRequest, onListening) {
+  const server = http.createServer((req, res) => {
+    onRequest(req, res);
+  });
+  server.on('error', (err) => logger.warn(`http-source server error: ${err.message}`));
+  server.listen(port, host, () => {
+    const addr = server.address();
+    if (onListening && addr && typeof addr === 'object') {
+      onListening({ host: addr.address, port: addr.port });
+    }
+  });
+  return () => server.close();
 }
