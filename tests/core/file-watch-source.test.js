@@ -145,4 +145,36 @@ test('type option overrides the emitted event.type', async () => {
   src.stop();
 });
 
+test('coalesce true emits one batch event for a multi-path burst', async () => {
+  const fb = fakeBackend();
+  const events = [];
+  const src = createFileWatchSource({ paths: 'a', debounceMs: 15, coalesce: true, _backend: fb.backend });
+  src.start((e) => events.push(e));
+  fb.trigger('/abs/a', 'change');
+  fb.trigger('/abs/b', 'rename');
+  fb.trigger('/abs/a', 'change');
+  await tick();
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0].paths, ['/abs/a', '/abs/b']);
+  assert.deepEqual(events[0].changes, [
+    { path: '/abs/a', eventType: 'change' },
+    { path: '/abs/b', eventType: 'rename' },
+  ]);
+  assert.equal(events[0].path, undefined);
+  src.stop();
+});
+
+test('coalesce false emits one event per path for the same burst', async () => {
+  const fb = fakeBackend();
+  const events = [];
+  const src = createFileWatchSource({ paths: 'a', debounceMs: 15, coalesce: false, _backend: fb.backend });
+  src.start((e) => events.push(e));
+  fb.trigger('/abs/a', 'change');
+  fb.trigger('/abs/b', 'change');
+  await tick();
+  assert.equal(events.length, 2);
+  assert.deepEqual(events.map((e) => e.path).sort(), ['/abs/a', '/abs/b']);
+  src.stop();
+});
+
 

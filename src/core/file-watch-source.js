@@ -38,13 +38,14 @@ export function createFileWatchSource(options = {}) {
   }
 
   const absPaths = list.map((p) => path.resolve(p));
-  void coalesce;
 
   let emitFn = null;
   let stopBackend = null;
   let started = false;
 
   const perPathTimers = new Map(); // path -> { timer, eventType }
+  const coalesceMap = new Map(); // path -> eventType
+  let coalesceTimer = null;
 
   function mergeEventType(prev, next) {
     return prev === 'rename' || next === 'rename' ? 'rename' : next;
@@ -71,6 +72,19 @@ export function createFileWatchSource(options = {}) {
     perPathTimers.set(absPath, { timer, eventType: merged });
   }
 
+  function emitCoalesced(absPath, eventType) {
+    const prev = coalesceMap.get(absPath);
+    coalesceMap.set(absPath, prev ? mergeEventType(prev, eventType) : eventType);
+    if (coalesceTimer) clearTimeout(coalesceTimer);
+    coalesceTimer = setTimeout(() => {
+      const changes = [...coalesceMap.entries()].map(([p, e]) => ({ path: p, eventType: e }));
+      coalesceMap.clear();
+      coalesceTimer = null;
+      safeEmit({ type, paths: changes.map((c) => c.path), changes });
+    }, debounceMs);
+    if (typeof coalesceTimer.unref === 'function') coalesceTimer.unref();
+  }
+
   function passesFilters(absPath, eventType) {
     for (const sub of ignore) {
       if (typeof sub === 'string' && absPath.includes(sub)) return false;
@@ -81,7 +95,8 @@ export function createFileWatchSource(options = {}) {
 
   function onRaw(absPath, eventType) {
     if (!passesFilters(absPath, eventType)) return;
-    emitPerPath(absPath, eventType);
+    if (coalesce) emitCoalesced(absPath, eventType);
+    else emitPerPath(absPath, eventType);
   }
 
   return {
@@ -110,6 +125,11 @@ export function createFileWatchSource(options = {}) {
       stopBackend = null;
       for (const { timer } of perPathTimers.values()) clearTimeout(timer);
       perPathTimers.clear();
+      if (coalesceTimer) {
+        clearTimeout(coalesceTimer);
+        coalesceTimer = null;
+      }
+      coalesceMap.clear();
       emitFn = null;
     },
   };
