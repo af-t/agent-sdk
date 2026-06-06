@@ -34,6 +34,75 @@ function hashText(text, model) {
   return crypto.createHash('sha256').update(`${model}\0${text}`).digest('hex');
 }
 
+async function readSidecar(sidecarPath) {
+  try {
+    const parsed = JSON.parse(await fs.readFile(sidecarPath, 'utf8'));
+    if (parsed && typeof parsed === 'object' && parsed.entries) return parsed.entries;
+  } catch {
+    // missing or corrupt — treat as empty
+  }
+  return {};
+}
+
+async function writeSidecar(sidecarPath, entries) {
+  try {
+    await fs.writeFile(sidecarPath, JSON.stringify({ entries }), 'utf8');
+  } catch (err) {
+    logger.debug(`memory-recall: sidecar write failed: ${err.message}`);
+  }
+}
+
+async function rankWithEmbeddings({
+  corpus,
+  memoryDir,
+  query,
+  limit,
+  apiKey,
+  baseUrl,
+  model,
+  trustedPaths,
+  signal,
+  _embed,
+}) {
+  let sidecarPath = null;
+  try {
+    sidecarPath = ensureSafePath(path.join(memoryDir, SIDECAR_NAME), trustedPaths);
+  } catch {
+    sidecarPath = null;
+  }
+  const cached = sidecarPath ? await readSidecar(sidecarPath) : {};
+
+  const toEmbed = [];
+  for (const c of corpus) {
+    c.hash = hashText(c.text, model);
+    const entry = cached[c.name];
+    if (entry && entry.hash === c.hash && Array.isArray(entry.vector)) {
+      c.vector = entry.vector;
+    } else {
+      toEmbed.push(c);
+    }
+  }
+
+  const inputs = [query, ...toEmbed.map((c) => c.text)];
+  const { vectors, usage } = await _embed(inputs, { apiKey, baseUrl, model, signal });
+  const queryVec = vectors[0];
+  toEmbed.forEach((c, i) => {
+    c.vector = vectors[i + 1];
+  });
+
+  const nextEntries = {};
+  for (const c of corpus) {
+    if (Array.isArray(c.vector)) nextEntries[c.name] = { hash: c.hash, vector: c.vector };
+  }
+  if (sidecarPath) await writeSidecar(sidecarPath, nextEntries);
+
+  const results = corpus
+    .map((c) => ({ name: c.name, score: c.vector ? cosineSimilarity(queryVec, c.vector) : 0, body: c.body }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+  return { results, usage, ranker: 'embeddings', total: corpus.length };
+}
+
 async function loadCorpus(memoryDir, trustedPaths) {
   let names;
   try {
@@ -88,6 +157,24 @@ export async function recallMemories({
   const corpus = await loadCorpus(memoryDir, trustedPaths);
   if (corpus.length === 0) {
     return { results: [], usage: null, ranker: 'lexical', total: 0 };
+  }
+  if (apiKey) {
+    try {
+      return await rankWithEmbeddings({
+        corpus,
+        memoryDir,
+        query,
+        limit,
+        apiKey,
+        baseUrl,
+        model,
+        trustedPaths,
+        signal,
+        _embed,
+      });
+    } catch (err) {
+      logger.debug(`memory-recall: embeddings path failed, using lexical: ${err.message}`);
+    }
   }
   return rankLexical(corpus, query, limit);
 }
