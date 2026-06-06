@@ -654,6 +654,30 @@ Custom keys are merged on top of the built-in defaults.
 
 The `using-memory` builtin skill (see `src/skills/using-memory/SKILL.md`) covers the full protocol: when to save, when not to save, file naming, index conventions, and stale-memory handling. The LLM loads it on demand via the `Skill` tool when it decides memory is relevant.
 
+### Semantic Memory Recall
+
+To retrieve the full contents of memories relevant to the current task by meaning, the agent can use the `RecallMemory` tool:
+- `query` (required) - Natural language query to search stored memories for.
+- `limit` (optional) - Maximum number of memories to return (defaults to `5`, capped at `20`).
+
+#### Retrieval Behavior
+1. **First-turn index unchanged:** The agent still receives the flat `MEMORY.md` index in context proactively on the first turn.
+2. **Embeddings-Primary:** If an API key is present and the OpenRouter embeddings endpoint is reachable, memories are ranked using dense vector embeddings (using cosine similarity).
+3. **Lexical Fallback:** If no API key is set or the embeddings call fails, the tool transparently falls back to a zero-dependency, deterministic lexical ranker (TF-IDF + sparse cosine similarity).
+
+#### Vector Cache Sidecar
+To avoid redundant API calls and keep retrieval fast, the agent caches generated vectors in a `.embeddings.json` file inside the configured memory directory.
+- Cached vectors are validated against a SHA-256 hash of both the file content and the embedding model ID.
+- Vectors for new or changed files are generated on demand.
+- Vectors for deleted files are pruned automatically.
+- *Recommendation:* Consumers should add `.embeddings.json` to their `.gitignore` files.
+
+#### Configuration
+The embedding model can be configured using:
+- `OPENROUTER_EMBEDDING_MODEL` environment variable.
+- `embeddingModel` option in the `Agent` constructor.
+- **Default:** `openai/text-embedding-3-small`.
+
 ## Project Structure
 
 ```

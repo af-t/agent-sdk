@@ -64,7 +64,7 @@ async function rankWithEmbeddings({
   signal,
   _embed,
 }) {
-  let sidecarPath = null;
+  let sidecarPath;
   try {
     sidecarPath = ensureSafePath(path.join(memoryDir, SIDECAR_NAME), trustedPaths);
   } catch {
