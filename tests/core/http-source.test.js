@@ -106,10 +106,12 @@ function fakeAgent({ running = false } = {}) {
 
 // Task 1 Tests
 
-test('throws ConfigError when port is missing or not a non-negative number', () => {
+test('throws ConfigError when port is missing or not a valid integer 0-65535', () => {
   assert.throws(() => createHttpSource({ routes: [{ path: '/x', type: 'x' }] }), /port is required/);
   assert.throws(() => createHttpSource({ port: -1, routes: [{ path: '/x', type: 'x' }] }), /port is required/);
   assert.throws(() => createHttpSource({ port: '8080', routes: [{ path: '/x', type: 'x' }] }), /port is required/);
+  assert.throws(() => createHttpSource({ port: 3000.5, routes: [{ path: '/x', type: 'x' }] }), /port is required/);
+  assert.throws(() => createHttpSource({ port: 70000, routes: [{ path: '/x', type: 'x' }] }), /port is required/);
 });
 
 test('throws when neither routes nor healthPath is present', () => {
@@ -142,9 +144,27 @@ test('throws when a route needs a secret that is not configured', () => {
   );
 });
 
-test('throws on non-positive responseTimeoutMs and bodyLimitBytes', () => {
+test('throws on non-positive or non-finite responseTimeoutMs and bodyLimitBytes', () => {
   assert.throws(() => createHttpSource({ port: 0, healthPath: '/h', responseTimeoutMs: 0 }), /responseTimeoutMs/);
   assert.throws(() => createHttpSource({ port: 0, healthPath: '/h', bodyLimitBytes: -5 }), /bodyLimitBytes/);
+  assert.throws(
+    () => createHttpSource({ port: 0, healthPath: '/h', responseTimeoutMs: Infinity }),
+    /responseTimeoutMs/,
+  );
+  assert.throws(() => createHttpSource({ port: 0, healthPath: '/h', bodyLimitBytes: Infinity }), /bodyLimitBytes/);
+});
+
+test('throws when a GET route collides with the built-in healthPath', () => {
+  assert.throws(
+    () => createHttpSource({ port: 0, routes: [{ path: '/health', type: 'h', method: 'GET' }] }),
+    /shadowed by the built-in healthPath/,
+  );
+  // A POST route at healthPath is fine: the health check only intercepts GET.
+  assert.doesNotThrow(() => createHttpSource({ port: 0, routes: [{ path: '/health', type: 'h' }] }));
+  // Disabling the built-in health frees the path for a GET route.
+  assert.doesNotThrow(() =>
+    createHttpSource({ port: 0, healthPath: null, routes: [{ path: '/health', type: 'h', method: 'GET' }] }),
+  );
 });
 
 test('returns a source object with start, stop, and address', () => {
@@ -359,6 +379,27 @@ test('hmac auth: passes with a valid signature, 401 on mismatch', async () => {
   );
   await tick();
   assert.equal(badRes.statusCode, 401);
+  src.stop();
+});
+
+test('hmac auth verifies over the raw bytes, not a utf8-reencoded body', async () => {
+  const ft = fakeTransport();
+  const secret = 'whsec';
+  // A body with bytes that are not valid utf8; toString('utf8') would lose them.
+  const raw = Buffer.from([0x7b, 0x22, 0x61, 0x22, 0x3a, 0xff, 0xfe, 0x22, 0x7d]);
+  const sig = 'sha256=' + crypto.createHmac('sha256', secret).update(raw).digest('hex');
+  const src = createHttpSource({
+    port: 0,
+    hmacSecret: secret,
+    routes: [{ path: '/wh', type: 'wh', auth: 'hmac' }],
+    _transport: ft.transport,
+  });
+  src.start((e) => e.respond({ status: 202 }));
+
+  const res = mockRes();
+  ft.onRequest()(mockReq({ method: 'POST', url: '/wh', headers: { 'x-signature-256': sig }, body: raw }), res);
+  await tick();
+  assert.equal(res.statusCode, 202);
   src.stop();
 });
 

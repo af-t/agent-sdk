@@ -20,18 +20,18 @@ export function createHttpSource(options = {}) {
     _transport = defaultTransport,
   } = options;
 
-  if (!(typeof port === 'number' && port >= 0)) {
-    throw new ConfigError('createHttpSource: port is required (a number >= 0)');
+  if (!(Number.isInteger(port) && port >= 0 && port <= 65535)) {
+    throw new ConfigError('createHttpSource: port is required (an integer 0-65535)');
   }
   const routeList = Array.isArray(routes) ? routes : [];
   if (routeList.length === 0 && healthPath == null) {
     throw new ConfigError('createHttpSource: at least one route or a healthPath is required');
   }
-  if (!(typeof responseTimeoutMs === 'number' && responseTimeoutMs > 0)) {
-    throw new ConfigError('createHttpSource: responseTimeoutMs must be a positive number');
+  if (!(Number.isFinite(responseTimeoutMs) && responseTimeoutMs > 0)) {
+    throw new ConfigError('createHttpSource: responseTimeoutMs must be a finite positive number');
   }
-  if (!(typeof bodyLimitBytes === 'number' && bodyLimitBytes > 0)) {
-    throw new ConfigError('createHttpSource: bodyLimitBytes must be a positive number');
+  if (!(Number.isFinite(bodyLimitBytes) && bodyLimitBytes > 0)) {
+    throw new ConfigError('createHttpSource: bodyLimitBytes must be a finite positive number');
   }
   for (const r of routeList) {
     if (!r || typeof r.path !== 'string' || typeof r.type !== 'string') {
@@ -55,6 +55,16 @@ export function createHttpSource(options = {}) {
     type: r.type,
     auth: r.auth ?? 'none',
   }));
+
+  // A GET route at healthPath is intercepted by the built-in health check.
+  if (healthPath != null) {
+    const shadowed = normRoutes.find((r) => r.method === 'GET' && r.path === healthPath);
+    if (shadowed) {
+      throw new ConfigError(
+        `createHttpSource: route 'GET ${healthPath}' is shadowed by the built-in healthPath; use a different path or set healthPath: null`,
+      );
+    }
+  }
 
   let emitFn = null;
   let stopTransport = null;
@@ -89,7 +99,7 @@ export function createHttpSource(options = {}) {
     return crypto.timingSafeEqual(ba, bb);
   }
 
-  function checkAuth(route, headers, rawBody) {
+  function checkAuth(route, headers, rawBuf) {
     if (route.auth === 'none') return true;
     if (route.auth === 'token') {
       const raw = headers['authorization'];
@@ -99,7 +109,7 @@ export function createHttpSource(options = {}) {
     if (route.auth === 'hmac') {
       const sig = headers[signatureHeader.toLowerCase()];
       if (sig == null) return false;
-      const expected = crypto.createHmac('sha256', hmacSecret).update(rawBody).digest('hex');
+      const expected = crypto.createHmac('sha256', hmacSecret).update(rawBuf).digest('hex');
       const provided = sig.startsWith(signaturePrefix) ? sig.slice(signaturePrefix.length) : sig;
       return constantTimeEqual(provided, expected);
     }
@@ -119,7 +129,7 @@ export function createHttpSource(options = {}) {
         }
         chunks.push(c);
       });
-      req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+      req.on('end', () => resolve(Buffer.concat(chunks)));
       req.on('error', reject);
     });
   }
@@ -167,9 +177,9 @@ export function createHttpSource(options = {}) {
         return;
       }
 
-      let rawBody;
+      let rawBuf;
       try {
-        rawBody = await readBody(req);
+        rawBuf = await readBody(req);
       } catch (err) {
         if (err.httpStatus === 413) {
           logger.warn('http-source: request body exceeded limit');
@@ -179,12 +189,14 @@ export function createHttpSource(options = {}) {
         throw err;
       }
 
-      if (!checkAuth(route, headers, rawBody)) {
+      // Verify HMAC over the raw bytes before any lossy utf8 decode.
+      if (!checkAuth(route, headers, rawBuf)) {
         logger.warn(`http-source: auth failed for ${method} ${path}`);
         writeResponse(res, { status: 401, body: { error: 'unauthorized' } });
         return;
       }
 
+      const rawBody = rawBuf.toString('utf8');
       let body = rawBody;
       const contentType = headers['content-type'] ?? '';
       if (contentType.includes('application/json')) {
