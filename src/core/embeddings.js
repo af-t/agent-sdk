@@ -17,3 +17,54 @@ export function cosineSimilarity(a, b) {
   if (normA === 0 || normB === 0) return 0;
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
+
+// POST texts to the OpenRouter-compatible /embeddings endpoint.
+// Reuses withRetry (4xx fails fast, 5xx/429 retried). Returns vectors in
+// input order plus the raw usage object.
+export async function embedTexts(texts, { apiKey, baseUrl, model, signal } = {}) {
+  if (!Array.isArray(texts) || texts.length === 0) {
+    return { vectors: [], usage: null };
+  }
+
+  const doFetch = async () => {
+    const controller = new AbortController();
+    const onAbort = () => controller.abort();
+    if (signal) {
+      if (signal.aborted) controller.abort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+    }
+    const timer = setTimeout(() => controller.abort(), EMBED_TIMEOUT);
+    try {
+      const res = await fetch(`${baseUrl}/embeddings`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://github.com/af-t/openrouter',
+          'X-OpenRouter-Title': 'OpenRouter CLI Agent',
+        },
+        body: JSON.stringify({ model, input: texts }),
+        signal: controller.signal,
+      });
+      const text = await res.text();
+      let body;
+      try {
+        body = JSON.parse(text);
+      } catch {
+        throw new ApiError(`Embeddings API returned non-JSON (${res.status})`, res.status, text.slice(0, 500));
+      }
+      if (!res.ok) {
+        throw new ApiError(body?.error?.message || `Embeddings API error (${res.status})`, res.status, body);
+      }
+      return body;
+    } finally {
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onAbort);
+    }
+  };
+
+  const body = await withRetry(doFetch);
+  const data = Array.isArray(body?.data) ? [...body.data] : [];
+  data.sort((x, y) => (x.index ?? 0) - (y.index ?? 0));
+  return { vectors: data.map((d) => d.embedding), usage: body?.usage ?? null };
+}
