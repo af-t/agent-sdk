@@ -75,7 +75,7 @@ test('pending bg exits drain into messages as a system-reminder after tool group
         kind: 'bash',
         exitCode: 0,
         durationMs: 123,
-        logPath: '/tmp/x.log',
+        logPath: path.join(os.tmpdir(), 'x.log'),
         status: 'exited',
       });
       return 'ok';

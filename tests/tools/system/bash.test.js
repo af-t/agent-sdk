@@ -1,5 +1,8 @@
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
+import os from 'node:os';
+import fs from 'node:fs';
+import path from 'node:path';
 import Agent from '../../../src/core/agent.js';
 
 describe('Bash tool module', () => {
@@ -443,9 +446,11 @@ describe('Bash tool — env sanitization', () => {
   });
 
   it('logs warning for suspicious command pattern (chmod with numeric mode)', async () => {
-    // chmod 755 matches the suspicious pattern /\bchmod\s+[0-7]{3,4}\b/ but is not blocked
+    // chmod 755 matches the suspicious pattern /\bchmod\s+[0-7]{3,4}\b/ but is not blocked.
+    // Target a non-existent temp path so the pattern check is exercised without touching real files.
+    const target = path.join(os.tmpdir(), 'lumen-chmod-pattern-check');
     try {
-      await mod.execute({ command: 'chmod 755 /tmp', timeout: 5000 });
+      await mod.execute({ command: `chmod 755 ${target}`, timeout: 5000 });
     } catch {
       // May fail due to permissions — what matters is the code path reaching hasSuspiciousPattern
     }
@@ -525,8 +530,9 @@ describe('Bash tool — advanced execution paths', () => {
   });
 
   it('executes command with custom cwd', async () => {
-    const result = await mod.execute({ command: 'pwd', cwd: '/tmp', timeout: 5000 });
-    assert.ok(result.trim() === '/tmp' || result.trim().endsWith('/tmp'));
+    const tmp = os.tmpdir();
+    const result = await mod.execute({ command: 'pwd', cwd: tmp, timeout: 5000 });
+    assert.equal(fs.realpathSync(result.trim()), fs.realpathSync(tmp));
   });
 
   it('handles timeout error gracefully', async () => {

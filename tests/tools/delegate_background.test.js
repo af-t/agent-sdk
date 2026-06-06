@@ -1,6 +1,8 @@
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 import createAgent from '../../src/index.js';
 import Agent from '../../src/core/agent.js';
@@ -21,9 +23,10 @@ test('Delegate-spawned subagent inherits parent.restricted', async () => {
 
 test('Delegate-spawned subagent shares parent storagePaths.tmpDir', async () => {
   mock.method(Agent.prototype, 'run', async () => 'r');
+  const tmpDir = path.join(os.tmpdir(), 'openrouter-parent-test');
   const parent = await createAgent({
     apiKey: 'x',
-    storagePaths: { tmpDir: '/tmp/openrouter-parent-test' },
+    storagePaths: { tmpDir },
   });
   const { execute: delegateExecute } = await import('../../src/tools/system/delegate.js');
   await delegateExecute(
@@ -31,7 +34,7 @@ test('Delegate-spawned subagent shares parent storagePaths.tmpDir', async () => 
     { agent: parent, signal: new AbortController().signal },
   );
   const child = [...parent.subagents.values()][0];
-  assert.equal(child._storagePaths?.tmpDir, '/tmp/openrouter-parent-test');
+  assert.equal(child._storagePaths?.tmpDir, tmpDir);
 });
 
 test('Delegate background:true returns immediately with job id', async () => {

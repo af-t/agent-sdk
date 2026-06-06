@@ -339,12 +339,18 @@ test('createDaemon and createTimerSource are re-exported from the package entry'
 });
 
 test('daemon drives a real Agent end-to-end with no network', async () => {
-  const agent = new Agent({ apiKey: 'x', model: 'm' });
+  const agent = new Agent({
+    apiKey: 'x',
+    model: 'm',
+    // Disable injectors so the run does no filesystem work: cold skill discovery can take
+    // ~1.7s on machines with many installed skills (~/.claude), which would blow the poll budget.
+    injectors: { date: false, contextFiles: false, memoryIndex: false, memoryHint: false, skillList: false },
+  });
   agent._sendForTest = async () => ({ choices: [{ message: { content: 'done' } }] });
   const daemon = createDaemon({ agent, handler: (e) => ({ type: 'run', prompt: e.data }) });
   daemon.start();
   daemon.emit({ type: 'go', data: 'hello' });
-  for (let i = 0; i < 50 && agent.messages.at(-1)?.content !== 'done'; i++) await tick(5);
+  for (let i = 0; i < 200 && agent.messages.at(-1)?.content !== 'done'; i++) await tick(5);
   assert.equal(agent.messages.at(-1).content, 'done');
   await daemon.stop();
 });

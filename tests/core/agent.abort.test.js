@@ -91,7 +91,12 @@ describe('Agent — abort propagation', () => {
       input_schema: {},
       execute: async (_input, ctx) =>
         new Promise((_, rej) => {
-          ctx.signal.addEventListener('abort', () => rej(new Error('aborted by signal')));
+          const fail = () => rej(new Error('aborted by signal'));
+          // abort is one-shot: if the signal already fired before the tool ran,
+          // addEventListener('abort') would never call back and the promise would
+          // never settle, wedging the run loop. Handle the pre-aborted case first.
+          if (ctx.signal.aborted) return fail();
+          ctx.signal.addEventListener('abort', fail, { once: true });
         }),
     });
 

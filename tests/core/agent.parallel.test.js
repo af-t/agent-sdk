@@ -49,7 +49,7 @@ describe('Agent — parallel tool scheduler', () => {
     global.fetch = originalFetch;
   });
 
-  it('runs two parallelSafe tools concurrently (< 180ms when each sleeps 100ms)', async () => {
+  it('runs two parallelSafe tools concurrently (both in-flight at once)', async () => {
     global.fetch = llmStubReturning(
       [
         { id: 'a', name: 'SlowSafe', arguments: '{"id":1}' },
@@ -58,22 +58,25 @@ describe('Agent — parallel tool scheduler', () => {
       'done',
     );
 
+    let active = 0;
+    let maxActive = 0;
     const agent = new Agent({ apiKey: 'sk-test' });
     agent.use({
       name: 'SlowSafe',
       description: 'sleeps',
       input_schema: { type: 'object', properties: { id: { type: 'number' } } },
       execute: async ({ id }) => {
-        await new Promise((r) => setTimeout(r, 100));
+        active++;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((r) => setTimeout(r, 50));
+        active--;
         return `r${id}`;
       },
     });
 
-    const t0 = Date.now();
     await agent.run('go');
-    const elapsed = Date.now() - t0;
-    // Android/Termux can be slower; use generous threshold
-    assert.ok(elapsed < 1200, `expected < 1200ms, got ${elapsed}ms`);
+    // Deterministic concurrency check — both tools are in-flight together, independent of machine speed.
+    assert.equal(maxActive, 2, `expected both tools to run concurrently, max concurrent was ${maxActive}`);
   });
 
   it('preserves tool_call order in agent.messages even when finish order differs', async () => {
@@ -118,14 +121,20 @@ describe('Agent — parallel tool scheduler', () => {
       'done',
     );
 
+    let active = 0;
+    let maxActive = 0;
     const agent = new Agent({ apiKey: 'sk-test' });
-    const sleep = () => new Promise((r) => setTimeout(r, 100));
+    const sleep = async () => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((r) => setTimeout(r, 50));
+      active--;
+    };
     agent.use({ name: 'Sleeper', description: 'd', input_schema: {}, execute: sleep });
 
-    const t0 = Date.now();
     await agent.run('go');
-    const elapsed = Date.now() - t0;
-    assert.ok(elapsed < 400, `expected concurrent (< 400ms), got ${elapsed}ms`);
+    // Deterministic concurrency check instead of wall-clock timing (flaky under CPU load).
+    assert.equal(maxActive, 3, `expected all 3 tools to run concurrently, max concurrent was ${maxActive}`);
   });
 
   it('one throwing tool in a parallel batch yields error tool_message for that call, others succeed', async () => {

@@ -70,7 +70,8 @@ describe('Agent', () => {
       assert.equal(typeof agent.usage, 'object');
       assert.equal(agent.usage.cost, 0);
       assert.equal(agent.usage.tokens, 0);
-      assert.equal(agent.effort, 'high');
+      const expectedEffort = process.env.OPENROUTER_REASONING_EFFORT || 'high';
+      assert.equal(agent.effort, expectedEffort);
       const expectedTurns = process.env.OPENROUTER_MAX_TURNS ? parseInt(process.env.OPENROUTER_MAX_TURNS) : 25;
       assert.equal(agent.maxTurns, expectedTurns);
       assert.ok(Array.isArray(agent.messages));
@@ -97,9 +98,10 @@ describe('Agent', () => {
       assert.equal(agent.effort, 'low');
     });
 
-    it('default effort is high', () => {
+    it('default effort is high unless OPENROUTER_REASONING_EFFORT overrides it', () => {
       const agent = new Agent({ apiKey: 'sk-key' });
-      assert.equal(agent.effort, 'high');
+      const expectedEffort = process.env.OPENROUTER_REASONING_EFFORT || 'high';
+      assert.equal(agent.effort, expectedEffort);
     });
 
     it('accepts maxTurns option', () => {
@@ -203,7 +205,12 @@ describe('Agent', () => {
 
     it('reset() clears fileState and resets currentTurn', () => {
       const agent = new Agent({ apiKey: 'sk-key' });
-      agent.fileState.set('/tmp/foo', { hash: 'x', lastReadTurn: 2, rangesRead: [[1, 10]], totalLines: 10 });
+      agent.fileState.set(path.join(os.tmpdir(), 'foo'), {
+        hash: 'x',
+        lastReadTurn: 2,
+        rangesRead: [[1, 10]],
+        totalLines: 10,
+      });
       agent.currentTurn = 4;
       agent.reset();
       assert.equal(agent.fileState.size, 0);
@@ -573,14 +580,16 @@ describe('Agent — storagePaths option', () => {
   });
 
   it('storagePaths.tmpDir generates _todoFile with todos-XXXXX.json pattern', () => {
-    const agent = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir: '/tmp/lumen-test' } });
-    assert.ok(agent._todoFile.startsWith('/tmp/lumen-test'));
+    const tmpDir = path.join(os.tmpdir(), 'lumen-test');
+    const agent = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir } });
+    assert.ok(agent._todoFile.startsWith(tmpDir));
     assert.match(path.basename(agent._todoFile), /^todos-[a-z0-9]{5}\.json$/);
   });
 
   it('two agents with same tmpDir get different _todoFile names', () => {
-    const a = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir: '/tmp/lumen-test' } });
-    const b = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir: '/tmp/lumen-test' } });
+    const tmpDir = path.join(os.tmpdir(), 'lumen-test');
+    const a = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir } });
+    const b = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir } });
     assert.notStrictEqual(a._todoFile, b._todoFile);
   });
 

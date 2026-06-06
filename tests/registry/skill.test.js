@@ -38,7 +38,7 @@ describe('SkillRegistry (default singleton)', () => {
 
   it('configure sets extraSearchDirs without throwing', () => {
     const singleton = skillModule.default;
-    singleton.configure({ extraSearchDirs: ['/tmp/my-skills'] });
+    singleton.configure({ extraSearchDirs: [path.join(os.tmpdir(), 'my-skills')] });
     assert.ok(true);
   });
 

@@ -105,15 +105,16 @@ describe('Agent — memoryHint injector', () => {
     const fetchStub = captureFetch();
     global.fetch = fetchStub;
 
+    const memoryDir = path.join(os.tmpdir(), 'custom', 'memory');
     const agent = new Agent({
       apiKey: 'sk-test',
       injectors: { date: false, contextFiles: false, memoryIndex: false, skillList: false },
-      storagePaths: { memoryDir: '/tmp/custom/memory' },
+      storagePaths: { memoryDir },
     });
     await agent.run('hi');
 
     const text = findReminderText(fetchStub.captured[0]);
-    assert.match(text, /\/tmp\/custom\/memory/);
+    assert.ok(text.includes(memoryDir));
   });
 
   it('memoryHint disabled via injectors map produces no hint content', async () => {
