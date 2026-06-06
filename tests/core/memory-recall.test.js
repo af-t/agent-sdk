@@ -183,4 +183,48 @@ describe('recallMemories (embeddings path)', () => {
     });
     assert.equal(out.ranker, 'lexical');
   });
+
+  it('propagates a caller abort instead of degrading to lexical', async () => {
+    await assert.rejects(
+      () =>
+        recallMemories({
+          memoryDir: dir,
+          query: 'alpha',
+          apiKey: 'sk-x',
+          baseUrl: 'https://x',
+          model: 'm2',
+          trustedPaths: new Set([dir]),
+          _embed: async () => {
+            const e = new Error('aborted');
+            e.aborted = true;
+            throw e;
+          },
+        }),
+      (err) => err.aborted === true,
+    );
+  });
+
+  it('does not rewrite the sidecar on a pure cache-hit recall', async () => {
+    const d2 = await fs.mkdtemp(path.join(os.tmpdir(), 'recall-nowrite-'));
+    try {
+      await fs.writeFile(path.join(d2, 'x.md'), `---\ndescription: alpha topic\n---\nalpha body`);
+      const base = {
+        memoryDir: d2,
+        apiKey: 'sk-x',
+        baseUrl: 'https://x',
+        model: 'm1',
+        trustedPaths: new Set([d2]),
+        _embed: makeEmbed([]),
+      };
+      await recallMemories({ ...base, query: 'alpha first' });
+      const sidecar = path.join(d2, '.embeddings.json');
+      const before = (await fs.stat(sidecar)).mtimeMs;
+      await new Promise((r) => setTimeout(r, 15));
+      await recallMemories({ ...base, query: 'alpha second' });
+      const after = (await fs.stat(sidecar)).mtimeMs;
+      assert.equal(after, before);
+    } finally {
+      await fs.rm(d2, { recursive: true, force: true });
+    }
+  });
 });

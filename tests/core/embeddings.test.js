@@ -89,4 +89,52 @@ describe('embedTexts', () => {
       global.fetch = original;
     }
   });
+
+  it('rejects fast with an aborted flag when the caller signal is aborted (no retries)', async () => {
+    const original = global.fetch;
+    let calls = 0;
+    global.fetch = async (_url, opts) => {
+      calls++;
+      if (opts.signal?.aborted) {
+        const e = new Error('aborted');
+        e.name = 'AbortError';
+        throw e;
+      }
+      return { ok: true, status: 200, text: async () => '{"data":[]}' };
+    };
+    const ac = new AbortController();
+    ac.abort();
+    try {
+      await assert.rejects(
+        () => embedTexts(['a'], { apiKey: 'sk-x', baseUrl: 'https://x', model: 'm', signal: ac.signal }),
+        (err) => err.aborted === true,
+      );
+      assert.equal(calls, 1); // withRetry must not retry a caller abort
+    } finally {
+      global.fetch = original;
+    }
+  });
+
+  it('aligns vectors by index and fills missing ones with null', async () => {
+    const original = global.fetch;
+    global.fetch = async () => ({
+      ok: true,
+      status: 200,
+      // index 1 omitted entirely; 0 and 2 returned out of order
+      text: async () =>
+        JSON.stringify({
+          data: [
+            { index: 2, embedding: [2, 2] },
+            { index: 0, embedding: [0, 0] },
+          ],
+          usage: { total_tokens: 5 },
+        }),
+    });
+    try {
+      const { vectors } = await embedTexts(['a', 'b', 'c'], { apiKey: 'sk-x', baseUrl: 'https://x', model: 'm' });
+      assert.deepEqual(vectors, [[0, 0], null, [2, 2]]);
+    } finally {
+      global.fetch = original;
+    }
+  });
 });

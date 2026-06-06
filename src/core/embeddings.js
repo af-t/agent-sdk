@@ -57,6 +57,14 @@ export async function embedTexts(texts, { apiKey, baseUrl, model, signal } = {})
         throw new ApiError(body?.error?.message || `Embeddings API error (${res.status})`, res.status, body);
       }
       return body;
+    } catch (err) {
+      // Caller aborted — flag it so withRetry fails fast instead of retrying.
+      if (signal?.aborted) {
+        const aborted = new Error('Embeddings request aborted');
+        aborted.aborted = true;
+        throw aborted;
+      }
+      throw err;
     } finally {
       clearTimeout(timer);
       if (signal) signal.removeEventListener('abort', onAbort);
@@ -64,7 +72,17 @@ export async function embedTexts(texts, { apiKey, baseUrl, model, signal } = {})
   };
 
   const body = await withRetry(doFetch);
-  const data = Array.isArray(body?.data) ? [...body.data] : [];
-  data.sort((x, y) => (x.index ?? 0) - (y.index ?? 0));
-  return { vectors: data.map((d) => d.embedding), usage: body?.usage ?? null };
+  const data = Array.isArray(body?.data) ? body.data : [];
+  // Place each embedding at its declared index so a partial/gappy response
+  // never misaligns vectors with their inputs. Fall back to positional order
+  // only when the response omits indices entirely.
+  const hasIndices = data.length > 0 && data.every((d) => Number.isInteger(d?.index));
+  let vectors;
+  if (hasIndices) {
+    const byIndex = new Map(data.map((d) => [d.index, d.embedding]));
+    vectors = texts.map((_, i) => byIndex.get(i) ?? null);
+  } else {
+    vectors = texts.map((_, i) => data[i]?.embedding ?? null);
+  }
+  return { vectors, usage: body?.usage ?? null };
 }

@@ -323,6 +323,10 @@ export async function withRetry(func, count = config.MAX_RETRIES, callback) {
       const res = await func();
       return res;
     } catch (err) {
+      // Do not retry caller-initiated aborts
+      if (err?.aborted) {
+        throw err;
+      }
       // Do not retry client errors (4xx except 429 and 408)
       if (err?.status && err.status >= 400 && err.status < 500 && err.status !== 429 && err.status !== 408) {
         throw err;

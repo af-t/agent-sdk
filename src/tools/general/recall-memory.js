@@ -31,6 +31,7 @@ export const execute = async ({ query, limit }, ctx = {}) => {
     baseUrl: agent.baseUrl,
     model: agent.embeddingModel,
     trustedPaths: agent.trustedPaths,
+    restricted: agent.restricted !== false,
     signal: ctx.signal,
   });
 

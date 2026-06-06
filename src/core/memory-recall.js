@@ -61,12 +61,13 @@ async function rankWithEmbeddings({
   baseUrl,
   model,
   trustedPaths,
+  restricted = true,
   signal,
   _embed,
 }) {
   let sidecarPath;
   try {
-    sidecarPath = ensureSafePath(path.join(memoryDir, SIDECAR_NAME), trustedPaths);
+    sidecarPath = ensureSafePath(path.join(memoryDir, SIDECAR_NAME), trustedPaths, { restricted });
   } catch {
     sidecarPath = null;
   }
@@ -94,7 +95,10 @@ async function rankWithEmbeddings({
   for (const c of corpus) {
     if (Array.isArray(c.vector)) nextEntries[c.name] = { hash: c.hash, vector: c.vector };
   }
-  if (sidecarPath) await writeSidecar(sidecarPath, nextEntries);
+  // Only rewrite the sidecar when something actually changed (new/edited file
+  // embedded, or a deleted file pruned) — a pure cache-hit recall touches nothing.
+  const changed = toEmbed.length > 0 || Object.keys(nextEntries).length !== Object.keys(cached).length;
+  if (sidecarPath && changed) await writeSidecar(sidecarPath, nextEntries);
 
   const results = corpus
     .map((c) => ({ name: c.name, score: c.vector ? cosineSimilarity(queryVec, c.vector) : 0, body: c.body }))
@@ -103,7 +107,7 @@ async function rankWithEmbeddings({
   return { results, usage, ranker: 'embeddings', total: corpus.length };
 }
 
-async function loadCorpus(memoryDir, trustedPaths) {
+async function loadCorpus(memoryDir, trustedPaths, restricted = true) {
   let names;
   try {
     names = await fs.readdir(memoryDir);
@@ -115,7 +119,7 @@ async function loadCorpus(memoryDir, trustedPaths) {
     if (!fname.endsWith('.md') || fname === 'MEMORY.md') continue;
     let resolved;
     try {
-      resolved = ensureSafePath(path.join(memoryDir, fname), trustedPaths);
+      resolved = ensureSafePath(path.join(memoryDir, fname), trustedPaths, { restricted });
     } catch {
       continue;
     }
@@ -151,10 +155,11 @@ export async function recallMemories({
   baseUrl,
   model,
   trustedPaths,
+  restricted = true,
   signal,
   _embed = embedTexts,
 } = {}) {
-  const corpus = await loadCorpus(memoryDir, trustedPaths);
+  const corpus = await loadCorpus(memoryDir, trustedPaths, restricted);
   if (corpus.length === 0) {
     return { results: [], usage: null, ranker: 'lexical', total: 0 };
   }
@@ -169,10 +174,13 @@ export async function recallMemories({
         baseUrl,
         model,
         trustedPaths,
+        restricted,
         signal,
         _embed,
       });
     } catch (err) {
+      // A caller-initiated abort should propagate, not silently degrade to lexical.
+      if (signal?.aborted || err?.aborted) throw err;
       logger.debug(`memory-recall: embeddings path failed, using lexical: ${err.message}`);
     }
   }
