@@ -49,6 +49,16 @@ describe('Agent', () => {
       assert.equal(agent.baseUrl, 'https://example.com/api');
     });
 
+    it('defaults embeddingModel to text-embedding-3-small', () => {
+      const agent = new Agent({ apiKey: 'sk-test-key' });
+      assert.equal(agent.embeddingModel, 'openai/text-embedding-3-small');
+    });
+
+    it('accepts embeddingModel option', () => {
+      const agent = new Agent({ apiKey: 'sk-test-key', embeddingModel: 'qwen/qwen3-embedding-0.6b' });
+      assert.equal(agent.embeddingModel, 'qwen/qwen3-embedding-0.6b');
+    });
+
     it('defaults to config.BASE_URL if no baseUrl option is provided', () => {
       const agent = new Agent({ apiKey: 'sk-test-key' });
       assert.equal(agent.baseUrl, 'https://openrouter.ai/api/v1');

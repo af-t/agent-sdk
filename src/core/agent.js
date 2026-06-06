@@ -77,6 +77,7 @@ class Agent {
       apiKey,
       baseUrl,
       model,
+      embeddingModel,
       tools,
       order,
       only,
@@ -120,6 +121,7 @@ class Agent {
     this.#apiKey = apiKey || config.API_KEY;
     this.#baseUrl = baseUrl || config.BASE_URL || 'https://openrouter.ai/api/v1';
     this.model = model;
+    this.embeddingModel = embeddingModel ?? config.EMBEDDING_MODEL ?? 'openai/text-embedding-3-small';
     this.isSubagent = !!isSubagent;
 
     const resolvedOrder = order || provider?.order || config.ORDER;
@@ -434,6 +436,7 @@ class Agent {
       'stop',
       'effort',
       'autoWake',
+      'embeddingModel',
       'maxToolOutputChars',
     ];
     for (const k of carry) child[k] = this[k];

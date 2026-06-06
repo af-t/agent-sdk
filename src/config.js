@@ -24,6 +24,7 @@ export default deepFreeze({
   ORDER: process.env.OPENROUTER_ORDER?.split?.(','),
   ONLY: process.env.OPENROUTER_ONLY?.split?.(','),
   MODEL: process.env.OPENROUTER_MODEL,
+  EMBEDDING_MODEL: process.env.OPENROUTER_EMBEDDING_MODEL,
   MAX_TURNS: process.env.OPENROUTER_MAX_TURNS,
   AUTO_WAKE: process.env.OPENROUTER_AUTO_WAKE,
   TAVILY_API_KEY: process.env.TAVILY_API_KEY,
