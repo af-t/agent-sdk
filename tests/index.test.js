@@ -67,6 +67,22 @@ describe('createAgent', () => {
     }
   });
 
+  it('should pass baseUrl from options (with env fallback)', async () => {
+    const agent = await createAgent({ baseUrl: 'https://custom-proxy.example/api' });
+    // If .env has BASE_URL, config value wins (env-first, consistent with model/only)
+    if (process.env.OPENROUTER_BASE_URL) {
+      assert.strictEqual(agent.baseUrl, process.env.OPENROUTER_BASE_URL);
+    } else {
+      assert.strictEqual(agent.baseUrl, 'https://custom-proxy.example/api');
+    }
+  });
+
+  it('should default baseUrl to openrouter when no option or env is given', async () => {
+    const agent = await createAgent();
+    const expected = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+    assert.strictEqual(agent.baseUrl, expected);
+  });
+
   it('should pass provider order from options', async () => {
     const agent = await createAgent({ order: ['openai', 'anthropic'] });
     assert.deepEqual(agent.provider.order, ['openai', 'anthropic']);

@@ -93,11 +93,19 @@ export const execute = async ({ description, prompt, persona, id, background = f
       tokens: subagent.usage.tokens,
     };
 
+    // Per-job controller so Jobs/cleanup can stop this subagent; keep parent abort cascading.
+    const jobController = new AbortController();
+    if (signal) {
+      if (signal.aborted) jobController.abort();
+      else signal.addEventListener('abort', () => jobController.abort(), { once: true });
+    }
+
     const job = {
       id: bgId,
       kind: 'delegate',
       subagent,
       child: null,
+      controller: jobController,
       logPath,
       traceLogPath,
       startedAt,
@@ -113,15 +121,16 @@ export const execute = async ({ description, prompt, persona, id, background = f
       let report;
       let crashed = false;
       try {
-        report = await subagent.run(prompt, writer.notify, { signal });
+        report = await subagent.run(prompt, writer.notify, { signal: jobController.signal });
       } catch (err) {
         crashed = true;
         report = `Error: ${err.message}`;
       }
       await writer.close();
+      const wasAborted = jobController.signal.aborted;
       job.endedAt = Date.now();
-      job.exitCode = crashed ? -1 : 0;
-      job.status = crashed ? 'crashed' : 'exited';
+      job.exitCode = wasAborted || crashed ? -1 : 0;
+      job.status = wasAborted ? 'killed' : crashed ? 'crashed' : 'exited';
 
       const costDelta = subagent.usage.cost - snapshotBefore.cost;
       const tokensDelta = subagent.usage.tokens - snapshotBefore.tokens;

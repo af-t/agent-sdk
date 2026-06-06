@@ -38,6 +38,7 @@ function makeIdleTimer(ms, controller) {
   };
 }
 const DEFAULT_MAX_TURNS = 25;
+const BG_KILL_GRACE_MS = 2000;
 const VALID_INJECTOR_SCOPES = new Set(['first-turn', 'per-turn']);
 
 class Agent {
@@ -1093,6 +1094,47 @@ class Agent {
     return { id };
   }
 
+  // Stop one background job by id
+  _killBackgroundJob(id) {
+    const job = this.backgroundJobs?.get(id);
+    if (!job) return { ok: false, status: 'not_found' };
+    if (job.status !== 'running') return { ok: false, status: 'already_finished', jobStatus: job.status };
+
+    if (job.kind === 'timer') {
+      if (job.timer) clearTimeout(job.timer);
+      job.endedAt = Date.now();
+      job.status = 'killed';
+      return { ok: true, kind: 'timer' };
+    }
+
+    if (job.kind === 'delegate') {
+      try {
+        job.controller?.abort();
+      } catch {}
+      job.status = 'killed';
+      return { ok: true, kind: 'delegate' };
+    }
+
+    // bash: signal the real process; the exit handler finalizes status
+    const child = job.child;
+    if (child && typeof child.kill === 'function') {
+      try {
+        child.kill('SIGTERM');
+      } catch {}
+      const t = setTimeout(() => {
+        try {
+          child.kill('SIGKILL');
+        } catch {}
+      }, BG_KILL_GRACE_MS);
+      if (typeof t.unref === 'function') t.unref();
+      const clear = () => clearTimeout(t);
+      if (typeof child.on === 'function') child.on('exit', clear);
+      else if (typeof child.onExit === 'function') child.onExit(clear);
+    }
+    job.status = 'killed';
+    return { ok: true, kind: 'bash' };
+  }
+
   _resolveBackgroundLogDir() {
     if (this._bgLogDir) return this._bgLogDir;
     let dir;
@@ -1118,7 +1160,6 @@ class Agent {
       this.#recorder = null;
       this.#recordConfig = null;
     }
-    const SIGKILL_GRACE_MS = 2000;
     const killing = [];
     for (const job of this.backgroundJobs.values()) {
       if (job.status !== 'running') continue;
@@ -1126,6 +1167,11 @@ class Agent {
         if (job.timer) clearTimeout(job.timer);
         job.status = 'killed';
         continue;
+      }
+      if (job.controller) {
+        try {
+          job.controller.abort();
+        } catch {}
       }
       const child = job.child;
       if (child && typeof child.kill === 'function') {
@@ -1139,7 +1185,7 @@ class Agent {
                 child.kill('SIGKILL');
               } catch {}
               resolve();
-            }, SIGKILL_GRACE_MS);
+            }, BG_KILL_GRACE_MS);
             const onExit = () => {
               clearTimeout(t);
               resolve();
