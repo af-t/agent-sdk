@@ -11,13 +11,47 @@ let _ptyModule = null;
 async function getPty() {
   if (_ptyModule === null) {
     try {
-      _ptyModule = await import('node-pty');
+      const pty = await import('node-pty');
+      // Probe if node-pty actually works and produces output in this environment
+      const works = await new Promise((resolve) => {
+        try {
+          const proc = pty.spawn('echo', ['1'], {
+            cols: 80,
+            rows: 24,
+          });
+          let hasData = false;
+          let timer;
+          proc.onData(() => {
+            hasData = true;
+          });
+          proc.onExit(({ exitCode }) => {
+            clearTimeout(timer);
+            resolve(hasData && exitCode === 0);
+          });
+          timer = setTimeout(() => {
+            try { proc.kill(); } catch {}
+            resolve(false);
+          }, 1000);
+        } catch {
+          resolve(false);
+        }
+      });
+
+      if (works) {
+        _ptyModule = pty;
+      } else {
+        logger.warn(
+          'node-pty is available but failed to execute commands or produce output; falling back to child_process.spawn',
+        );
+        _ptyModule = false;
+      }
     } catch {
       _ptyModule = false;
     }
   }
   return _ptyModule;
 }
+
 
 // Whitelist of safe environment variables to pass to child processes
 const SAFE_ENV_KEYS = [
