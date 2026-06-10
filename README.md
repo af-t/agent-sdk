@@ -30,7 +30,7 @@ Minimal SDK for building AI agents connected to the [OpenRouter API](https://ope
 - **MCP (Model Context Protocol) Support** — Connect your agent to external tools via stdio-based MCP servers.
 - **Skill Discovery System** — Discover and load skills from SKILL.md files across builtin, project, and user directories.
 - **Built-in Tools** — File operations (Read, Write, Edit, Find, List), shell command execution (Bash with optional **node-pty** support), web search (Tavily), web fetch (using **cheerio**), and subagent delegation.
-- **Safety & Validation** — Tool inputs are validated against their schema (type checks, required fields, enums). Path traversal protection and **.gitignore** compliance on Read, Write, Edit, List, and Find tools. Dangerous shell command detection.
+- **Safety & Validation** — Tool inputs are validated against their schema (type checks, required fields, enums). Path traversal protection on Read, Write, Edit, List, and Find tools; **.gitignore** filtering on List (and on Find when ripgrep is available) — Read, Write, and Edit do *not* consult .gitignore, so ignored files inside the project root (such as `.env`) remain accessible to the agent. Dangerous shell command detection.
 - **Retry with Exponential Backoff** — Auto-retry with jitter to handle rate limits and transient errors.
 - **Abort Signal Support** — Cancel agent execution at any point.
 - **Ephemeral Caching** — Automatic `cache_control` on system prompt and the last user message.
