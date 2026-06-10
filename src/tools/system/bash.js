@@ -20,7 +20,10 @@ async function getPty() {
             rows: 24,
           });
           let hasData = false;
-          let timer;
+          const timer = setTimeout(() => {
+            try { proc.kill(); } catch {}
+            resolve(false);
+          }, 1000);
           proc.onData(() => {
             hasData = true;
           });
@@ -28,10 +31,6 @@ async function getPty() {
             clearTimeout(timer);
             resolve(hasData && exitCode === 0);
           });
-          timer = setTimeout(() => {
-            try { proc.kill(); } catch {}
-            resolve(false);
-          }, 1000);
         } catch {
           resolve(false);
         }
