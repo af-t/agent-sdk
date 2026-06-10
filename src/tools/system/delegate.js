@@ -71,6 +71,8 @@ export const execute = async ({ description, prompt, persona, id, background = f
     if (typeof agent._sendForTest === 'function') {
       subagent._sendForTest = agent._sendForTest;
     }
+    // Propagate depth so nested Delegate hits the limit
+    subagent._delegateDepth = depth;
     agent.subagents.set(resolvedId, subagent);
   } else {
     subagent = agent.subagents.get(resolvedId);

@@ -124,6 +124,47 @@ describe('Delegate tool — execute()', () => {
     assert.ok(result.startsWith('You are a code reviewer'));
   });
 
+  it('propagates _delegateDepth to spawned subagents', async () => {
+    mock.method(Agent.prototype, 'run', async () => 'done');
+
+    const fakeAgent = {
+      apiKey: 'k',
+      model: 'm',
+      provider: {},
+      tools: {},
+      usage: { cost: 0, tokens: 0 },
+      subagents: new Map(),
+    };
+
+    await mod.execute({ description: 'd', prompt: 'p', id: 'child' }, { agent: fakeAgent });
+    assert.strictEqual(fakeAgent.subagents.get('child')._delegateDepth, 1);
+  });
+
+  it('rejects nested delegation once the depth limit is reached', async () => {
+    mock.method(Agent.prototype, 'run', async () => 'done');
+
+    let parent = {
+      apiKey: 'k',
+      model: 'm',
+      provider: {},
+      tools: {},
+      usage: { cost: 0, tokens: 0 },
+      subagents: new Map(),
+    };
+
+    // Walk delegation three levels deep via real spawned subagents
+    for (let i = 0; i < 3; i++) {
+      await mod.execute({ description: 'd', prompt: 'p', id: 'sub' }, { agent: parent });
+      parent = parent.subagents.get('sub');
+    }
+    assert.strictEqual(parent._delegateDepth, 3);
+
+    await assert.rejects(
+      () => mod.execute({ description: 'd', prompt: 'p' }, { agent: parent }),
+      /Delegate depth limit reached/,
+    );
+  });
+
   it('should reject delegation when depth exceeds limit', async () => {
     const fakeAgent = {
       apiKey: 'sk-test-key',
