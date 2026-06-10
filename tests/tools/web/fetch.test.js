@@ -221,6 +221,89 @@ describe('WebFetch tool module', () => {
     });
   });
 
+  describe('SSRF — IPv4-mapped IPv6 bypass attempts', () => {
+    it('blocks loopback via dotted IPv4-mapped IPv6 literal', async () => {
+      await assert.rejects(() => mod.execute({ url: 'http://[::ffff:127.0.0.1]/' }), /Access denied/);
+    });
+
+    it('blocks loopback via hex IPv4-mapped IPv6 literal', async () => {
+      await assert.rejects(() => mod.execute({ url: 'http://[::ffff:7f00:1]/' }), /Access denied/);
+    });
+
+    it('blocks private range via long-form IPv4-mapped IPv6 literal', async () => {
+      await assert.rejects(() => mod.execute({ url: 'http://[0:0:0:0:0:ffff:10.0.0.1]/' }), /Access denied/);
+    });
+
+    it('blocks AWS metadata IP via IPv4-mapped IPv6', async () => {
+      const { isBlockedIp } = mod;
+      assert.strictEqual(isBlockedIp('::ffff:169.254.169.254'), true);
+      assert.strictEqual(isBlockedIp('0:0:0:0:0:ffff:169.254.169.254'), true);
+    });
+
+    it('blocks IPv6 unspecified address', async () => {
+      const { isBlockedIp } = mod;
+      assert.strictEqual(isBlockedIp('::'), true);
+    });
+
+    it('allows a public IPv4-mapped IPv6 address', async () => {
+      const { checkSSRF } = mod;
+      await assert.doesNotReject(() => checkSSRF('http://[::ffff:8.8.8.8]/'));
+    });
+  });
+
+  describe('redirect depth limit (mocked fetch)', () => {
+    it('rejects an infinite redirect loop', async () => {
+      const originalFetch = global.fetch;
+      let calls = 0;
+      global.fetch = async () => {
+        calls++;
+        return {
+          status: 302,
+          headers: {
+            get: (name) => (name === 'location' ? 'https://example.com/loop' : null),
+          },
+          body: { cancel: async () => {} },
+        };
+      };
+      try {
+        await assert.rejects(() => mod.execute({ url: 'https://example.com/start' }), /Too many redirects/);
+        assert.ok(calls <= 7, `redirects should be capped, fetch was called ${calls} times`);
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+  });
+
+  describe('body size cap without content-length (mocked fetch)', () => {
+    it('rejects an oversized chunked response', async () => {
+      const originalFetch = global.fetch;
+      const chunk = new Uint8Array(1024 * 1024);
+      let pushed = 0;
+      global.fetch = async () => ({
+        status: 200,
+        headers: {
+          get: (name) => (name === 'content-type' ? 'text/plain' : null),
+        },
+        body: new ReadableStream({
+          pull(controller) {
+            // 11MB total, just past the 10MB cap
+            if (pushed >= 11) {
+              controller.close();
+              return;
+            }
+            pushed++;
+            controller.enqueue(chunk);
+          },
+        }),
+      });
+      try {
+        await assert.rejects(() => mod.execute({ url: 'https://example.com/huge-stream' }), /Response too large/);
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+  });
+
   describe('SSRF — public IPv4 and IPv6 literal paths', () => {
     it('allows a public IPv4 address without DNS resolution', async () => {
       const { checkSSRF } = mod;

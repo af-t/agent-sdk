@@ -11,10 +11,32 @@ const BLOCKED_IP_RANGES = [
   /^0\./, // Invalid
   /^169\.254\./, // Link-local
   /^::1$/, // IPv6 loopback
+  /^::$/, // IPv6 unspecified
   /^fc00:/, // IPv6 unique local
   /^fe80:/, // IPv6 link-local
   /^fd00:/, // IPv6 unique local
 ];
+
+// Max redirects before giving up
+const MAX_REDIRECTS = 5;
+
+// Unwrap IPv4-mapped IPv6 addresses
+function unmapIPv4(ip) {
+  const m = ip
+    .toLowerCase()
+    .replace(/^0:0:0:0:0:ffff:/, '::ffff:')
+    .match(/^::ffff:(.+)$/);
+  if (!m) return ip;
+  const tail = m[1];
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(tail)) return tail;
+  const hex = tail.match(/^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (hex) {
+    const hi = parseInt(hex[1], 16);
+    const lo = parseInt(hex[2], 16);
+    return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+  }
+  return ip;
+}
 
 // Binary if non-printable chars > 70%
 function isBinaryContent(text) {
@@ -31,7 +53,30 @@ function withContentType(contentType, body) {
 
 // Check if IP is in blocked range
 function isBlockedIp(ip) {
-  return BLOCKED_IP_RANGES.some((range) => range.test(ip));
+  const target = unmapIPv4(ip);
+  return BLOCKED_IP_RANGES.some((range) => range.test(target));
+}
+
+// Read body with a hard byte cap
+async function readBodyCapped(res, maxBytes) {
+  // Fallback for stubs/responses without a web stream body
+  if (!res.body || typeof res.body.getReader !== 'function') {
+    return res.text();
+  }
+  const reader = res.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {});
+      throw new Error(`Response too large (over ${maxBytes} bytes). Maximum allowed is ${maxBytes} bytes (10MB).`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 // SSRF check — blocks private IPs, localhost, DNS rebinding, non-HTTP(S)
@@ -164,6 +209,12 @@ export const execute = async ({ url, useRaw = false, limit = 20000 }, ctx = {}) 
     if (res.status >= 300 && res.status < 400) {
       let redirectUrl = res.headers.get('location');
       if (redirectUrl) {
+        const redirectDepth = (ctx._redirectDepth || 0) + 1;
+        if (redirectDepth > MAX_REDIRECTS) {
+          await res.body?.cancel().catch(() => {});
+          throw new Error(`Too many redirects (max ${MAX_REDIRECTS})`);
+        }
+
         // Strip credentials from redirect URL to prevent leaking
         const parsed = new URL(redirectUrl, url);
         parsed.username = '';
@@ -175,7 +226,7 @@ export const execute = async ({ url, useRaw = false, limit = 20000 }, ctx = {}) 
         // Release the redirect response body before recursing
         await res.body?.cancel().catch(() => {});
         // Recursively call execute for the redirect URL
-        return execute({ url: redirectUrl, useRaw, limit }, ctx);
+        return execute({ url: redirectUrl, useRaw, limit }, { ...ctx, _redirectDepth: redirectDepth });
       }
     }
 
@@ -188,7 +239,8 @@ export const execute = async ({ url, useRaw = false, limit = 20000 }, ctx = {}) 
     }
 
     contentType = res.headers.get('content-type') || 'unknown';
-    raw = await res.text();
+    // Hard cap even without content-length (chunked responses)
+    raw = await readBodyCapped(res, CONSTANTS.FETCH_MAX_SIZE);
   } finally {
     clearTimeout(timeout);
     if (ctx.signal) {
