@@ -57,24 +57,19 @@ describe('createAgent', () => {
     assert(names.includes('Skill'), 'Skill tool should be loaded');
   });
 
-  it('should pass model from options (with env fallback)', async () => {
+  it('explicit model option wins over env config', async () => {
     const agent = await createAgent({ model: 'test-model' });
-    // If .env has MODEL, config value wins (current behavior)
-    if (process.env.OPENROUTER_MODEL) {
-      assert.strictEqual(agent.model, process.env.OPENROUTER_MODEL);
-    } else {
-      assert.strictEqual(agent.model, 'test-model');
-    }
+    assert.strictEqual(agent.model, 'test-model');
   });
 
-  it('should pass baseUrl from options (with env fallback)', async () => {
+  it('falls back to env model when no option is given', async () => {
+    const agent = await createAgent();
+    assert.strictEqual(agent.model, process.env.OPENROUTER_MODEL || undefined);
+  });
+
+  it('explicit baseUrl option wins over env config', async () => {
     const agent = await createAgent({ baseUrl: 'https://custom-proxy.example/api' });
-    // If .env has BASE_URL, config value wins (env-first, consistent with model/only)
-    if (process.env.OPENROUTER_BASE_URL) {
-      assert.strictEqual(agent.baseUrl, process.env.OPENROUTER_BASE_URL);
-    } else {
-      assert.strictEqual(agent.baseUrl, 'https://custom-proxy.example/api');
-    }
+    assert.strictEqual(agent.baseUrl, 'https://custom-proxy.example/api');
   });
 
   it('should default baseUrl to openrouter when no option or env is given', async () => {
@@ -88,14 +83,28 @@ describe('createAgent', () => {
     assert.deepEqual(agent.provider.order, ['openai', 'anthropic']);
   });
 
-  it('should pass provider only from options (with env fallback)', async () => {
+  it('explicit provider only option wins over env config', async () => {
     const agent = await createAgent({ only: ['openai'] });
-    // If .env has ONLY, config value wins (current behavior)
-    if (process.env.OPENROUTER_ONLY) {
-      assert.deepEqual(agent.provider.only, [process.env.OPENROUTER_ONLY]);
-    } else {
-      assert.deepEqual(agent.provider.only, ['openai']);
-    }
+    assert.deepEqual(agent.provider.only, ['openai']);
+  });
+
+  it('explicit apiKey option wins over env config', async () => {
+    const agent = await createAgent({ apiKey: 'sk-explicit-key' });
+    assert.strictEqual(agent.apiKey, 'sk-explicit-key');
+  });
+
+  it('honors a caller-supplied ToolRegistry without auto-discovery', async () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 'OnlyMine',
+      description: 'custom tool',
+      input_schema: { type: 'object', properties: {}, required: [] },
+      execute: async () => 'mine',
+    });
+    const agent = await createAgent({ tools: registry });
+    assert.strictEqual(agent.tools, registry);
+    const names = agent.tools.listTools().map((t) => t.name);
+    assert.deepEqual(names, ['OnlyMine'], 'builtin auto-discovery should be skipped');
   });
 
   it('should return an agent with maxTurns from env or default 25', async () => {

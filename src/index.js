@@ -9,18 +9,19 @@ const __dirname = getDirname(import.meta);
 
 async function createAgent(options = {}) {
   const restricted = options.restricted !== false;
-  const tools = new ToolRegistry({ restricted });
-  for await (const tool of loadTools(path.join(__dirname, 'tools'))) {
-    tools.register(tool);
+  // Honor a caller-supplied registry; otherwise auto-discover builtins
+  let tools = options.tools;
+  if (!tools) {
+    tools = new ToolRegistry({ restricted });
+    for await (const tool of loadTools(path.join(__dirname, 'tools'))) {
+      tools.register(tool);
+    }
   }
 
+  // Explicit options win over env config
   return new Agent({
     ...options,
-    apiKey: config.API_KEY || options.apiKey,
-    baseUrl: config.BASE_URL || options.baseUrl,
-    model: config.MODEL || options.model,
-    order: config.ORDER || options.order,
-    only: config.ONLY || options.only,
+    model: options.model || config.MODEL,
     restricted,
     tools,
   });
