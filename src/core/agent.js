@@ -740,14 +740,14 @@ class Agent {
     if (this.provider) {
       if (this.provider.order !== undefined) providerPayload.order = this.provider.order;
       if (this.provider.only !== undefined) providerPayload.only = this.provider.only;
-      if (this.provider.avoid !== undefined) providerPayload.avoid = this.provider.avoid;
+      // Wire field is `ignore` per OpenRouter provider docs
+      if (this.provider.avoid !== undefined) providerPayload.ignore = this.provider.avoid;
       if (this.provider.sort !== undefined) providerPayload.sort = this.provider.sort;
       if (this.provider.allowFallbacks !== undefined) providerPayload.allow_fallbacks = this.provider.allowFallbacks;
       if (this.provider.requireParameters !== undefined)
         providerPayload.require_parameters = this.provider.requireParameters;
       if (this.provider.dataCollection !== undefined) {
         providerPayload.data_collection = this.provider.dataCollection;
-        providerPayload.dataCollection = this.provider.dataCollection;
       }
     }
     if (Object.keys(providerPayload).length > 0) {

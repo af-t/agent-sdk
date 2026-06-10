@@ -147,12 +147,11 @@ describe('Agent Upgrade — modern parameters and reasoning', () => {
     assert.deepEqual(capturedPayload.provider, {
       order: ['openai', 'anthropic'],
       only: ['openai'],
-      avoid: ['together'],
+      ignore: ['together'],
       sort: 'throughput',
       allow_fallbacks: false,
       require_parameters: true,
       data_collection: 'deny',
-      dataCollection: 'deny',
     });
   });
 
