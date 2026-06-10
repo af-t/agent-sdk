@@ -590,13 +590,51 @@ describe('Edit — CRLF line endings', () => {
     assert.ok(content.includes('REPLACED'));
   });
 
-  it('normalizes CRLF to LF in written output', async () => {
+  it('preserves CRLF line endings in written output', async () => {
     await execute({
       path: crlfFile,
       edits: [{ action: 'replace', old_text: 'foo bar', new_text: 'FOO BAR' }],
     });
     const raw = await fs.readFile(crlfFile, 'utf8');
-    assert.ok(!raw.includes('\r\n'), 'written file should not contain CRLF');
+    assert.strictEqual(raw, 'Line one: hello world\r\nLine two: FOO BAR\r\nLine three: baz qux\r\n');
+  });
+});
+
+describe('Edit — preserves untouched content', () => {
+  let execute;
+  let wsFile;
+
+  before(async () => {
+    await fs.mkdir(FIXTURES, { recursive: true });
+    execute = (await import('../../../src/tools/file/edit.js')).execute;
+    wsFile = path.join(FIXTURES, 'edit-whitespace.txt');
+  });
+
+  after(() => fs.rm(wsFile, { force: true }));
+
+  beforeEach(async () => {
+    // trailing spaces are intentional (markdown hard breaks)
+    await fs.writeFile(wsFile, 'first line  \nmarkdown break  \ntarget line\nlast line\n', 'utf8');
+  });
+
+  it('keeps trailing whitespace on untouched lines', async () => {
+    await execute({
+      path: wsFile,
+      edits: [{ action: 'replace', old_text: 'target line', new_text: 'CHANGED line' }],
+    });
+    const raw = await fs.readFile(wsFile, 'utf8');
+    assert.strictEqual(raw, 'first line  \nmarkdown break  \nCHANGED line\nlast line\n');
+  });
+
+  it('matches old_text that contains trailing whitespace', async () => {
+    const result = await execute({
+      path: wsFile,
+      edits: [{ action: 'replace', old_text: 'markdown break  \n', new_text: 'plain break\n' }],
+    });
+    assert.ok(result.includes('updated successfully'));
+    const raw = await fs.readFile(wsFile, 'utf8');
+    assert.ok(raw.includes('plain break\n'));
+    assert.ok(raw.includes('first line  \n'), 'untouched trailing whitespace should survive');
   });
 });
 

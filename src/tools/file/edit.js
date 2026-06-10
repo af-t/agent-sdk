@@ -207,12 +207,9 @@ export const execute = async ({ path: filePath, edits }, ctx = {}) => {
     }
   }
 
-  let content = rawContent
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .split('\n')
-    .map((x) => x.replace(/ +$/, ''))
-    .join('\n');
+  // Normalize CRLF to LF for matching only; original endings restored on write
+  const usesCrlf = rawContent.includes('\r\n');
+  let content = usesCrlf ? rawContent.replace(/\r\n/g, '\n') : rawContent;
 
   let lineOffset = 0;
   let lastOriginalEndLine = -Infinity;
@@ -234,14 +231,15 @@ export const execute = async ({ path: filePath, edits }, ctx = {}) => {
     lineOffset += delta;
   }
 
+  const output = usesCrlf ? content.replace(/\n/g, '\r\n') : content;
   const temp = path.join(os.tmpdir(), `.oasdk-${Array.from(crypto.randomBytes(5), (x) => x.toString(36)).join('')}`);
-  await fs.writeFile(temp, content, 'utf8');
+  await fs.writeFile(temp, output, 'utf8');
   const difference = await diff(safePath, temp);
   await fs.rm(temp, { force: true });
-  await fs.writeFile(safePath, content, 'utf8');
+  await fs.writeFile(safePath, output, 'utf8');
 
   if (fileState) {
-    const newHash = hashContent(content);
+    const newHash = hashContent(output);
     const totalLines = content.split('\n').length;
     fileState.set(safePath, {
       hash: newHash,
