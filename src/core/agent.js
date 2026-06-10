@@ -920,7 +920,7 @@ class Agent {
 
   async #executeOneToolCall(tc, signal) {
     const name = tc.function.name;
-    const tool_call_id = tc.id || `call_${crypto.randomUUID()}`;
+    const tool_call_id = tc.id;
     let input;
     try {
       input = JSON.parse(tc.function.arguments);
@@ -1375,6 +1375,13 @@ class Agent {
         const { content, tool_calls } = message;
         const reasoning = message.reasoning || undefined;
 
+        // Assign ids once so tool results match the assistant message
+        if (tool_calls) {
+          for (const tc of tool_calls) {
+            if (!tc.id) tc.id = `call_${crypto.randomUUID()}`;
+          }
+        }
+
         this.messages.push({ role: 'assistant', reasoning, content, tool_calls });
         this.#recorder?.recordAssistant(loopCount, { content, reasoning, tool_calls });
 
@@ -1395,7 +1402,7 @@ class Agent {
         for (let i = 0; i < tool_calls.length; i++) {
           const tc = tool_calls[i];
           const r = settled[i];
-          const tool_call_id = tc.id || `call_${crypto.randomUUID()}`;
+          const tool_call_id = tc.id;
           if (r.status === 'fulfilled') {
             const { output, richParts } = r.value;
             this.messages.push({ role: 'tool', content: output, tool_call_id });

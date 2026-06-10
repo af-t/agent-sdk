@@ -675,6 +675,105 @@ describe('Agent — cleanup()', () => {
   });
 });
 
+describe('run() — tool_call id normalization', () => {
+  let Agent;
+  let originalFetch;
+
+  before(async () => {
+    const mod = await import('../../src/core/agent.js');
+    Agent = mod.default;
+    originalFetch = global.fetch;
+  });
+
+  after(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('assigns a stable id when the provider omits tool_call ids', async () => {
+    let calls = 0;
+    global.fetch = async () => {
+      calls++;
+      if (calls === 1) {
+        return makeJsonResponse({
+          choices: [
+            {
+              message: {
+                content: null,
+                reasoning: null,
+                // no `id` on the tool call
+                tool_calls: [{ type: 'function', function: { name: 'Probe', arguments: '{}' } }],
+              },
+            },
+          ],
+          usage: { cost: 0, total_tokens: 1 },
+        });
+      }
+      return makeJsonResponse({
+        choices: [{ message: { content: 'done', reasoning: null, tool_calls: null } }],
+        usage: { cost: 0, total_tokens: 1 },
+      });
+    };
+
+    const agent = new Agent({ apiKey: 'sk-test' });
+    let ctxId;
+    agent.use({
+      name: 'Probe',
+      description: 'probe',
+      input_schema: { type: 'object', properties: {}, required: [] },
+      execute: async (input, ctx) => {
+        ctxId = ctx.tool_call_id;
+        return 'ok';
+      },
+    });
+
+    await agent.run('start');
+
+    const assistantMsg = agent.messages.find((m) => m.role === 'assistant' && m.tool_calls);
+    const toolMsg = agent.messages.find((m) => m.role === 'tool');
+    assert.ok(assistantMsg.tool_calls[0].id, 'generated id should land on the assistant message');
+    assert.strictEqual(toolMsg.tool_call_id, assistantMsg.tool_calls[0].id);
+    assert.strictEqual(ctxId, assistantMsg.tool_calls[0].id);
+  });
+
+  it('keeps provider-supplied tool_call ids untouched', async () => {
+    let calls = 0;
+    global.fetch = async () => {
+      calls++;
+      if (calls === 1) {
+        return makeJsonResponse({
+          choices: [
+            {
+              message: {
+                content: null,
+                reasoning: null,
+                tool_calls: [{ id: 'call_upstream', type: 'function', function: { name: 'Probe', arguments: '{}' } }],
+              },
+            },
+          ],
+          usage: { cost: 0, total_tokens: 1 },
+        });
+      }
+      return makeJsonResponse({
+        choices: [{ message: { content: 'done', reasoning: null, tool_calls: null } }],
+        usage: { cost: 0, total_tokens: 1 },
+      });
+    };
+
+    const agent = new Agent({ apiKey: 'sk-test' });
+    agent.use({
+      name: 'Probe',
+      description: 'probe',
+      input_schema: { type: 'object', properties: {}, required: [] },
+      execute: async () => 'ok',
+    });
+
+    await agent.run('start');
+
+    const toolMsg = agent.messages.find((m) => m.role === 'tool');
+    assert.strictEqual(toolMsg.tool_call_id, 'call_upstream');
+  });
+});
+
 describe('run() — steering / pending requests', () => {
   let Agent;
   let originalFetch;
