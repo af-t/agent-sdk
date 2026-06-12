@@ -86,10 +86,12 @@ export async function getIgnoreFilter() {
   _ignoreFilterCache = {
     test: (filePath) => {
       const relPath = path.relative(cwd, path.resolve(filePath));
+      if (relPath.startsWith('..' + path.sep) || relPath === '..') return false;
       return ig.test(relPath);
     },
     ignores: (filePath) => {
       const relPath = path.relative(cwd, path.resolve(filePath));
+      if (relPath.startsWith('..' + path.sep) || relPath === '..') return false;
       return ig.ignores(relPath);
     },
     add: (content) => ig.add(content),
@@ -131,8 +133,8 @@ export function ensureSafePath(filePath, allowedRoots = new Set(), options = {})
   }
   if (
     /%2e%2e|%2f|%5c/i.test(filePath) ||
-    decoded.includes('..') ||
-    (filePath.includes('%') && (decoded.includes('/') || decoded.includes('\\')))
+    (filePath.includes('%') && (decoded.includes('/') || decoded.includes('\\'))) ||
+    (restricted && decoded.includes('..'))
   ) {
     throw new Error('Access denied: Path contains URL-encoded traversal characters');
   }

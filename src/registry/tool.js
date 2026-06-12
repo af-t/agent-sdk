@@ -98,6 +98,9 @@ export class ToolRegistry {
 
     // Ensure ctx.signal is always defined so tool code can rely on it
     const ctx = { ...context, signal: context?.signal ?? new AbortController().signal };
+    if (!ctx.agent) {
+      ctx.agent = { restricted: this.restricted, trustedPaths: new Set() };
+    }
 
     // Run before-execute hooks. A hook may throw to abort, or return
     // { override: <result> } to short-circuit the call with a substitute
