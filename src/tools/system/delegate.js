@@ -184,6 +184,40 @@ export const execute = async ({ description, prompt, persona, id, background = f
     let report;
     try {
       report = await subagent.run(prompt, writer.notify, { signal });
+
+      // Wait until subagent is fully idle (no running background jobs, and not currently running a loop)
+      while (!signal?.aborted) {
+        const hasRunningJobs =
+          subagent.backgroundJobs && Array.from(subagent.backgroundJobs.values()).some((j) => j.status === 'running');
+
+        if (!hasRunningJobs && !subagent.isRunning) {
+          // Wait a short tick to allow pending microtasks (like autoWake) to fire
+          await new Promise((r) => setTimeout(r, 50));
+          const stillRunningJobs =
+            subagent.backgroundJobs && Array.from(subagent.backgroundJobs.values()).some((j) => j.status === 'running');
+          if (!stillRunningJobs && !subagent.isRunning) {
+            break;
+          }
+        }
+
+        await new Promise((r) => setTimeout(r, 200));
+      }
+
+      // If autoWake triggered subsequent runs, update the report to the final assistant message
+      if (subagent.messages.length > 0) {
+        const lastMsg = subagent.messages[subagent.messages.length - 1];
+        if (lastMsg && lastMsg.role === 'assistant' && lastMsg.content) {
+          const textContent = Array.isArray(lastMsg.content)
+            ? lastMsg.content
+                .filter((p) => p.type === 'text')
+                .map((p) => p.text)
+                .join('\n')
+            : lastMsg.content;
+          if (textContent) {
+            report = textContent;
+          }
+        }
+      }
     } finally {
       await writer.close();
     }

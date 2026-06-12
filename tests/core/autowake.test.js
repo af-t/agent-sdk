@@ -48,9 +48,7 @@ test('Bug C: events are always queued to #pendingBgDrains regardless of autoWake
   await agent.run('continue');
 
   // The bg exit should have been drained into messages as a system-reminder.
-  const drained = agent.messages.find(
-    (m) => m.role === 'user' && JSON.stringify(m.content).includes('bg-1'),
-  );
+  const drained = agent.messages.find((m) => m.role === 'user' && JSON.stringify(m.content).includes('bg-1'));
   assert.ok(drained, 'bg exit event should be drained into messages even with autoWake=false');
   assert.match(JSON.stringify(drained.content), /system-reminder/);
 });
@@ -311,9 +309,7 @@ test('events arriving while isRunning are drained during the run loop', async ()
 
   await agent.run('go');
 
-  const drained = agent.messages.find(
-    (m) => m.role === 'user' && JSON.stringify(m.content).includes('mid-run'),
-  );
+  const drained = agent.messages.find((m) => m.role === 'user' && JSON.stringify(m.content).includes('mid-run'));
   assert.ok(drained, 'bg exit during run should be drained into messages');
 });
 

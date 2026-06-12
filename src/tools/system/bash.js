@@ -21,7 +21,9 @@ async function getPty() {
           });
           let hasData = false;
           const timer = setTimeout(() => {
-            try { proc.kill(); } catch {}
+            try {
+              proc.kill();
+            } catch {}
             resolve(false);
           }, 1000);
           proc.onData(() => {
@@ -50,7 +52,6 @@ async function getPty() {
   }
   return _ptyModule;
 }
-
 
 // Whitelist of safe environment variables to pass to child processes
 const SAFE_ENV_KEYS = [
