@@ -1,19 +1,19 @@
 {
-  "name": "@af-t/openrouter-agent-sdk",
-  "version": "2.1.4",
+  "name": "@af-t/agent-sdk",
+  "version": "2.1.5",
   "description": "Minimal SDK to connect to openrouter API",
   "keywords": [
     "openrouter",
     "api",
     "agent"
   ],
-  "homepage": "https://github.com/af-t/openrouter#readme",
+  "homepage": "https://github.com/af-t/agent-sdk#readme",
   "bugs": {
-    "url": "https://github.com/af-t/openrouter/issues"
+    "url": "https://github.com/af-t/agent-sdk/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/af-t/openrouter.git"
+    "url": "git+ssh://git@github.com/af-t/agent-sdk.git"
   },
   "license": "MIT",
   "author": "Angga Firman",

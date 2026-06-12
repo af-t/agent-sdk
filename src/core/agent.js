@@ -106,6 +106,8 @@ class Agent {
       stop,
       reasoning,
       autoWake,
+      autoWakeNotify,
+      autoWakeOptions,
       record,
     } = options;
 
@@ -239,6 +241,10 @@ class Agent {
     }
     this.maxToolOutputChars = maxToolOutputChars ?? CONSTANTS.MAX_TOOL_OUTPUT;
     this.autoWake = autoWake !== undefined ? !!autoWake : config.AUTO_WAKE === 'true' || config.AUTO_WAKE === '1';
+    // Callback and options forwarded to run() during auto-wake invocations,
+    // allowing callers to attach streaming/WebSocket/metadata tracking.
+    this.autoWakeNotify = autoWakeNotify ?? null;
+    this.autoWakeOptions = autoWakeOptions ?? {};
 
     if (record) {
       this.#recordConfig = this.#normalizeRecordConfig(record === true ? {} : record);
@@ -491,29 +497,48 @@ class Agent {
         logger.warn(`raw bg listener threw: ${err.message}`);
       }
     }
+
+    // Always record the exit event regardless of autoWake setting.
+    // This decouples reminder draining from the autoWake option so that
+    // callers who disable autoWake can still manually call run() and get
+    // the reminder messages via #drainBgExits (fixes coupled-reminder bug).
+    this.#pendingBgDrains.push(event);
+
     if (this.isRunning) {
-      this.#pendingBgDrains.push(event);
-    } else {
-      for (const fn of this.#bgExitListeners) {
-        try {
-          fn(event);
-        } catch (err) {
-          logger.warn(`onBackgroundExit listener threw: ${err.message}`);
-        }
+      // The active run loop will drain #pendingBgDrains at the end of
+      // each tool-execution turn and before termination.
+      return;
+    }
+
+    // Notify external listeners (only when idle — during a run these are
+    // deferred until the run completes).
+    for (const fn of this.#bgExitListeners) {
+      try {
+        fn(event);
+      } catch (err) {
+        logger.warn(`onBackgroundExit listener threw: ${err.message}`);
       }
-      if (this.autoWake) {
-        this.#pendingBgDrains.push(event);
+    }
+
+    if (this.autoWake && !this.#wakeScheduled) {
+      this.#wakeScheduled = true;
+      // Coalesce multiple rapid exits into a single wake-up by deferring
+      // via queueMicrotask.  All events that arrive before the microtask
+      // fires will be batched into #pendingBgDrains and drained together.
+      queueMicrotask(() => {
+        this.#wakeScheduled = false;
+        if (this.#running) return; // a user-initiated run started in the meantime
+        if (this.#pendingBgDrains.length === 0) return; // already consumed
+
+        // Drain the queued events into messages *before* running so the
+        // model sees the reminder on the very first turn of the wake-up.
         this.#drainBgExits();
-        if (!this.#wakeScheduled) {
-          this.#wakeScheduled = true;
-          queueMicrotask(() => {
-            this.#wakeScheduled = false;
-            if (!this.#running) {
-              this.run(null, null).catch((err) => logger.warn(`autoWake run failed: ${err.message}`));
-            }
-          });
-        }
-      }
+
+        const notify = typeof this.autoWakeNotify === 'function' ? this.autoWakeNotify : null;
+        this.run(null, notify, this.autoWakeOptions ?? {}).catch((err) =>
+          logger.warn(`autoWake run failed: ${err.message}`),
+        );
+      });
     }
   }
 
@@ -1475,6 +1500,24 @@ class Agent {
       this.#notifyCallbacks.clear();
       // Safety net: preserve any prompt queued during an abnormal loop exit.
       await this.#drainPending();
+
+      // Post-run safety net: if background exits arrived during the window
+      // between the last #drainBgExits() in the run loop and this point
+      // (#running was still true), re-trigger the autoWake mechanism so
+      // they are not stranded (fixes the "window miss" race condition).
+      if (this.autoWake && this.#pendingBgDrains.length > 0 && !this.#wakeScheduled) {
+        this.#wakeScheduled = true;
+        queueMicrotask(() => {
+          this.#wakeScheduled = false;
+          if (this.#running) return;
+          if (this.#pendingBgDrains.length === 0) return;
+          this.#drainBgExits();
+          const notify = typeof this.autoWakeNotify === 'function' ? this.autoWakeNotify : null;
+          this.run(null, notify, this.autoWakeOptions ?? {}).catch((err) =>
+            logger.warn(`autoWake run failed: ${err.message}`),
+          );
+        });
+      }
     }
   }
 }
