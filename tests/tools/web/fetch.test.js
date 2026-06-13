@@ -146,8 +146,7 @@ describe('WebFetch tool module', () => {
       // Use a counter to distinguish initial request from redirect request
       let callCount = 0;
       let redirectFetchUrl;
-      const originalFetch = global.fetch;
-      global.fetch = async (url, _opts) => {
+      mod._setTransport(async (url, _opts) => {
         callCount++;
         if (callCount === 1) {
           // First call: return 302 redirect with credentials
@@ -177,11 +176,11 @@ describe('WebFetch tool module', () => {
           },
           text: async () => 'redirected content',
         };
-      };
+      });
 
       await mod.execute({ url: 'https://example.com/initial' });
 
-      global.fetch = originalFetch;
+      mod._setTransport();
 
       // Assert that the redirect URL passed to fetch has no userinfo
       assert.ok(redirectFetchUrl, 'redirect fetch should have been called');
@@ -253,9 +252,8 @@ describe('WebFetch tool module', () => {
 
   describe('redirect depth limit (mocked fetch)', () => {
     it('rejects an infinite redirect loop', async () => {
-      const originalFetch = global.fetch;
       let calls = 0;
-      global.fetch = async () => {
+      mod._setTransport(async () => {
         calls++;
         return {
           status: 302,
@@ -264,22 +262,21 @@ describe('WebFetch tool module', () => {
           },
           body: { cancel: async () => {} },
         };
-      };
+      });
       try {
         await assert.rejects(() => mod.execute({ url: 'https://example.com/start' }), /Too many redirects/);
-        assert.ok(calls <= 7, `redirects should be capped, fetch was called ${calls} times`);
+        assert.ok(calls <= 7, `redirects should be capped, transport was called ${calls} times`);
       } finally {
-        global.fetch = originalFetch;
+        mod._setTransport();
       }
     });
   });
 
   describe('body size cap without content-length (mocked fetch)', () => {
     it('rejects an oversized chunked response', async () => {
-      const originalFetch = global.fetch;
       const chunk = new Uint8Array(1024 * 1024);
       let pushed = 0;
-      global.fetch = async () => ({
+      mod._setTransport(async () => ({
         status: 200,
         headers: {
           get: (name) => (name === 'content-type' ? 'text/plain' : null),
@@ -295,11 +292,11 @@ describe('WebFetch tool module', () => {
             controller.enqueue(chunk);
           },
         }),
-      });
+      }));
       try {
         await assert.rejects(() => mod.execute({ url: 'https://example.com/huge-stream' }), /Response too large/);
       } finally {
-        global.fetch = originalFetch;
+        mod._setTransport();
       }
     });
   });
@@ -323,15 +320,9 @@ describe('WebFetch tool module', () => {
     });
   });
 
-  describe('response content handling (mocked fetch)', () => {
-    let originalFetch;
-
-    before(() => {
-      originalFetch = global.fetch;
-    });
-
+  describe('response content handling (mocked transport)', () => {
     after(() => {
-      global.fetch = originalFetch;
+      mod._setTransport();
     });
 
     function mockFetch({
@@ -340,7 +331,7 @@ describe('WebFetch tool module', () => {
       body = '<html><body>hello</body></html>',
       contentLength = null,
     } = {}) {
-      global.fetch = async () => ({
+      mod._setTransport(async () => ({
         status,
         headers: {
           get: (name) => {
@@ -352,7 +343,7 @@ describe('WebFetch tool module', () => {
         },
         body: null,
         text: async () => body,
-      });
+      }));
     }
 
     it('returns JSON content with content-type header', async () => {

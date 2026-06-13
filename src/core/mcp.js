@@ -3,7 +3,7 @@
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { EventEmitter } from 'node:events';
-import { CONSTANTS, stripSecrets } from './utils.js';
+import { CONSTANTS, stripSecrets, stripUnsafeEnv } from './utils.js';
 import logger from './logger.js';
 
 export class McpNativeClient extends EventEmitter {
@@ -23,7 +23,7 @@ export class McpNativeClient extends EventEmitter {
   async connect() {
     let childEnv;
     if (this.config.restricted !== false) {
-      childEnv = { ...stripSecrets(process.env), ...stripSecrets(this.config.env || {}) };
+      childEnv = { ...stripSecrets(process.env), ...stripUnsafeEnv(this.config.env || {}) };
     } else {
       childEnv = { ...process.env, ...(this.config.env || {}) };
     }

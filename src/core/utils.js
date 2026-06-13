@@ -307,6 +307,63 @@ export function stripSecrets(env) {
   return safe;
 }
 
+// Env vars that hijack the dynamic linker or a language runtime
+const UNSAFE_ENV_KEYS = new Set([
+  // dynamic linker / loader (Linux + macOS) — LD_PRELOAD host passthrough handled by SAFE_ENV_KEYS
+  'LD_PRELOAD',
+  'LD_LIBRARY_PATH',
+  'LD_AUDIT',
+  'LD_PROFILE',
+  'LD_ORIGIN_PATH',
+  'GCONV_PATH',
+  'NLSPATH',
+  'LOCPATH',
+  'HOSTALIASES',
+  'DYLD_INSERT_LIBRARIES',
+  'DYLD_LIBRARY_PATH',
+  'DYLD_FRAMEWORK_PATH',
+  'DYLD_FALLBACK_LIBRARY_PATH',
+  'DYLD_FALLBACK_FRAMEWORK_PATH',
+  // shell startup / parsing
+  'BASH_ENV',
+  'ENV',
+  'SHELLOPTS',
+  'PS4',
+  'IFS',
+  'PROMPT_COMMAND',
+  // language runtimes
+  'NODE_OPTIONS',
+  'NODE_REPL_EXTERNAL_MODULE',
+  'PYTHONPATH',
+  'PYTHONSTARTUP',
+  'PYTHONINSPECT',
+  'PYTHONHOME',
+  'PERL5LIB',
+  'PERL5OPT',
+  'PERLLIB',
+  'PERL5DB',
+  'RUBYOPT',
+  'RUBYLIB',
+  'JAVA_TOOL_OPTIONS',
+  '_JAVA_OPTIONS',
+  'JDK_JAVA_OPTIONS',
+  'CLASSPATH',
+  'PHPRC',
+  'PHP_INI_SCAN_DIR',
+]);
+
+// Strip secrets plus loader/runtime hijack vars from caller-supplied env
+export function stripUnsafeEnv(env) {
+  const safe = {};
+  for (const [key, value] of Object.entries(stripSecrets(env))) {
+    const upper = key.toUpperCase();
+    if (UNSAFE_ENV_KEYS.has(upper)) continue;
+    if (upper.startsWith('BASH_FUNC_')) continue;
+    safe[key] = value;
+  }
+  return safe;
+}
+
 export function formatSize(bytes) {
   if (bytes === 0) return '0B';
   const k = 1024;

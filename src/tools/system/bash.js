@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import logger from '../../core/logger.js';
-import { stripSecrets } from '../../core/utils.js';
+import { stripUnsafeEnv } from '../../core/utils.js';
 
 // Lazy-loaded PTY module — may be unavailable on platforms without native build support
 let _ptyModule = null;
@@ -87,6 +87,9 @@ const BLOCKED_COMMANDS = [
   '> /dev/hda',
   '> /dev/nvme',
   '> /dev/mmc',
+  '> /dev/mem',
+  '> /dev/kmem',
+  '> /dev/port',
   'shutdown',
   'reboot',
   'poweroff',
@@ -113,11 +116,37 @@ const SUSPICIOUS_PATTERNS = [
   /\|&\s*$/, // background pipe
 ];
 
+// Space out pipe/redirect operators so glued forms (`x>/dev/sda`, `x|bash`) still match
+function normalizeCommand(command) {
+  return command
+    .replace(/([|<>])/g, ' $1 ')
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+    .trim();
+}
+
+// Patterns normalized the same way as input, paired with the raw form for error text
+const NORMALIZED_BLOCKED = BLOCKED_COMMANDS.map((raw) => ({ raw, norm: normalizeCommand(raw) }));
+
+// rm with recursive + force flags (any order/spelling) aimed at / ~ or wildcard root
+function isCatastrophicRm(normalized) {
+  if (!/(^|\s)rm(\s|$)/.test(normalized)) return false;
+  const recursive = /(^|\s)(-[a-z]*r[a-z]*|--recursive)(\s|$)/.test(normalized);
+  const force = /(^|\s)(-[a-z]*f[a-z]*|--force)(\s|$)/.test(normalized);
+  if (!recursive || !force) return false;
+  return /--no-preserve-root/.test(normalized) || /(^|\s)(\/\*|\/|~)(\s|$)/.test(normalized);
+}
+
+// A shell reading a script via input redirection: `bash < file` (not a heredoc)
+const SHELL_REDIRECT_IN = /(^|\s)(sh|bash|zsh|ksh|dash|csh|tcsh)\s+<\s+(?!<)/;
+
 function isBlocked(command) {
-  const normalized = command.replace(/\s+/g, ' ').toLowerCase().trim();
-  for (const blocked of BLOCKED_COMMANDS) {
-    if (normalized.includes(blocked)) return blocked;
+  const normalized = normalizeCommand(command);
+  for (const { raw, norm } of NORMALIZED_BLOCKED) {
+    if (normalized.includes(norm)) return raw;
   }
+  if (isCatastrophicRm(normalized)) return 'rm with recursive+force on root/home';
+  if (SHELL_REDIRECT_IN.test(normalized)) return 'redirecting a file into a shell';
   if (/\b(eval|exec|source)\s+.*(\/etc\/|\.ssh|\.env)/.test(normalized)) {
     return 'eval/exec/source on sensitive path';
   }
@@ -567,7 +596,7 @@ export const execute = async (
       if (key in process.env) safeEnv[key] = process.env[key];
     }
     if (env !== process.env) {
-      Object.assign(safeEnv, stripSecrets(env));
+      Object.assign(safeEnv, stripUnsafeEnv(env));
     }
   } else {
     // Trust mode: passthrough full process.env, merge user-supplied env raw.

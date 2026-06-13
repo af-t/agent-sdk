@@ -1,6 +1,9 @@
 import * as cheerio from 'cheerio';
 import { CONSTANTS, truncateOutput } from '../../core/utils.js';
 import dns from 'node:dns/promises';
+import http from 'node:http';
+import https from 'node:https';
+import { Readable } from 'node:stream';
 
 // Private/reserved IP ranges to block for SSRF prevention
 const BLOCKED_IP_RANGES = [
@@ -79,7 +82,8 @@ async function readBodyCapped(res, maxBytes) {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-// SSRF check — blocks private IPs, localhost, DNS rebinding, non-HTTP(S)
+// SSRF check — blocks private IPs, localhost, DNS rebinding, non-HTTP(S).
+// Returns the validated addresses to pin (or null for a literal-IP host).
 async function checkSSRF(urlStr) {
   try {
     const url = new URL(urlStr);
@@ -110,8 +114,8 @@ async function checkSSRF(urlStr) {
       if (isBlockedIp(hostname)) {
         throw new Error('Access denied: private/reserved IP range is not allowed (SSRF protection)');
       }
-      // Hostname is a public IPv4 — no DNS resolution needed
-      return;
+      // Literal IP — the socket connects straight to it, no lookup to pin
+      return null;
     }
 
     // Check if hostname is a literal IPv6 address
@@ -121,20 +125,18 @@ async function checkSSRF(urlStr) {
       if (isBlockedIp(normalized)) {
         throw new Error('Access denied: private/reserved IP range is not allowed (SSRF protection)');
       }
-      return;
+      return null;
     }
 
-    // DNS rebinding defense: resolve the hostname and check resolved IPs
-    // Handle DNS resolution errors gracefully — if DNS fails completely,
-    // we cannot determine safety; reject to be safe
-    let resolvedSomething = false;
+    // DNS rebinding defense: resolve the hostname, check every IP, and keep the
+    // validated set so the actual connection pins to it (no second resolution).
+    const addresses = [];
     try {
-      const addresses = await dns.resolve4(hostname);
-      resolvedSomething = true;
-      for (const ip of addresses) {
+      for (const ip of await dns.resolve4(hostname)) {
         if (isBlockedIp(ip)) {
           throw new Error('Access denied: hostname resolves to private/reserved IP range (SSRF protection)');
         }
+        addresses.push({ address: ip, family: 4 });
       }
     } catch (err) {
       if (err.message.startsWith('Access denied')) throw err;
@@ -142,27 +144,72 @@ async function checkSSRF(urlStr) {
     }
 
     try {
-      const addressesv6 = await dns.resolve6(hostname);
-      resolvedSomething = true;
-      for (const ip of addressesv6) {
+      for (const ip of await dns.resolve6(hostname)) {
         if (isBlockedIp(ip)) {
           throw new Error('Access denied: hostname resolves to private/reserved IP range (SSRF protection)');
         }
+        addresses.push({ address: ip, family: 6 });
       }
     } catch (err) {
       if (err.message.startsWith('Access denied')) throw err;
       // ENOTFOUND for IPv6 is also acceptable
     }
 
-    if (!resolvedSomething) {
+    if (addresses.length === 0) {
       // If we couldn't resolve the hostname at all, it's safer to block
       // unless it was already a literal IP (handled above).
       throw new Error(`Access denied: unable to resolve hostname '${hostname}'`);
     }
+    return addresses;
   } catch (err) {
     if (err.message.startsWith('Access denied')) throw err;
     throw new Error(`Invalid URL: ${err.message}`, { cause: err });
   }
+}
+
+// Pinning lookup: hands the socket only the IPs checkSSRF already validated,
+// re-checking each one so a rebind cannot slip a private IP into the connection.
+function makeLookup(addresses) {
+  return (_hostname, options, callback) => {
+    const cb = typeof options === 'function' ? options : callback;
+    const wantAll = typeof options === 'object' && options !== null && options.all;
+    const safe = addresses.filter((a) => !isBlockedIp(a.address));
+    if (safe.length === 0) {
+      cb(new Error('Access denied: hostname resolves to private/reserved IP range (SSRF protection)'));
+      return;
+    }
+    if (wantAll) cb(null, safe.map((a) => ({ address: a.address, family: a.family })));
+    else cb(null, safe[0].address, safe[0].family);
+  };
+}
+
+// Minimal fetch-shaped transport over node:http(s) so we can pin DNS via lookup
+function requestOnce(urlStr, { signal, lookup } = {}) {
+  return new Promise((resolve, reject) => {
+    let url;
+    try {
+      url = new URL(urlStr);
+    } catch (err) {
+      reject(err);
+      return;
+    }
+    const mod = url.protocol === 'https:' ? https : http;
+    const req = mod.request(url, { method: 'GET', signal, lookup }, (res) => {
+      resolve({
+        status: res.statusCode,
+        headers: { get: (name) => res.headers[String(name).toLowerCase()] ?? null },
+        body: Readable.toWeb(res),
+      });
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+let _transport = requestOnce;
+// Swap the transport (tests inject a stub); no argument restores the default
+export function _setTransport(fn) {
+  _transport = fn || requestOnce;
 }
 
 export const name = 'WebFetch';
@@ -184,8 +231,8 @@ export const execute = async ({ url, use_raw, useRaw = false, limit = 20000 }, c
   // Validate URL format (throws if invalid)
   new URL(url);
 
-  // SSRF protection: block internal/private resources
-  await checkSSRF(url);
+  // SSRF protection: block internal/private resources; pin the validated IPs
+  const pinnedAddresses = await checkSSRF(url);
 
   if (ctx.signal?.aborted) throw new Error('Request aborted');
 
@@ -201,10 +248,10 @@ export const execute = async ({ url, use_raw, useRaw = false, limit = 20000 }, c
   let raw;
   let contentType;
   try {
-    // Redirect hardening: manual mode to re-check each step
-    res = await fetch(url, {
+    // node:http(s) never auto-follows redirects, so each hop is re-checked below
+    res = await _transport(url, {
       signal: controller.signal,
-      redirect: 'manual',
+      lookup: pinnedAddresses ? makeLookup(pinnedAddresses) : undefined,
     });
 
     // Handle manual redirects to prevent SSRF bypass via redirects
