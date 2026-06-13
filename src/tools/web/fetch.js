@@ -172,13 +172,15 @@ export const input_schema = {
   type: 'object',
   properties: {
     url: { type: 'string', description: 'Target URL' },
-    useRaw: { type: 'boolean', description: 'Return raw HTML if true' },
+    use_raw: { type: 'boolean', description: 'Return raw HTML if true' },
     limit: { type: 'number', description: 'Max characters to return (default 20000)' },
   },
   required: ['url'],
 };
 
-export const execute = async ({ url, useRaw = false, limit = 20000 }, ctx = {}) => {
+export const execute = async ({ url, use_raw, useRaw = false, limit = 20000 }, ctx = {}) => {
+  const finalUseRaw = use_raw !== undefined ? use_raw : useRaw;
+
   // Validate URL format (throws if invalid)
   new URL(url);
 
@@ -226,7 +228,7 @@ export const execute = async ({ url, useRaw = false, limit = 20000 }, ctx = {}) 
         // Release the redirect response body before recursing
         await res.body?.cancel().catch(() => {});
         // Recursively call execute for the redirect URL
-        return execute({ url: redirectUrl, useRaw, limit }, { ...ctx, _redirectDepth: redirectDepth });
+        return execute({ url: redirectUrl, use_raw: finalUseRaw, limit }, { ...ctx, _redirectDepth: redirectDepth });
       }
     }
 
@@ -267,7 +269,7 @@ export const execute = async ({ url, useRaw = false, limit = 20000 }, ctx = {}) 
   }
 
   // Only HTML reaches cheerio
-  if (useRaw) {
+  if (finalUseRaw) {
     return withContentType(contentType, truncateOutput(raw, limit));
   }
 

@@ -68,6 +68,7 @@ const SAFE_ENV_KEYS = [
   'TMPDIR',
   'LD_PRELOAD',
   'PREFIX',
+  'PAGER',
 ];
 
 // Destruction-level commands that are ALWAYS blocked
@@ -572,6 +573,11 @@ export const execute = async (
     // Trust mode: passthrough full process.env, merge user-supplied env raw.
     safeEnv = { ...process.env };
     if (env !== process.env) Object.assign(safeEnv, env);
+  }
+
+  // Prevent git/etc pagination hang in interactive pseudo-terminals by defaulting to PAGER=cat
+  if (!safeEnv.PAGER) {
+    safeEnv.PAGER = 'cat';
   }
 
   const ptyMod = await getPty();

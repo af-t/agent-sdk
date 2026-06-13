@@ -376,30 +376,4 @@ async function isDirectory(dirPath) {
   }
 }
 
-export async function* loadTools(dirPath) {
-  if (!(await isDirectory(dirPath))) return;
 
-  logger.debug(`Loading tools from: ${dirPath}`);
-  const entries = (await fs.readdir(dirPath, { recursive: true, withFileTypes: true })).filter((x) => x.isFile());
-  for (const entry of entries) {
-    const fullPath = path.resolve(path.join(entry.parentPath, entry.name));
-    try {
-      const mod = await import(fullPath);
-      const tool = {
-        name: mod.name || mod.default?.name,
-        description: mod.description || mod.default?.description,
-        input_schema: mod.input_schema || mod.default?.input_schema,
-        execute: mod.execute || mod.default?.execute,
-      };
-
-      if (!tool.name || !tool.input_schema || !tool.execute) {
-        throw Error(`File '${entry.name}' does not have mandatory properties`);
-      }
-
-      logger.debug(`Tool loaded: ${tool.name}`);
-      yield tool;
-    } catch (err) {
-      logger.error(`Failed to load tool from ${entry.name}: ${err.message}`);
-    }
-  }
-}

@@ -29,7 +29,7 @@ describe('Skill tool module', () => {
     assert.deepStrictEqual(mod.input_schema.properties.action.enum, ['list', 'load', 'search']);
     assert.ok(mod.input_schema.properties.argument);
     assert.ok(mod.input_schema.required.includes('action'));
-    assert.ok(mod.input_schema.required.includes('argument'));
+    assert.ok(!mod.input_schema.required.includes('argument'));
   });
 
   it('should export execute as a function', () => {
@@ -109,5 +109,11 @@ describe('Skill tool — execute()', () => {
     const result = await mod.execute({ action: 'search', argument: 'xyznonexistent12345' });
     assert.ok(result.includes('xyznonexistent12345'));
     assert.ok(result.includes('not found') || result.includes('No skills found matching'));
+  });
+
+  it('execute throws validation error when load or search is called without argument', async () => {
+    await assert.rejects(() => mod.execute({ action: 'load' }), /Parameter "argument" is required/);
+    await assert.rejects(() => mod.execute({ action: 'load', argument: '   ' }), /Parameter "argument" is required/);
+    await assert.rejects(() => mod.execute({ action: 'search' }), /Parameter "argument" is required/);
   });
 });

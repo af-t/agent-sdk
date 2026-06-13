@@ -41,6 +41,7 @@ export async function embedTexts(texts, { apiKey, baseUrl, model, signal } = {})
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
           'HTTP-Referer': 'https://github.com/af-t/openrouter',
+          'X-Title': 'OpenRouter CLI Agent',
           'X-OpenRouter-Title': 'OpenRouter CLI Agent',
         },
         body: JSON.stringify({ model, input: texts }),

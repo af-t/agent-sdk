@@ -165,15 +165,19 @@ describe('Agent', () => {
   describe('usage tracking', () => {
     it('initializes usage with cost and tokens at 0', () => {
       const agent = new Agent({ apiKey: 'sk-key' });
-      assert.deepEqual(agent.usage, { cost: 0, tokens: 0 });
+      assert.deepEqual(agent.usage, { cost: 0, tokens: 0, cachedTokens: 0, cacheWriteTokens: 0 });
     });
 
     it('usage is mutable (cost and tokens can be incremented)', () => {
       const agent = new Agent({ apiKey: 'sk-key' });
       agent.usage.cost += 0.5;
       agent.usage.tokens += 150;
+      agent.usage.cachedTokens += 100;
+      agent.usage.cacheWriteTokens += 50;
       assert.equal(agent.usage.cost, 0.5);
       assert.equal(agent.usage.tokens, 150);
+      assert.equal(agent.usage.cachedTokens, 100);
+      assert.equal(agent.usage.cacheWriteTokens, 50);
     });
   });
 
@@ -188,10 +192,10 @@ describe('Agent', () => {
     it('clears messages and resets usage to zero', () => {
       const agent = new Agent({ apiKey: 'sk-key' });
       agent.messages = [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }];
-      agent.usage = { cost: 1.5, tokens: 500 };
+      agent.usage = { cost: 1.5, tokens: 500, cachedTokens: 100, cacheWriteTokens: 50 };
       agent.reset();
       assert.deepEqual(agent.messages, []);
-      assert.deepEqual(agent.usage, { cost: 0, tokens: 0 });
+      assert.deepEqual(agent.usage, { cost: 0, tokens: 0, cachedTokens: 0, cacheWriteTokens: 0 });
     });
   });
 

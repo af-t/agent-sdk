@@ -44,12 +44,13 @@ describe('config', () => {
       'PROVIDER_ALLOW_FALLBACKS',
       'PROVIDER_REQUIRE_PARAMETERS',
       'PROVIDER_DATA_COLLECTION',
+      'PROVIDER_IGNORE',
       'PROVIDER_AVOID',
       'PROVIDER_SORT',
     ]) {
       assert.ok(Object.prototype.hasOwnProperty.call(config, k), `missing key: ${k}`);
     }
-    assert.strictEqual(Object.keys(config).length, 29);
+    assert.strictEqual(Object.keys(config).length, 30);
   });
 
   it('top-level object is frozen', () => {

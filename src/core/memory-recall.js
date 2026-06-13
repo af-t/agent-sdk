@@ -38,8 +38,9 @@ async function readSidecar(sidecarPath) {
   try {
     const parsed = JSON.parse(await fs.readFile(sidecarPath, 'utf8'));
     if (parsed && typeof parsed === 'object' && parsed.entries) return parsed.entries;
-  } catch {
+  } catch (err) {
     // missing or corrupt — treat as empty
+    logger.debug(`memory-recall: failed to read/parse sidecar at ${sidecarPath}: ${err.message}`);
   }
   return {};
 }
@@ -111,7 +112,8 @@ async function loadCorpus(memoryDir, trustedPaths, restricted = true) {
   let names;
   try {
     names = await fs.readdir(memoryDir);
-  } catch {
+  } catch (err) {
+    logger.debug(`memory-recall: failed to read memory directory "${memoryDir}": ${err.message}`);
     return [];
   }
   const corpus = [];
@@ -120,13 +122,15 @@ async function loadCorpus(memoryDir, trustedPaths, restricted = true) {
     let resolved;
     try {
       resolved = ensureSafePath(path.join(memoryDir, fname), trustedPaths, { restricted });
-    } catch {
+    } catch (err) {
+      logger.debug(`memory-recall: path check failed for "${fname}": ${err.message}`);
       continue;
     }
     let raw;
     try {
       raw = await fs.readFile(resolved, 'utf8');
-    } catch {
+    } catch (err) {
+      logger.debug(`memory-recall: failed to read file "${resolved}": ${err.message}`);
       continue;
     }
     const { description, body } = parseMemoryFile(raw);

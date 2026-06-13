@@ -18,11 +18,15 @@ export const input_schema = {
         'Argument for list, load, or search. for list no need to fill in, for load enter name, for search enter query.',
     },
   },
-  required: ['action', 'argument'],
+  required: ['action'],
 };
 
 export const execute = async ({ action, argument }) => {
   await registry._ensureDiscovered();
+
+  if ((action === 'load' || action === 'search') && (!argument || !argument.trim())) {
+    throw new Error(`Parameter "argument" is required and cannot be empty for action "${action}".`);
+  }
 
   switch (action) {
     case 'list': {

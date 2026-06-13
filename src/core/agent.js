@@ -129,7 +129,7 @@ class Agent {
 
     const resolvedOrder = order || provider?.order || config.ORDER;
     const resolvedOnly = only || provider?.only || config.ONLY;
-    const resolvedAvoid = provider?.avoid || config.PROVIDER_AVOID;
+    const resolvedIgnore = provider?.ignore || provider?.avoid || config.PROVIDER_IGNORE || config.PROVIDER_AVOID;
     const resolvedSort = provider?.sort || config.PROVIDER_SORT;
     const resolvedAllowFallbacks =
       provider?.allowFallbacks !== undefined ? provider.allowFallbacks : config.PROVIDER_ALLOW_FALLBACKS;
@@ -141,7 +141,8 @@ class Agent {
     this.provider = {
       order: resolvedOrder,
       only: resolvedOnly,
-      avoid: resolvedAvoid,
+      ignore: resolvedIgnore,
+      avoid: resolvedIgnore,
       sort: resolvedSort,
       allowFallbacks: resolvedAllowFallbacks,
       requireParameters: resolvedRequireParameters,
@@ -221,7 +222,7 @@ class Agent {
       this.effort = effort || config.REASONING_EFFORT || 'high';
     }
 
-    this.usage = { cost: 0, tokens: 0 };
+    this.usage = { cost: 0, tokens: 0, cachedTokens: 0, cacheWriteTokens: 0 };
     this.subagents = new Map();
     this.fileState = new Map();
     this.backgroundJobs = new Map();
@@ -655,6 +656,7 @@ class Agent {
           Authorization: `Bearer ${this.#apiKey}`,
           'Content-Type': 'application/json',
           'HTTP-Referer': 'https://github.com/af-t/openrouter',
+          'X-Title': 'OpenRouter CLI Agent',
           'X-OpenRouter-Title': 'OpenRouter CLI Agent',
         },
         body: JSON.stringify({ ...payload, stream: false }),
@@ -691,6 +693,8 @@ class Agent {
   async #buildPayload() {
     const messagesCopy = [...this.messages];
     const messagesForPayload = messagesCopy.map((msg, idx) => {
+      // NOTE: Caching is intentionally only placed on the last 'user' role message
+      // to follow standard Anthropic messages format guidelines and prevent caching logic complexity.
       if (
         idx === messagesCopy.length - 1 &&
         msg.role === 'user' &&
@@ -766,7 +770,8 @@ class Agent {
       if (this.provider.order !== undefined) providerPayload.order = this.provider.order;
       if (this.provider.only !== undefined) providerPayload.only = this.provider.only;
       // Wire field is `ignore` per OpenRouter provider docs
-      if (this.provider.avoid !== undefined) providerPayload.ignore = this.provider.avoid;
+      const ignoreVal = this.provider.ignore !== undefined ? this.provider.ignore : this.provider.avoid;
+      if (ignoreVal !== undefined) providerPayload.ignore = ignoreVal;
       if (this.provider.sort !== undefined) providerPayload.sort = this.provider.sort;
       if (this.provider.allowFallbacks !== undefined) providerPayload.allow_fallbacks = this.provider.allowFallbacks;
       if (this.provider.requireParameters !== undefined)
@@ -791,6 +796,10 @@ class Agent {
       const stub = await this._sendForTest(payload);
       this.usage.cost += stub.usage?.cost || 0;
       this.usage.tokens += stub.usage?.total_tokens || 0;
+      if (stub.usage?.prompt_tokens_details) {
+        this.usage.cachedTokens += stub.usage.prompt_tokens_details.cached_tokens || 0;
+        this.usage.cacheWriteTokens += stub.usage.prompt_tokens_details.cache_write_tokens || 0;
+      }
       return stub;
     }
     logger.debug(`Sending request to LLM (${this.model})...`);
@@ -799,6 +808,10 @@ class Agent {
 
     this.usage.cost += response.usage?.cost || 0;
     this.usage.tokens += response.usage?.total_tokens || 0;
+    if (response.usage?.prompt_tokens_details) {
+      this.usage.cachedTokens += response.usage.prompt_tokens_details.cached_tokens || 0;
+      this.usage.cacheWriteTokens += response.usage.prompt_tokens_details.cache_write_tokens || 0;
+    }
 
     return response;
   }
@@ -808,6 +821,10 @@ class Agent {
       const stub = await this._sendForTest(payload);
       this.usage.cost += stub.usage?.cost || 0;
       this.usage.tokens += stub.usage?.total_tokens || 0;
+      if (stub.usage?.prompt_tokens_details) {
+        this.usage.cachedTokens += stub.usage.prompt_tokens_details.cached_tokens || 0;
+        this.usage.cacheWriteTokens += stub.usage.prompt_tokens_details.cache_write_tokens || 0;
+      }
       return stub;
     }
     const controller = new AbortController();
@@ -821,6 +838,7 @@ class Agent {
           Authorization: `Bearer ${this.#apiKey}`,
           'Content-Type': 'application/json',
           'HTTP-Referer': 'https://github.com/af-t/openrouter',
+          'X-Title': 'OpenRouter CLI Agent',
           'X-OpenRouter-Title': 'OpenRouter CLI Agent',
         },
         body: JSON.stringify({ ...payload, stream: true }),
@@ -855,6 +873,10 @@ class Agent {
     const processChunk = (chunk) => {
       this.usage.cost += chunk.usage?.cost || 0;
       this.usage.tokens += chunk.usage?.total_tokens || 0;
+      if (chunk.usage?.prompt_tokens_details) {
+        this.usage.cachedTokens += chunk.usage.prompt_tokens_details.cached_tokens || 0;
+        this.usage.cacheWriteTokens += chunk.usage.prompt_tokens_details.cache_write_tokens || 0;
+      }
 
       const delta = chunk.choices?.[0]?.delta;
       if (!delta) return;
@@ -1078,7 +1100,7 @@ class Agent {
 
   reset() {
     this.messages = [];
-    this.usage = { cost: 0, tokens: 0 };
+    this.usage = { cost: 0, tokens: 0, cachedTokens: 0, cacheWriteTokens: 0 };
     this.fileState.clear();
     this.currentTurn = 0;
     this.#pendingRichCallIds = new Set();

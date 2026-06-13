@@ -70,6 +70,7 @@ export default deepFreeze({
         ? false
         : undefined,
   PROVIDER_DATA_COLLECTION: process.env.OPENROUTER_PROVIDER_DATA_COLLECTION,
-  PROVIDER_AVOID: process.env.OPENROUTER_PROVIDER_AVOID?.split?.(','),
+  PROVIDER_IGNORE: (process.env.OPENROUTER_PROVIDER_IGNORE || process.env.OPENROUTER_PROVIDER_AVOID)?.split?.(','),
+  PROVIDER_AVOID: (process.env.OPENROUTER_PROVIDER_IGNORE || process.env.OPENROUTER_PROVIDER_AVOID)?.split?.(','),
   PROVIDER_SORT: process.env.OPENROUTER_PROVIDER_SORT,
 });
