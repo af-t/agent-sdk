@@ -241,10 +241,15 @@ export const execute = async ({ path: filePath, edits }, ctx = {}) => {
   if (fileState) {
     const newHash = hashContent(output);
     const totalLines = content.split('\n').length;
+    const prev = fileState.get(safePath);
+    // Preserve the ranges the agent has actually read. Do NOT claim the entire
+    // file is in-context just because it was edited — the agent may have only
+    // seen specific line ranges before making the edit.
+    const prevRanges = prev ? prev.rangesRead : [];
     fileState.set(safePath, {
       hash: newHash,
       lastReadTurn: ctx.agent?.currentTurn ?? 0,
-      rangesRead: [[1, totalLines]],
+      rangesRead: prevRanges,
       totalLines,
     });
   }
