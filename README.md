@@ -30,7 +30,7 @@ Minimal SDK for building AI agents connected to the [OpenRouter API](https://ope
 - **MCP (Model Context Protocol) Support** — Connect your agent to external tools via stdio-based MCP servers.
 - **Skill Discovery System** — Discover and load skills from SKILL.md files across builtin, project, and user directories.
 - **Built-in Tools** — File operations (Read, Write, Edit, Find, List), shell command execution (Bash with optional **node-pty** support), web search (Tavily), web fetch (using **cheerio**), and subagent delegation.
-- **Safety & Validation** — Tool inputs are validated against their schema (type checks, required fields, enums). Path traversal protection on Read, Write, Edit, List, and Find tools; **.gitignore** filtering on List (and on Find when ripgrep is available) — Read, Write, and Edit do *not* consult .gitignore, so ignored files inside the project root (such as `.env`) remain accessible to the agent. Dangerous shell command detection.
+- **Safety & Validation** — Tool inputs are validated against their schema (type checks, required fields, enums). Path traversal protection on Read, Write, Edit, List, and Find tools; **.gitignore** filtering on List (and on Find when ripgrep is available) — Read, Write, and Edit do _not_ consult .gitignore, so ignored files inside the project root (such as `.env`) remain accessible to the agent. Dangerous shell command detection.
 - **Retry with Exponential Backoff** — Auto-retry with jitter to handle rate limits and transient errors.
 - **Abort Signal Support** — Cancel agent execution at any point.
 - **Ephemeral Caching** — Automatic `cache_control` on system prompt and the last user message.
@@ -104,20 +104,33 @@ Copy `.env.example` to `.env` and fill in your values:
 cp .env.example .env
 ```
 
-| Variable                                                                                                                                                                        | Required | Description                                                    |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------------------------------------------------------------- |
-| `OPENROUTER_API_KEY`                                                                                                                                                            | Yes      | Your OpenRouter API key                                        |
-| `OPENROUTER_MODEL`                                                                                                                                                              | No       | Default model (e.g. `inclusionai/ling-2.6-1t:free`)            |
-| `OPENROUTER_MAX_TURNS`                                                                                                                                                          | No       | Maximum number of request cycles per `run()` (default: 25)     |
-| `OPENROUTER_ORDER`                                                                                                                                                              | No       | Comma-separated provider priority order                        |
-| `OPENROUTER_ONLY`                                                                                                                                                               | No       | Restrict to specific providers only                            |
-| `TAVILY_API_KEY`                                                                                                                                                                | No       | API key for WebSearch tool (from [Tavily](https://tavily.com)) |
-| `DEBUG`                                                                                                                                                                         | No       | Enable debug logging (`true`/`1`)                              |
-| `OPENROUTER_TEMPERATURE`, `OPENROUTER_TOP_P`, `OPENROUTER_MIN_P`, `OPENROUTER_TOP_K`                                                                                            | No       | Sampling controls                                              |
-| `OPENROUTER_FREQUENCY_PENALTY`, `OPENROUTER_PRESENCE_PENALTY`, `OPENROUTER_REPETITION_PENALTY`                                                                                  | No       | Repetition controls                                            |
-| `OPENROUTER_SEED`, `OPENROUTER_MAX_COMPLETION_TOKENS`                                                                                                                           | No       | Deterministic seed; output token cap (`max_completion_tokens`) |
-| `OPENROUTER_REASONING_EFFORT`, `OPENROUTER_REASONING_MAX_TOKENS`, `OPENROUTER_REASONING_EXCLUDE`, `OPENROUTER_REASONING_ENABLED`                                                | No       | Reasoning controls                                             |
-| `OPENROUTER_PROVIDER_AVOID`, `OPENROUTER_PROVIDER_SORT`, `OPENROUTER_PROVIDER_ALLOW_FALLBACKS`, `OPENROUTER_PROVIDER_REQUIRE_PARAMETERS`, `OPENROUTER_PROVIDER_DATA_COLLECTION` | No       | Provider routing                                               |
+| Variable                                                                                                                                                                        | Required | Description                                                                                                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OPENROUTER_API_KEY`                                                                                                                                                            | Yes      | Your OpenRouter API key                                                                                                                                             |
+| `OPENROUTER_MODEL`                                                                                                                                                              | No       | Default model (e.g. `inclusionai/ling-2.6-1t:free`)                                                                                                                 |
+| `OPENROUTER_BASE_URL`                                                                                                                                                           | No       | API base URL (default `https://openrouter.ai/api/v1`). A non-`openrouter.ai` host switches the request to the standard OpenAI chat-completions dialect (see below). |
+| `OPENROUTER_MAX_TURNS`                                                                                                                                                          | No       | Maximum number of request cycles per `run()` (default: 25)                                                                                                          |
+| `OPENROUTER_ORDER`                                                                                                                                                              | No       | Comma-separated provider priority order                                                                                                                             |
+| `OPENROUTER_ONLY`                                                                                                                                                               | No       | Restrict to specific providers only                                                                                                                                 |
+| `TAVILY_API_KEY`                                                                                                                                                                | No       | API key for WebSearch tool (from [Tavily](https://tavily.com))                                                                                                      |
+| `DEBUG`                                                                                                                                                                         | No       | Enable debug logging (`true`/`1`)                                                                                                                                   |
+| `OPENROUTER_TEMPERATURE`, `OPENROUTER_TOP_P`, `OPENROUTER_MIN_P`, `OPENROUTER_TOP_K`                                                                                            | No       | Sampling controls                                                                                                                                                   |
+| `OPENROUTER_FREQUENCY_PENALTY`, `OPENROUTER_PRESENCE_PENALTY`, `OPENROUTER_REPETITION_PENALTY`                                                                                  | No       | Repetition controls                                                                                                                                                 |
+| `OPENROUTER_SEED`, `OPENROUTER_MAX_COMPLETION_TOKENS`                                                                                                                           | No       | Deterministic seed; output token cap (`max_completion_tokens`)                                                                                                      |
+| `OPENROUTER_REASONING_EFFORT`, `OPENROUTER_REASONING_MAX_TOKENS`, `OPENROUTER_REASONING_EXCLUDE`, `OPENROUTER_REASONING_ENABLED`                                                | No       | Reasoning controls                                                                                                                                                  |
+| `OPENROUTER_PROVIDER_AVOID`, `OPENROUTER_PROVIDER_SORT`, `OPENROUTER_PROVIDER_ALLOW_FALLBACKS`, `OPENROUTER_PROVIDER_REQUIRE_PARAMETERS`, `OPENROUTER_PROVIDER_DATA_COLLECTION` | No       | Provider routing                                                                                                                                                    |
+
+### API dialect
+
+The dialect is auto-detected from the `baseUrl` host. An `openrouter.ai` host (or
+subdomain) uses the OpenRouter dialect — OpenRouter-only headers (`HTTP-Referer`,
+`X-OpenRouter-Title`), the `provider` routing block, the unified `reasoning`
+object, and `cache_control` prompt-cache markers. Any other host uses the standard
+OpenAI chat-completions dialect: those headers and fields are dropped, and
+`reasoning` is sent as a top-level `reasoning_effort`. Non-standard sampling
+controls (`min_p`, `top_k`, `repetition_penalty`) are still sent as extensions, so
+OpenAI-compatible servers like vLLM and llama.cpp keep working. There is no
+override flag — set `baseUrl` and the dialect follows.
 
 ## Basic Usage
 
@@ -657,23 +670,29 @@ The `using-memory` builtin skill (see `src/skills/using-memory/SKILL.md`) covers
 ### Semantic Memory Recall
 
 To retrieve the full contents of memories relevant to the current task by meaning, the agent can use the `RecallMemory` tool:
+
 - `query` (required) - Natural language query to search stored memories for.
 - `limit` (optional) - Maximum number of memories to return (defaults to `5`, capped at `20`).
 
 #### Retrieval Behavior
+
 1. **First-turn index unchanged:** The agent still receives the flat `MEMORY.md` index in context proactively on the first turn.
 2. **Embeddings-Primary:** If an API key is present and the OpenRouter embeddings endpoint is reachable, memories are ranked using dense vector embeddings (using cosine similarity).
 3. **Lexical Fallback:** If no API key is set or the embeddings call fails, the tool transparently falls back to a zero-dependency, deterministic lexical ranker (TF-IDF + sparse cosine similarity).
 
 #### Vector Cache Sidecar
+
 To avoid redundant API calls and keep retrieval fast, the agent caches generated vectors in a `.embeddings.json` file inside the configured memory directory.
+
 - Cached vectors are validated against a SHA-256 hash of both the file content and the embedding model ID.
 - Vectors for new or changed files are generated on demand.
 - Vectors for deleted files are pruned automatically.
-- *Recommendation:* Consumers should add `.embeddings.json` to their `.gitignore` files.
+- _Recommendation:_ Consumers should add `.embeddings.json` to their `.gitignore` files.
 
 #### Configuration
+
 The embedding model can be configured using:
+
 - `OPENROUTER_EMBEDDING_MODEL` environment variable.
 - `embeddingModel` option in the `Agent` constructor.
 - **Default:** `openai/text-embedding-3-small`.
@@ -714,29 +733,29 @@ openrouter/
 
 Factory function to create an Agent instance.
 
-| Option                                                     | Type     | Description                                                                                                                        |
-| ---------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `apiKey`                                                   | string   | OpenRouter API key (overrides `.env`).                                                                                             |
-| `model`                                                    | string   | Model identifier.                                                                                                                  |
-| `order`                                                    | string[] | Provider routing order.                                                                                                            |
-| `only`                                                     | string[] | Restrict to specific providers.                                                                                                    |
+| Option                                                     | Type     | Description                                                                                                                                                                                                               |
+| ---------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apiKey`                                                   | string   | OpenRouter API key (overrides `.env`).                                                                                                                                                                                    |
+| `model`                                                    | string   | Model identifier.                                                                                                                                                                                                         |
+| `order`                                                    | string[] | Provider routing order.                                                                                                                                                                                                   |
+| `only`                                                     | string[] | Restrict to specific providers.                                                                                                                                                                                           |
 | `provider`                                                 | object   | Provider routing: `{ order, only, avoid, sort, allowFallbacks, requireParameters, dataCollection }`. Merged with env. Sent on the wire as OpenRouter's `ignore`/`allow_fallbacks`/`require_parameters`/`data_collection`. |
-| `temperature`, `topP`, `minP`, `topK`                      | number   | Sampling controls. Option wins over env.                                                                                           |
-| `frequencyPenalty`, `presencePenalty`, `repetitionPenalty` | number   | Repetition controls.                                                                                                               |
-| `seed`                                                     | number   | Deterministic sampling seed.                                                                                                       |
-| `maxCompletionTokens`                                      | number   | Output token cap; sent as `max_completion_tokens`.                                                                                 |
-| `responseFormat`                                           | object   | Passed through as `response_format` (e.g. JSON mode).                                                                              |
-| `stop`                                                     | string[] | Stop sequences.                                                                                                                    |
-| `reasoning`                                                | object   | `{ effort, maxTokens, exclude, enabled }`. Maps to OpenRouter's `reasoning`.                                                       |
-| `systemPrompt`                                             | string   | System prompt override. Falls back to `RULE.md`, then a built-in default.                                                          |
-| `maxTurns`                                                 | number   | Max request cycles per `run()`. Default `25`; `0` means unlimited.                                                                 |
-| `effort`                                                   | string   | Reasoning effort: `'low'`, `'medium'`, `'high'`. Default `'high'`.                                                                 |
-| `maxToolOutputChars`                                       | number   | Cap (in chars) for tool output before truncation. Default `50_000`.                                                                |
-| `restricted`                                               | boolean  | Security mode. Default `true`. Set `false` to lift path-boundary checks, env filtering, and shell command blocks (logs a warning). |
-| `storagePaths`                                             | object   | `{ memoryDir?, tmpDir? }`. Paths support `~` expansion. External dirs are auto-added to `trustedPaths`.                            |
-| `contextFiles`                                             | string[] | Files to inject on the first turn. Default `['AGENT.md']`. Missing files are skipped.                                              |
-| `memoryTypes`                                              | object   | Custom memory type descriptions; merged over the four built-in types.                                                              |
-| `injectors`                                                | object   | Disable built-in injectors by name, e.g. `{ date: false, skillList: false }`.                                                      |
+| `temperature`, `topP`, `minP`, `topK`                      | number   | Sampling controls. Option wins over env.                                                                                                                                                                                  |
+| `frequencyPenalty`, `presencePenalty`, `repetitionPenalty` | number   | Repetition controls.                                                                                                                                                                                                      |
+| `seed`                                                     | number   | Deterministic sampling seed.                                                                                                                                                                                              |
+| `maxCompletionTokens`                                      | number   | Output token cap; sent as `max_completion_tokens`.                                                                                                                                                                        |
+| `responseFormat`                                           | object   | Passed through as `response_format` (e.g. JSON mode).                                                                                                                                                                     |
+| `stop`                                                     | string[] | Stop sequences.                                                                                                                                                                                                           |
+| `reasoning`                                                | object   | `{ effort, maxTokens, exclude, enabled }`. Maps to OpenRouter's `reasoning`.                                                                                                                                              |
+| `systemPrompt`                                             | string   | System prompt override. Falls back to `RULE.md`, then a built-in default.                                                                                                                                                 |
+| `maxTurns`                                                 | number   | Max request cycles per `run()`. Default `25`; `0` means unlimited.                                                                                                                                                        |
+| `effort`                                                   | string   | Reasoning effort: `'low'`, `'medium'`, `'high'`. Default `'high'`.                                                                                                                                                        |
+| `maxToolOutputChars`                                       | number   | Cap (in chars) for tool output before truncation. Default `50_000`.                                                                                                                                                       |
+| `restricted`                                               | boolean  | Security mode. Default `true`. Set `false` to lift path-boundary checks, env filtering, and shell command blocks (logs a warning).                                                                                        |
+| `storagePaths`                                             | object   | `{ memoryDir?, tmpDir? }`. Paths support `~` expansion. External dirs are auto-added to `trustedPaths`.                                                                                                                   |
+| `contextFiles`                                             | string[] | Files to inject on the first turn. Default `['AGENT.md']`. Missing files are skipped.                                                                                                                                     |
+| `memoryTypes`                                              | object   | Custom memory type descriptions; merged over the four built-in types.                                                                                                                                                     |
+| `injectors`                                                | object   | Disable built-in injectors by name, e.g. `{ date: false, skillList: false }`.                                                                                                                                             |
 
 ### `agent.run(prompt, notify?, options?)`
 

@@ -8,6 +8,8 @@ import {
   CONSTANTS,
   payloadHasMultimodal,
   degradePayload,
+  resolveDialect,
+  buildRequestHeaders,
 } from '../../src/core/utils.js';
 import path from 'node:path';
 import os from 'node:os';
@@ -691,5 +693,44 @@ describe('degradePayload', () => {
     assert.strictEqual(originalMsg.content[1].type, 'image_url', 'original still has image_url part');
     // The new slot is a different object
     assert.notStrictEqual(payload.messages[0], originalMsg);
+  });
+});
+
+describe('resolveDialect', () => {
+  it('returns openrouter for the openrouter.ai host', () => {
+    assert.equal(resolveDialect('https://openrouter.ai/api/v1'), 'openrouter');
+  });
+
+  it('returns openrouter for an openrouter.ai subdomain', () => {
+    assert.equal(resolveDialect('https://gateway.openrouter.ai/api/v1'), 'openrouter');
+  });
+
+  it('returns openai for a non-openrouter host', () => {
+    assert.equal(resolveDialect('https://api.openai.com/v1'), 'openai');
+    assert.equal(resolveDialect('http://localhost:1234/v1'), 'openai');
+  });
+
+  it('falls back to a substring test for an unparseable url', () => {
+    assert.equal(resolveDialect('not a url openrouter.ai'), 'openrouter');
+    assert.equal(resolveDialect('garbage'), 'openai');
+  });
+});
+
+describe('buildRequestHeaders', () => {
+  it('adds OpenRouter headers only for the openrouter dialect', () => {
+    const h = buildRequestHeaders({ apiKey: 'sk-x', dialect: 'openrouter' });
+    assert.equal(h.Authorization, 'Bearer sk-x');
+    assert.equal(h['Content-Type'], 'application/json');
+    assert.equal(h['HTTP-Referer'], 'https://github.com/af-t/agent-sdk');
+    assert.equal(h['X-Title'], 'OpenRouter CLI Agent');
+    assert.equal(h['X-OpenRouter-Title'], 'OpenRouter CLI Agent');
+  });
+
+  it('omits OpenRouter headers for the openai dialect', () => {
+    const h = buildRequestHeaders({ apiKey: 'sk-x', dialect: 'openai' });
+    assert.equal(h.Authorization, 'Bearer sk-x');
+    assert.equal(h['Content-Type'], 'application/json');
+    assert.equal(h['HTTP-Referer'], undefined);
+    assert.equal(h['X-OpenRouter-Title'], undefined);
   });
 });

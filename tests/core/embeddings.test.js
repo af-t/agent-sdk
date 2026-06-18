@@ -137,4 +137,45 @@ describe('embedTexts', () => {
       global.fetch = original;
     }
   });
+
+  it('omits OpenRouter headers for a non-openrouter base url', async () => {
+    const original = global.fetch;
+    let capturedHeaders;
+    global.fetch = async (_url, opts) => {
+      capturedHeaders = opts.headers;
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ data: [{ index: 0, embedding: [1] }], usage: {} }),
+      };
+    };
+    try {
+      await embedTexts(['a'], { apiKey: 'sk-x', baseUrl: 'https://api.openai.com/v1', model: 'm' });
+      assert.equal(capturedHeaders.Authorization, 'Bearer sk-x');
+      assert.equal(capturedHeaders['HTTP-Referer'], undefined);
+      assert.equal(capturedHeaders['X-OpenRouter-Title'], undefined);
+    } finally {
+      global.fetch = original;
+    }
+  });
+
+  it('includes OpenRouter headers for an openrouter base url', async () => {
+    const original = global.fetch;
+    let capturedHeaders;
+    global.fetch = async (_url, opts) => {
+      capturedHeaders = opts.headers;
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ data: [{ index: 0, embedding: [1] }], usage: {} }),
+      };
+    };
+    try {
+      await embedTexts(['a'], { apiKey: 'sk-x', baseUrl: 'https://openrouter.ai/api/v1', model: 'm' });
+      assert.equal(capturedHeaders['HTTP-Referer'], 'https://github.com/af-t/agent-sdk');
+      assert.equal(capturedHeaders['X-OpenRouter-Title'], 'OpenRouter CLI Agent');
+    } finally {
+      global.fetch = original;
+    }
+  });
 });

@@ -1,4 +1,4 @@
-import { withRetry } from './utils.js';
+import { withRetry, resolveDialect, buildRequestHeaders } from './utils.js';
 import { ApiError } from './errors.js';
 
 const EMBED_TIMEOUT = 120_000;
@@ -37,13 +37,7 @@ export async function embedTexts(texts, { apiKey, baseUrl, model, signal } = {})
     try {
       const res = await fetch(`${baseUrl}/embeddings`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://github.com/af-t/openrouter',
-          'X-Title': 'OpenRouter CLI Agent',
-          'X-OpenRouter-Title': 'OpenRouter CLI Agent',
-        },
+        headers: buildRequestHeaders({ apiKey, dialect: resolveDialect(baseUrl) }),
         body: JSON.stringify({ model, input: texts }),
         signal: controller.signal,
       });

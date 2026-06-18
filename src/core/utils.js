@@ -433,4 +433,29 @@ async function isDirectory(dirPath) {
   }
 }
 
+// Decide API dialect from the base URL host.
+// openrouter.ai (and subdomains) -> 'openrouter'; anything else -> 'openai'.
+export function resolveDialect(baseUrl) {
+  let host;
+  try {
+    host = new URL(baseUrl).hostname.toLowerCase();
+  } catch {
+    return String(baseUrl).toLowerCase().includes('openrouter.ai') ? 'openrouter' : 'openai';
+  }
+  if (host === 'openrouter.ai' || host.endsWith('.openrouter.ai')) return 'openrouter';
+  return 'openai';
+}
 
+// Request headers; OpenRouter-only headers are added for that dialect only.
+export function buildRequestHeaders({ apiKey, dialect }) {
+  const headers = {
+    Authorization: `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+  };
+  if (dialect === 'openrouter') {
+    headers['HTTP-Referer'] = 'https://github.com/af-t/agent-sdk';
+    headers['X-Title'] = 'OpenRouter CLI Agent';
+    headers['X-OpenRouter-Title'] = 'OpenRouter CLI Agent';
+  }
+  return headers;
+}

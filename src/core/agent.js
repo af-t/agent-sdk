@@ -1,4 +1,13 @@
-import { withRetry, getDirname, CONSTANTS, ensureSafePath, payloadHasMultimodal, degradePayload } from './utils.js';
+import {
+  withRetry,
+  getDirname,
+  CONSTANTS,
+  ensureSafePath,
+  payloadHasMultimodal,
+  degradePayload,
+  resolveDialect,
+  buildRequestHeaders,
+} from './utils.js';
 import { ToolRegistry } from '../registry/tool.js';
 import { ApiError, ConfigError } from './errors.js';
 import logger from './logger.js';
@@ -41,6 +50,11 @@ const DEFAULT_MAX_TURNS = 25;
 const BG_KILL_GRACE_MS = 2000;
 const VALID_INJECTOR_SCOPES = new Set(['first-turn', 'per-turn']);
 
+const DEFAULT_EMPTY_TURN_RETRIES = 2;
+const MAX_STOP_RECOVERY = 8;
+const DEFAULT_EMPTY_TURN_NUDGE =
+  'Your previous turn produced reasoning but no response and no tool call. Provide your final answer now, or call a tool to proceed.';
+
 class Agent {
   #apiKey;
   #baseUrl;
@@ -60,6 +74,9 @@ class Agent {
   #pendingBgDrains;
   #wakeScheduled = false;
   #recorder = null;
+  #stopHooks = [];
+  #recoveryHook = null;
+  #stopAttempts = 0;
   #recordConfig = null;
   #envInfo = [
     '',
@@ -109,6 +126,7 @@ class Agent {
       autoWakeNotify,
       autoWakeOptions,
       record,
+      emptyTurnRecovery,
     } = options;
 
     this.restricted = restricted !== false;
@@ -123,6 +141,33 @@ class Agent {
     }
     this.#apiKey = apiKey || config.API_KEY;
     this.#baseUrl = baseUrl || config.BASE_URL || 'https://openrouter.ai/api/v1';
+    this.dialect = resolveDialect(this.#baseUrl);
+
+    // Empty-turn recovery is a built-in stop hook (default on). It re-sends the
+    // same payload (raw retry) then nudges, so a terminal turn that carried only
+    // reasoning (content empty, no tool calls) does not silently end the run.
+    let recoveryEnabled = true;
+    let recoveryRetries = DEFAULT_EMPTY_TURN_RETRIES;
+    let recoveryNudge = DEFAULT_EMPTY_TURN_NUDGE;
+    if (emptyTurnRecovery === false) {
+      recoveryEnabled = false;
+    } else if (emptyTurnRecovery && typeof emptyTurnRecovery === 'object') {
+      if (emptyTurnRecovery.enabled !== undefined) recoveryEnabled = !!emptyTurnRecovery.enabled;
+      if (emptyTurnRecovery.retries !== undefined) recoveryRetries = parseInt(emptyTurnRecovery.retries);
+      if (typeof emptyTurnRecovery.nudge === 'string' && emptyTurnRecovery.nudge.trim().length > 0) {
+        recoveryNudge = emptyTurnRecovery.nudge;
+      }
+    } else if (emptyTurnRecovery === undefined) {
+      if (config.EMPTY_TURN_RECOVERY !== undefined) recoveryEnabled = config.EMPTY_TURN_RECOVERY;
+      if (config.EMPTY_TURN_RETRIES !== undefined) {
+        const parsedRetries = parseInt(config.EMPTY_TURN_RETRIES);
+        if (!Number.isNaN(parsedRetries)) recoveryRetries = parsedRetries;
+      }
+    }
+    if (Number.isNaN(recoveryRetries) || recoveryRetries < 0) recoveryRetries = DEFAULT_EMPTY_TURN_RETRIES;
+    this.#recoveryHook = recoveryEnabled
+      ? makeEmptyTurnRecoveryHook({ retries: recoveryRetries, nudge: recoveryNudge })
+      : null;
     this.model = model;
     this.embeddingModel = embeddingModel ?? config.EMBEDDING_MODEL ?? 'openai/text-embedding-3-small';
     this.isSubagent = !!isSubagent;
@@ -586,6 +631,22 @@ class Agent {
     };
   }
 
+  // Register a stop hook. Hooks fire on a terminal (no-tool_calls) turn and may
+  // return { action: 'stop' } | undefined (allow stop), { action: 'retry' }
+  // (re-send the same payload), or { action: 'continue', prompt } (inject a
+  // user nudge and keep looping). User hooks run before the built-in recovery
+  // hook; the first non-stop decision wins. Returns a disposer.
+  onStop(fn) {
+    if (typeof fn !== 'function') {
+      throw new ConfigError('onStop expects a function');
+    }
+    this.#stopHooks.push(fn);
+    return () => {
+      const idx = this.#stopHooks.indexOf(fn);
+      if (idx !== -1) this.#stopHooks.splice(idx, 1);
+    };
+  }
+
   async #runInjectors(scope) {
     const bucket = this.#injectors[scope];
     const ctx = { messages: this.messages, usage: this.usage, turn: this.messages.length };
@@ -652,13 +713,7 @@ class Agent {
     try {
       const res = await fetch(`${this.#baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.#apiKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://github.com/af-t/openrouter',
-          'X-Title': 'OpenRouter CLI Agent',
-          'X-OpenRouter-Title': 'OpenRouter CLI Agent',
-        },
+        headers: buildRequestHeaders({ apiKey: this.#apiKey, dialect: this.dialect }),
         body: JSON.stringify({ ...payload, stream: false }),
         signal: controller.signal,
       });
@@ -690,12 +745,99 @@ class Agent {
     }
   }
 
+  // Run stop hooks in order (user hooks first, then the built-in recovery hook).
+  // The first decision whose action is not 'stop' wins.
+  async #runStopHooks(ctx) {
+    const hooks = this.#recoveryHook ? [...this.#stopHooks, this.#recoveryHook] : this.#stopHooks;
+    for (const fn of hooks) {
+      let decision;
+      try {
+        decision = await fn(ctx);
+      } catch (err) {
+        logger.warn(`Stop hook threw: ${err?.message || err}`);
+        continue;
+      }
+      if (decision && decision.action && decision.action !== 'stop') {
+        return decision;
+      }
+    }
+    return undefined;
+  }
+
+  // Resolve a terminal (no-tool_calls) turn via stop hooks. May re-send the same
+  // payload (raw retry) and re-evaluate, request a nudge, or allow the stop. It
+  // never commits an assistant message — the caller decides based on the result.
+  // Returns { continue: true, prompt } for a nudge, otherwise
+  // { content, reasoning, tool_calls, finish_reason } to adopt.
+  async #resolveStop({ payload, isStreaming, signal: _signal, turn, content, reasoning, finish_reason }) {
+    let tool_calls;
+    let lastError;
+    while (true) {
+      if (this.#stopAttempts > MAX_STOP_RECOVERY) {
+        logger.warn(`Agent: stop-recovery ceiling (${MAX_STOP_RECOVERY}) reached; forcing stop.`);
+        this.#stopAttempts = 0;
+        return { content, reasoning, tool_calls, finish_reason };
+      }
+
+      const decision = await this.#runStopHooks({
+        content,
+        reasoning,
+        finish_reason,
+        turn,
+        attempt: this.#stopAttempts,
+        usage: this.usage,
+        messages: this.messages,
+        lastError,
+      });
+      const action = decision?.action ?? 'stop';
+
+      if (action === 'continue') {
+        this.#stopAttempts++;
+        return { continue: true, prompt: decision.prompt };
+      }
+
+      if (action !== 'retry') {
+        // 'stop' or unknown — allow termination with the current message.
+        this.#stopAttempts = 0;
+        return { content, reasoning, tool_calls, finish_reason };
+      }
+
+      // action === 'retry': re-send the identical payload.
+      this.#stopAttempts++;
+      try {
+        const retryResponse = await withRetry(() => (isStreaming ? this.#sendStream(payload) : this.#send(payload)), 5);
+        const retryMessage = retryResponse.choices?.[0]?.message;
+        content = retryMessage?.content || null;
+        reasoning = retryMessage?.reasoning || undefined;
+        tool_calls = retryMessage?.tool_calls || null;
+        finish_reason = retryResponse.choices?.[0]?.finish_reason;
+        lastError = null;
+      } catch (err) {
+        lastError = err;
+        if (err?.nonRetryable) {
+          // A hard 400 on a retry attempt (e.g. history schema error) means the
+          // raw-retry path is blocked; jump straight to nudge on next iteration.
+          content = null;
+        }
+      }
+
+      const recovered = tool_calls && tool_calls.length > 0;
+      if (recovered) {
+        this.#stopAttempts = 0;
+        return { content, reasoning, tool_calls, finish_reason };
+      }
+      // still empty — loop and re-evaluate hooks with the incremented attempt
+    }
+  }
+
   async #buildPayload() {
+    const isOpenAI = this.dialect === 'openai';
     const messagesCopy = [...this.messages];
     const messagesForPayload = messagesCopy.map((msg, idx) => {
       // NOTE: Caching is intentionally only placed on the last 'user' role message
       // to follow standard Anthropic messages format guidelines and prevent caching logic complexity.
       if (
+        !isOpenAI &&
         idx === messagesCopy.length - 1 &&
         msg.role === 'user' &&
         Array.isArray(msg.content) &&
@@ -716,21 +858,12 @@ class Agent {
       this.#instructionCache = this.systemPrompt + this.#envInfo.join('\n');
     }
 
+    const systemTextPart = { type: 'text', text: this.#instructionCache };
+    if (!isOpenAI) systemTextPart.cache_control = { type: 'ephemeral' };
+
     const payload = {
       model: this.model,
-      messages: [
-        {
-          role: 'system',
-          content: [
-            {
-              type: 'text',
-              text: this.#instructionCache,
-              cache_control: { type: 'ephemeral' },
-            },
-          ],
-        },
-        ...messagesForPayload,
-      ],
+      messages: [{ role: 'system', content: [systemTextPart] }, ...messagesForPayload],
       tools: this.tools.getDefinitions(),
     };
 
@@ -751,37 +884,42 @@ class Agent {
       payload.max_completion_tokens = this.maxCompletionTokens;
     }
 
-    const reasoningPayload = {};
-    if (this.reasoning) {
-      if (this.reasoning.effort !== undefined) reasoningPayload.effort = this.reasoning.effort;
-      if (this.reasoning.maxTokens !== undefined) reasoningPayload.max_tokens = this.reasoning.maxTokens;
-      if (this.reasoning.exclude !== undefined) reasoningPayload.exclude = this.reasoning.exclude;
-      if (this.reasoning.enabled !== undefined) reasoningPayload.enabled = this.reasoning.enabled;
-    } else if (this.effort !== undefined) {
-      reasoningPayload.effort = this.effort;
-    }
-
-    if (Object.keys(reasoningPayload).length > 0) {
-      payload.reasoning = reasoningPayload;
-    }
-
-    const providerPayload = {};
-    if (this.provider) {
-      if (this.provider.order !== undefined) providerPayload.order = this.provider.order;
-      if (this.provider.only !== undefined) providerPayload.only = this.provider.only;
-      // Wire field is `ignore` per OpenRouter provider docs
-      const ignoreVal = this.provider.ignore !== undefined ? this.provider.ignore : this.provider.avoid;
-      if (ignoreVal !== undefined) providerPayload.ignore = ignoreVal;
-      if (this.provider.sort !== undefined) providerPayload.sort = this.provider.sort;
-      if (this.provider.allowFallbacks !== undefined) providerPayload.allow_fallbacks = this.provider.allowFallbacks;
-      if (this.provider.requireParameters !== undefined)
-        providerPayload.require_parameters = this.provider.requireParameters;
-      if (this.provider.dataCollection !== undefined) {
-        providerPayload.data_collection = this.provider.dataCollection;
+    if (isOpenAI) {
+      const effort = this.reasoning?.effort ?? this.effort;
+      if (effort !== undefined) payload.reasoning_effort = effort;
+    } else {
+      const reasoningPayload = {};
+      if (this.reasoning) {
+        if (this.reasoning.effort !== undefined) reasoningPayload.effort = this.reasoning.effort;
+        if (this.reasoning.maxTokens !== undefined) reasoningPayload.max_tokens = this.reasoning.maxTokens;
+        if (this.reasoning.exclude !== undefined) reasoningPayload.exclude = this.reasoning.exclude;
+        if (this.reasoning.enabled !== undefined) reasoningPayload.enabled = this.reasoning.enabled;
+      } else if (this.effort !== undefined) {
+        reasoningPayload.effort = this.effort;
       }
-    }
-    if (Object.keys(providerPayload).length > 0) {
-      payload.provider = providerPayload;
+
+      if (Object.keys(reasoningPayload).length > 0) {
+        payload.reasoning = reasoningPayload;
+      }
+
+      const providerPayload = {};
+      if (this.provider) {
+        if (this.provider.order !== undefined) providerPayload.order = this.provider.order;
+        if (this.provider.only !== undefined) providerPayload.only = this.provider.only;
+        // Wire field is `ignore` per OpenRouter provider docs
+        const ignoreVal = this.provider.ignore !== undefined ? this.provider.ignore : this.provider.avoid;
+        if (ignoreVal !== undefined) providerPayload.ignore = ignoreVal;
+        if (this.provider.sort !== undefined) providerPayload.sort = this.provider.sort;
+        if (this.provider.allowFallbacks !== undefined) providerPayload.allow_fallbacks = this.provider.allowFallbacks;
+        if (this.provider.requireParameters !== undefined)
+          providerPayload.require_parameters = this.provider.requireParameters;
+        if (this.provider.dataCollection !== undefined) {
+          providerPayload.data_collection = this.provider.dataCollection;
+        }
+      }
+      if (Object.keys(providerPayload).length > 0) {
+        payload.provider = providerPayload;
+      }
     }
 
     for (const hook of this.#beforeRequestHooks) {
@@ -834,13 +972,7 @@ class Agent {
     try {
       res = await fetch(`${this.#baseUrl}/chat/completions`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.#apiKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://github.com/af-t/openrouter',
-          'X-Title': 'OpenRouter CLI Agent',
-          'X-OpenRouter-Title': 'OpenRouter CLI Agent',
-        },
+        headers: buildRequestHeaders({ apiKey: this.#apiKey, dialect: this.dialect }),
         body: JSON.stringify({ ...payload, stream: true }),
         signal: controller.signal,
       });
@@ -865,6 +997,7 @@ class Agent {
 
     let content = '';
     let reasoning = '';
+    let finishReason = null;
     const tcMap = {};
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -880,6 +1013,9 @@ class Agent {
 
       const delta = chunk.choices?.[0]?.delta;
       if (!delta) return;
+
+      const fr = chunk.choices?.[0]?.finish_reason;
+      if (fr) finishReason = fr;
 
       const cd = delta.content || '';
       const rd = delta.reasoning || '';
@@ -961,7 +1097,12 @@ class Agent {
     }
 
     return {
-      choices: [{ message: { content: content || null, reasoning: reasoning || null, tool_calls } }],
+      choices: [
+        {
+          message: { content: content || null, reasoning: reasoning || null, tool_calls },
+          finish_reason: finishReason,
+        },
+      ],
     };
   }
 
@@ -1419,8 +1560,49 @@ class Agent {
           break;
         }
 
-        const { content, tool_calls } = message;
-        const reasoning = message.reasoning || undefined;
+        let { content, tool_calls } = message;
+        let reasoning = message.reasoning || undefined;
+        let finish_reason = response.choices?.[0]?.finish_reason;
+
+        // Stop hooks / empty-turn recovery run only on a terminal (no-tool_calls)
+        // turn, BEFORE the assistant message is committed — so an empty turn never
+        // lands in history as a trailing assistant message (keeps the conversation
+        // continuation-safe and avoids a 400 on the next run).
+        if (!tool_calls || tool_calls.length === 0) {
+          const r = await this.#resolveStop({
+            payload,
+            isStreaming,
+            signal,
+            turn: loopCount,
+            content,
+            reasoning,
+            finish_reason,
+          });
+          if (r.continue) {
+            await this.#broadcast({ stop_recovery: { turn: loopCount, finish_reason, reasoning } });
+            this.#appendUserContent(normalizePrompt(r.prompt));
+            continue;
+          }
+          content = r.content;
+          reasoning = r.reasoning;
+          tool_calls = r.tool_calls;
+          finish_reason = r.finish_reason;
+        }
+
+        const isEmptyTerminal =
+          (!tool_calls || tool_calls.length === 0) && (content == null || String(content).trim() === '');
+
+        if (isEmptyTerminal) {
+          // Empty terminal turn (recovery exhausted, or disabled). Do not commit a
+          // trailing empty assistant message; terminate and return the content as-is.
+          this.#recorder?.snapshot(loopCount, this.messages, this.usage);
+          await this.#broadcast({
+            turn_end: { turn: loopCount, terminal: true, finish_reason, empty: true, reasoning },
+          });
+          if (await this.#drainPending()) continue;
+          this.#drainBgExits();
+          return content ?? '';
+        }
 
         // Assign ids once so tool results match the assistant message
         if (tool_calls) {
@@ -1434,7 +1616,7 @@ class Agent {
 
         if (!tool_calls || tool_calls.length === 0) {
           this.#recorder?.snapshot(loopCount, this.messages, this.usage);
-          await this.#broadcast({ turn_end: { turn: loopCount, terminal: true } });
+          await this.#broadcast({ turn_end: { turn: loopCount, terminal: true, finish_reason } });
           // A steer delivered during the final turn keeps the loop alive.
           if (await this.#drainPending()) continue;
           // Fold any late bg exits into messages before terminating.
@@ -1488,7 +1670,8 @@ class Agent {
         // Flush any steer queued during this turn's tool execution.
         await this.#drainPending();
         this.#recorder?.snapshot(loopCount, this.messages, this.usage);
-        await this.#broadcast({ turn_end: { turn: loopCount, terminal: false } });
+        this.#stopAttempts = 0;
+        await this.#broadcast({ turn_end: { turn: loopCount, terminal: false, finish_reason } });
       }
 
       return this.messages[this.messages.length - 1].content;
@@ -1542,6 +1725,27 @@ class Agent {
       }
     }
   }
+}
+
+// Built-in stop hook: recover a terminal turn whose content is empty (only
+// reasoning, no tool call). Escalates raw retry x N -> single nudge -> give up.
+// A non-retryable error on a retry (e.g. a 400 history-schema error) jumps
+// straight to the nudge.
+function makeEmptyTurnRecoveryHook({ retries, nudge }) {
+  // The configured nudge is just the inner text; wrap it as a system-reminder so
+  // the model reads it as framework guidance, not a user turn (consistent with
+  // how injectors and background-exit drains surface machine-generated messages).
+  const prompt = `<system-reminder>\n${nudge}\n</system-reminder>`;
+  return function emptyTurnRecovery({ content, attempt, lastError }) {
+    const empty = content == null || String(content).trim() === '';
+    if (!empty) return undefined; // non-empty terminal turn — allow normal stop
+    if (lastError) {
+      return attempt > retries ? { action: 'stop' } : { action: 'continue', prompt };
+    }
+    if (attempt < retries) return { action: 'retry' };
+    if (attempt === retries) return { action: 'continue', prompt };
+    return { action: 'stop' };
+  };
 }
 
 function tailFile(logPath, bytes) {

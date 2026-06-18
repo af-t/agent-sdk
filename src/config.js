@@ -27,6 +27,13 @@ export default deepFreeze({
   EMBEDDING_MODEL: process.env.OPENROUTER_EMBEDDING_MODEL,
   MAX_TURNS: process.env.OPENROUTER_MAX_TURNS,
   AUTO_WAKE: process.env.OPENROUTER_AUTO_WAKE,
+  EMPTY_TURN_RECOVERY:
+    process.env.OPENROUTER_EMPTY_TURN_RECOVERY === 'true' || process.env.OPENROUTER_EMPTY_TURN_RECOVERY === '1'
+      ? true
+      : process.env.OPENROUTER_EMPTY_TURN_RECOVERY === 'false' || process.env.OPENROUTER_EMPTY_TURN_RECOVERY === '0'
+        ? false
+        : undefined,
+  EMPTY_TURN_RETRIES: process.env.OPENROUTER_EMPTY_TURN_RETRIES,
   TAVILY_API_KEY: process.env.TAVILY_API_KEY,
   MAX_RETRIES: 5,
   DEBUG: process.env.DEBUG === 'true' || process.env.DEBUG === '1',

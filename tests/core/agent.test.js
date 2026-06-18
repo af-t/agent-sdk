@@ -1,4 +1,4 @@
-import { describe, it, before, after, mock } from 'node:test';
+import { describe, it, before, after, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -1207,5 +1207,141 @@ describe('run() — steering applied in-loop', () => {
       assert.strictEqual(requestedUrl, 'https://custom-proxy.com/api/chat/completions');
       assert.strictEqual(updates.join(''), 'Stream from custom baseUrl');
     });
+  });
+});
+
+describe('Agent dialect + headers', () => {
+  let Agent;
+  let originalFetch;
+
+  before(async () => {
+    Agent = (await import('../../src/core/agent.js')).default;
+  });
+  beforeEach(() => {
+    originalFetch = global.fetch;
+  });
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('derives dialect from baseUrl', () => {
+    assert.equal(new Agent({ apiKey: 'sk-x' }).dialect, 'openrouter');
+    assert.equal(new Agent({ apiKey: 'sk-x', baseUrl: 'https://api.openai.com/v1' }).dialect, 'openai');
+  });
+
+  it('omits OpenRouter headers for a non-openrouter base url', async () => {
+    let capturedHeaders;
+    global.fetch = async (_url, opts) => {
+      capturedHeaders = opts.headers;
+      return makeJsonResponse({
+        choices: [{ message: { content: 'ok', reasoning: null, tool_calls: null } }],
+        usage: { cost: 0, total_tokens: 1 },
+      });
+    };
+    const agent = new Agent({ apiKey: 'sk-x', baseUrl: 'https://api.openai.com/v1' });
+    await agent.run('hi');
+    assert.equal(capturedHeaders.Authorization, 'Bearer sk-x');
+    assert.equal(capturedHeaders['HTTP-Referer'], undefined);
+    assert.equal(capturedHeaders['X-OpenRouter-Title'], undefined);
+  });
+
+  it('includes OpenRouter headers for the default base url', async () => {
+    let capturedHeaders;
+    global.fetch = async (_url, opts) => {
+      capturedHeaders = opts.headers;
+      return makeJsonResponse({
+        choices: [{ message: { content: 'ok', reasoning: null, tool_calls: null } }],
+        usage: { cost: 0, total_tokens: 1 },
+      });
+    };
+    const agent = new Agent({ apiKey: 'sk-x' });
+    await agent.run('hi');
+    assert.equal(capturedHeaders['HTTP-Referer'], 'https://github.com/af-t/agent-sdk');
+    assert.equal(capturedHeaders['X-Title'], 'OpenRouter CLI Agent');
+    assert.equal(capturedHeaders['X-OpenRouter-Title'], 'OpenRouter CLI Agent');
+  });
+});
+
+describe('Agent payload dialect shaping', () => {
+  let Agent;
+  let originalFetch;
+
+  before(async () => {
+    Agent = (await import('../../src/core/agent.js')).default;
+  });
+  beforeEach(() => {
+    originalFetch = global.fetch;
+    global.fetch = async () =>
+      makeJsonResponse({
+        choices: [{ message: { content: 'done', reasoning: null, tool_calls: null } }],
+        usage: { cost: 0, total_tokens: 1 },
+      });
+  });
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('openai dialect: reasoning_effort, no reasoning/provider/cache_control', async () => {
+    const agent = new Agent({
+      apiKey: 'sk-x',
+      baseUrl: 'https://api.openai.com/v1',
+      reasoning: { effort: 'low' },
+      provider: { sort: 'price' },
+    });
+    let captured;
+    agent.onBeforeRequest((p) => {
+      captured = p;
+    });
+    await agent.run('hi');
+    assert.equal(captured.reasoning_effort, 'low');
+    assert.equal(captured.reasoning, undefined);
+    assert.equal(captured.provider, undefined);
+    assert.ok(!JSON.stringify(captured).includes('cache_control'));
+  });
+
+  it('openai dialect always sends a reasoning_effort value', async () => {
+    const agent = new Agent({ apiKey: 'sk-x', baseUrl: 'https://api.openai.com/v1' });
+    let captured;
+    agent.onBeforeRequest((p) => {
+      captured = p;
+    });
+    await agent.run('hi');
+    assert.ok(captured.reasoning_effort, 'expected reasoning_effort to be set');
+  });
+
+  it('openai dialect keeps non-standard sampling extensions', async () => {
+    const agent = new Agent({
+      apiKey: 'sk-x',
+      baseUrl: 'https://api.openai.com/v1',
+      minP: 0.05,
+      topK: 40,
+      repetitionPenalty: 1.1,
+    });
+    let captured;
+    agent.onBeforeRequest((p) => {
+      captured = p;
+    });
+    await agent.run('hi');
+    assert.equal(captured.min_p, 0.05);
+    assert.equal(captured.top_k, 40);
+    assert.equal(captured.repetition_penalty, 1.1);
+  });
+
+  it('openrouter dialect: reasoning object + provider + cache_control retained', async () => {
+    const agent = new Agent({
+      apiKey: 'sk-x',
+      reasoning: { effort: 'low' },
+      provider: { sort: 'price' },
+    });
+    let captured;
+    agent.onBeforeRequest((p) => {
+      captured = p;
+    });
+    await agent.run('hi');
+    assert.equal(captured.reasoning_effort, undefined);
+    assert.deepEqual(captured.reasoning, { effort: 'low' });
+    assert.ok(captured.provider !== undefined, 'expected provider to be set');
+    assert.equal(captured.provider.sort, 'price');
+    assert.ok(JSON.stringify(captured).includes('cache_control'));
   });
 });
