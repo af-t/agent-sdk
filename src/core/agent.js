@@ -7,6 +7,7 @@ import {
   degradePayload,
   resolveDialect,
   buildRequestHeaders,
+  sanitizeAppName,
 } from './utils.js';
 import { ToolRegistry } from '../registry/tool.js';
 import { ApiError, ConfigError } from './errors.js';
@@ -107,6 +108,7 @@ class Agent {
       injectors,
       contextFiles,
       storagePaths,
+      appName,
       memoryTypes,
       isSubagent,
       restricted,
@@ -322,7 +324,8 @@ class Agent {
       });
     }
 
-    const resolvedMemoryDir = resolveStoragePath(storagePaths?.memoryDir) || path.resolve('.openrouter/memory');
+    this.appName = sanitizeAppName(appName ?? config.APP_NAME ?? CONSTANTS.DEFAULT_APP_NAME);
+    const resolvedMemoryDir = resolveStoragePath(storagePaths?.memoryDir) || path.resolve(`.${this.appName}/memory`);
     const resolvedTmpDir = resolveStoragePath(storagePaths?.tmpDir) || null;
 
     this._memoryDir = resolvedMemoryDir;
@@ -330,7 +333,7 @@ class Agent {
     this._storagePaths = options.storagePaths ?? null;
     this._todoFile = resolvedTmpDir
       ? path.join(resolvedTmpDir, `todos-${Math.random().toString(36).slice(2, 7)}.json`)
-      : path.resolve('.openrouter/todos.json');
+      : path.resolve(`.${this.appName}/todos.json`);
 
     const _projectRoot = path.resolve(process.cwd());
     this.trustedPaths = new Set();

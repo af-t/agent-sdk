@@ -573,14 +573,14 @@ describe('Agent — storagePaths option', () => {
     assert.ok(agent._memoryDir.endsWith(path.join('.config', 'test', 'memory')));
   });
 
-  it('ignores the removed top-level memoryDir option (defaults to .openrouter/memory)', () => {
+  it('ignores the removed top-level memoryDir option (defaults to appName memory dir)', () => {
     const agent = new Agent({ apiKey: 'sk-test', memoryDir: '.custom/memory' });
-    assert.strictEqual(agent._memoryDir, path.resolve('.openrouter/memory'));
+    assert.strictEqual(agent._memoryDir, path.resolve('.agent-sdk/memory'));
   });
 
-  it('default _memoryDir is resolved .openrouter/memory when neither option is provided', () => {
+  it('default _memoryDir is resolved .agent-sdk/memory when neither option is provided', () => {
     const agent = new Agent({ apiKey: 'sk-test' });
-    assert.strictEqual(agent._memoryDir, path.resolve('.openrouter/memory'));
+    assert.strictEqual(agent._memoryDir, path.resolve('.agent-sdk/memory'));
   });
 
   it('storagePaths.tmpDir generates _todoFile with todos-XXXXX.json pattern', () => {
@@ -597,9 +597,35 @@ describe('Agent — storagePaths option', () => {
     assert.notStrictEqual(a._todoFile, b._todoFile);
   });
 
-  it('without tmpDir, _todoFile defaults to .openrouter/todos.json', () => {
+  it('without tmpDir, _todoFile defaults to .agent-sdk/todos.json', () => {
     const agent = new Agent({ apiKey: 'sk-test' });
-    assert.strictEqual(agent._todoFile, path.resolve('.openrouter/todos.json'));
+    assert.strictEqual(agent._todoFile, path.resolve('.agent-sdk/todos.json'));
+  });
+
+  it('default appName is agent-sdk', () => {
+    const agent = new Agent({ apiKey: 'sk-test' });
+    assert.strictEqual(agent.appName, 'agent-sdk');
+  });
+
+  it('appName option drives memory and todo default paths', () => {
+    const agent = new Agent({ apiKey: 'sk-test', appName: 'lumen' });
+    assert.strictEqual(agent.appName, 'lumen');
+    assert.strictEqual(agent._memoryDir, path.resolve('.lumen/memory'));
+    assert.strictEqual(agent._todoFile, path.resolve('.lumen/todos.json'));
+  });
+
+  it('explicit storagePaths overrides appName-derived default', () => {
+    const agent = new Agent({
+      apiKey: 'sk-test',
+      appName: 'lumen',
+      storagePaths: { memoryDir: '.custom/mem' },
+    });
+    assert.strictEqual(agent._memoryDir, path.resolve('.custom/mem'));
+    assert.strictEqual(agent._todoFile, path.resolve('.lumen/todos.json'));
+  });
+
+  it('invalid appName throws ConfigError', () => {
+    assert.throws(() => new Agent({ apiKey: 'sk-test', appName: 'foo/bar' }), /single path segment/);
   });
 
   it('trustedPaths contains external memoryDir', () => {
