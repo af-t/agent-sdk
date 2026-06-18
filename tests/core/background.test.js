@@ -51,10 +51,10 @@ test('background log dir uses storagePaths.tmpDir when configured', async () => 
   fs.rmSync(tmp, { recursive: true });
 });
 
-test('background log dir falls back to os.tmpdir/openrouter-<pid> when unconfigured', async () => {
+test('background log dir falls back to os.tmpdir/<appName>-<pid> when unconfigured', async () => {
   const agent = await createAgent({ apiKey: 'x' });
   const dir = agent._resolveBackgroundLogDir();
-  const expected = path.join(os.tmpdir(), `openrouter-${process.pid}`);
+  const expected = path.join(os.tmpdir(), `agent-sdk-${process.pid}`);
   assert.equal(dir, fs.realpathSync(expected));
   assert.ok(fs.existsSync(dir));
   assert.ok(agent.trustedPaths.has(dir));

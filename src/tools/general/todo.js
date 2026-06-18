@@ -80,7 +80,7 @@ export const input_schema = {
     todo_file: {
       type: 'string',
       description:
-        'Custom todo file path (optional, default: agent-configured path — storagePaths.tmpDir or .openrouter/todos.json).',
+        'Custom todo file path (optional, default: the agent-configured path under storagePaths.tmpDir or the appName storage namespace).',
     },
   },
   required: ['action'],
@@ -94,7 +94,7 @@ export const execute = async (
   const todoPath = todo_file || ctx.agent?._todoFile;
   if (!todoPath) {
     throw new Error(
-      'Todo requires a configured storage path. Provide a "todo_file" or run within an agent (storagePaths.tmpDir or the default .openrouter/todos.json).',
+      'Todo requires a configured storage path. Provide a "todo_file" or run within an agent (storagePaths.tmpDir or the appName-derived default).',
     );
   }
 

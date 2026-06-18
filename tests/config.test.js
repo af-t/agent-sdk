@@ -22,6 +22,7 @@ describe('config', () => {
       'ORDER',
       'ONLY',
       'MODEL',
+      'APP_NAME',
       'EMBEDDING_MODEL',
       'MAX_TURNS',
       'AUTO_WAKE',
@@ -52,7 +53,7 @@ describe('config', () => {
     ]) {
       assert.ok(Object.prototype.hasOwnProperty.call(config, k), `missing key: ${k}`);
     }
-    assert.strictEqual(Object.keys(config).length, 32);
+    assert.strictEqual(Object.keys(config).length, 33);
   });
 
   it('top-level object is frozen', () => {

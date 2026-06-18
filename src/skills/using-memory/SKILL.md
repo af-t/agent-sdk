@@ -43,11 +43,11 @@ LLM sees index on the very first turn → reads relevant files on demand
 
 ### Memory Directory
 
-The memory directory is configured via the `storagePaths.memoryDir` option on the Agent constructor. The path is resolved to an absolute path at construction time, including `~` expansion. Default: **`.openrouter/memory/`** relative to the project root.
+The memory directory is configured via the `storagePaths.memoryDir` option on the Agent constructor. The path is resolved to an absolute path at construction time, including `~` expansion. Default: **`.<appName>/memory/`** (where `appName` defaults to `agent-sdk`) relative to the project root. Do not rely on this literal — the `memoryHint` injector emits the actual resolved path at runtime; use that.
 
 The directory is read from `agent._memoryDir` and is always an absolute path. If the configured directory is outside the project root, it is registered in `agent.trustedPaths` so Read/Write/Edit tools can access it normally — you do not need to do anything special to read or write memory files there.
 
-Subagents always get the default directory (`.openrouter/memory/`). If a subagent needs access to a custom memory dir, pass the path explicitly in the delegate prompt.
+Subagents inherit the parent's appName-derived default memory directory (or the parent's `storagePaths.memoryDir`). If a subagent needs a different memory dir, pass the path explicitly in the delegate prompt.
 
 ---
 
@@ -233,7 +233,7 @@ This section is for understanding the injection machinery — not required for d
 ```
 1. first-turn injectors run (only on turn 1 of a fresh conversation):
    a. memoryIndex  → content of MEMORY.md (or empty)
-   b. memoryHint   → "Memory files are stored at .openrouter/memory/..."
+   b. memoryHint   → "Memory files are stored at <appName>/memory/..."
    c. skillList    → available skills (from SkillRegistry)
 
 2. per-turn injectors run (every turn, including turn 1):
@@ -257,7 +257,7 @@ Subagents (spawned via the Delegate tool) construct their own Agent with default
 - Custom injectors registered via `registerInjector()`
 - Custom `contextFiles` list
 
-They do get the same builtin `memoryIndex`, `memoryHint`, `date`, `skillList`, and `contextFiles` injectors with **default settings** (so they fall back to `.openrouter/memory/`).
+They do get the same builtin `memoryIndex`, `memoryHint`, `date`, `skillList`, and `contextFiles` injectors with **default settings** (so they fall back to the appName-derived memory dir).
 
 ## Resources
 
