@@ -85,6 +85,27 @@ test('forkAt seeds a new independent Agent from the snapshot', async () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('forkAt inherits parent appName', async () => {
+  const Agent = (await import('../../src/core/agent.js')).default;
+  const { dir, file } = writeFixture([
+    { t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' },
+    {
+      t: 'x',
+      type: 'turn_snapshot',
+      turn: 1,
+      messages: [{ role: 'user', content: 'hi' }],
+      usage: { cost: 0, tokens: 0 },
+    },
+  ]);
+
+  const rec = await Recording.load(file);
+  const parent = new Agent({ apiKey: 'sk-test', appName: 'lumen' });
+  const child = parent.forkAt(rec, 1);
+  assert.equal(child.appName, 'lumen');
+  assert.equal(child._memoryDir, path.resolve('.lumen/memory'));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('renderTrace reconstructs the human trace from recorded events', async () => {
   const { dir, file } = writeFixture([
     { t: 'x', type: 'session_start', id: 's1', level: 'events', model: 'm' },

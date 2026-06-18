@@ -476,6 +476,7 @@ class Agent {
       restricted: this.restricted,
       systemPrompt: this.systemPrompt,
       maxTurns: this.maxTurns,
+      appName: this.appName,
     });
     // keep in sync with sampling params in constructor
     const carry = [
