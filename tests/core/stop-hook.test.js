@@ -187,6 +187,28 @@ describe('Agent — stop hooks & empty-turn recovery', () => {
     // The post-tool empty turn gets a fresh retry budget (proves the reset).
     assert.equal(stub.state.calls, 5);
   });
+
+  it('stops issuing recovery retries once the run signal aborts mid-recovery', async () => {
+    const agent = new Agent({ apiKey: 'sk-test', emptyTurnRecovery: { retries: 5 } });
+    const controller = new AbortController();
+    const stub = queue([
+      () => empty(), // initial terminal empty turn -> recovery starts
+      () => {
+        // first retry resolves, but the run is aborted as a side effect
+        controller.abort();
+        return empty();
+      },
+      () => text('should-not-be-reached'), // a further retry must NOT run
+    ]);
+    agent._sendForTest = stub;
+
+    const result = await agent.run('hi', undefined, { signal: controller.signal });
+
+    assert.equal(result, '');
+    assert.equal(stub.state.calls, 2, 'no new retry after the abort is observed');
+    assert.equal(assistants(agent).length, 0, 'empty turn not committed on abort');
+    assert.equal(hasText(agent.messages, NUDGE_NEEDLE), false, 'aborted before any nudge');
+  });
 });
 
 describe('Agent — finish_reason capture (streaming SSE)', () => {

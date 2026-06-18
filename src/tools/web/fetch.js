@@ -178,7 +178,11 @@ function makeLookup(addresses) {
       cb(new Error('Access denied: hostname resolves to private/reserved IP range (SSRF protection)'));
       return;
     }
-    if (wantAll) cb(null, safe.map((a) => ({ address: a.address, family: a.family })));
+    if (wantAll)
+      cb(
+        null,
+        safe.map((a) => ({ address: a.address, family: a.family })),
+      );
     else cb(null, safe[0].address, safe[0].family);
   };
 }

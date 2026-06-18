@@ -4,7 +4,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { ensureSafePath } from '../../core/utils.js';
-import { hashContent } from '../../core/file-state.js';
+import { hashContent, isRangeCovered } from '../../core/file-state.js';
 
 async function diff(file1, file2) {
   const output = [];
@@ -29,6 +29,17 @@ async function diff(file1, file2) {
 function fmtSnippet(text) {
   const s = text.replace(/\n/g, '↵');
   return s.length > 60 ? s.substring(0, 60) + '…' : s;
+}
+
+// Original-file line span an edit acts on, or null if content-anchored.
+function lineSpanOf(edit) {
+  if (edit.action === 'insert') {
+    if (edit.anchor_text !== undefined || edit.line === undefined) return null;
+    return [edit.line, edit.line];
+  }
+  // replace or delete
+  if (edit.old_text || edit.start_line === undefined || edit.end_line === undefined) return null;
+  return [edit.start_line, edit.end_line];
 }
 
 function validateEdit(edit, i) {
@@ -195,6 +206,7 @@ export const execute = async ({ path: filePath, edits }, ctx = {}) => {
   const currentHash = hashContent(rawContent);
 
   const fileState = ctx.agent?.fileState;
+  let priorRanges = null;
   if (fileState) {
     const prev = fileState.get(safePath);
     if (!prev) {
@@ -205,6 +217,7 @@ export const execute = async ({ path: filePath, edits }, ctx = {}) => {
         `File ${filePath} was modified since last read (hash mismatch). Call Read again to refresh context before editing.`,
       );
     }
+    priorRanges = prev.rangesRead;
   }
 
   // Normalize CRLF to LF for matching only; original endings restored on write
@@ -218,6 +231,21 @@ export const execute = async ({ path: filePath, edits }, ctx = {}) => {
     validateEdit(edits[i], i);
 
     const edit = edits[i];
+
+    // Line-based edits may only touch lines the agent has actually read; this
+    // blocks blind edits to unseen regions. old_text/anchor_text edits are
+    // content-anchored and exempt. Line numbers and rangesRead share original-
+    // file coordinates here because the hash guard proved the file is unchanged.
+    if (priorRanges) {
+      const span = lineSpanOf(edit);
+      if (span && !isRangeCovered(priorRanges, span[0], span[1])) {
+        const anchored = edit.action === 'insert' ? 'anchor_text' : 'old_text';
+        throw new Error(
+          `edit[${i}]: lines ${span[0]}-${span[1]} have not been read. Read that range first so it enters context, or use ${anchored} (content-anchored).`,
+        );
+      }
+    }
+
     const origStart = edit.start_line ?? edit.line;
     if (origStart !== undefined) {
       if (origStart <= lastOriginalEndLine) {

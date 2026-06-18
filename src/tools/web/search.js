@@ -156,8 +156,9 @@ export const execute = async (
 ) => {
   if (ctx.signal?.aborted) throw new Error('Request aborted');
 
-  const finalMaxResults = max_results !== undefined ? max_results : (maxResults !== undefined ? maxResults : 5);
-  const finalIncludeAnswer = include_answer !== undefined ? include_answer : (includeAnswer !== undefined ? includeAnswer : false);
+  const finalMaxResults = max_results !== undefined ? max_results : maxResults !== undefined ? maxResults : 5;
+  const finalIncludeAnswer =
+    include_answer !== undefined ? include_answer : includeAnswer !== undefined ? includeAnswer : false;
   const finalIncludeDomains = include_domains !== undefined ? include_domains : includeDomains;
   const finalExcludeDomains = exclude_domains !== undefined ? exclude_domains : excludeDomains;
 

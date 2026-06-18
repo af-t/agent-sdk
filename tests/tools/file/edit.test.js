@@ -550,6 +550,66 @@ describe('Edit — fileState read-before-edit guard', () => {
       await fs.rm(legacyFile, { force: true });
     }
   });
+
+  it('rejects a line-based replace outside the read range (blind-edit guard)', async () => {
+    const raw = await fs.readFile(tmpFile, 'utf8');
+    const state = new Map();
+    state.set(tmpFile, { hash: hashContent(raw), lastReadTurn: 1, rangesRead: [[1, 2]], totalLines: 5 });
+    const ctx = makeCtx(state);
+    await assert.rejects(
+      () => execute({ path: tmpFile, edits: [{ action: 'replace', start_line: 4, end_line: 5, new_text: 'X' }] }, ctx),
+      /lines 4-5 have not been read/,
+    );
+    // an edit rejected by the guard must not touch the file
+    assert.equal(await fs.readFile(tmpFile, 'utf8'), INITIAL);
+  });
+
+  it('allows a line-based replace within the read range', async () => {
+    const raw = await fs.readFile(tmpFile, 'utf8');
+    const state = new Map();
+    state.set(tmpFile, { hash: hashContent(raw), lastReadTurn: 1, rangesRead: [[1, 5]], totalLines: 5 });
+    const ctx = makeCtx(state);
+    const result = await execute(
+      { path: tmpFile, edits: [{ action: 'replace', start_line: 2, end_line: 2, new_text: 'Line two: CHANGED' }] },
+      ctx,
+    );
+    assert.ok(result.includes('updated successfully'));
+  });
+
+  it('exempts old_text edits from the range check (content-anchored)', async () => {
+    const raw = await fs.readFile(tmpFile, 'utf8');
+    const state = new Map();
+    // only line 1 read, but old_text targets line 2 — still allowed
+    state.set(tmpFile, { hash: hashContent(raw), lastReadTurn: 1, rangesRead: [[1, 1]], totalLines: 5 });
+    const ctx = makeCtx(state);
+    const result = await execute(
+      { path: tmpFile, edits: [{ action: 'replace', old_text: 'foo bar', new_text: 'X' }] },
+      ctx,
+    );
+    assert.ok(result.includes('updated successfully'));
+  });
+
+  it('rejects a line-anchored insert on an unread line', async () => {
+    const raw = await fs.readFile(tmpFile, 'utf8');
+    const state = new Map();
+    state.set(tmpFile, { hash: hashContent(raw), lastReadTurn: 1, rangesRead: [[1, 2]], totalLines: 5 });
+    const ctx = makeCtx(state);
+    await assert.rejects(
+      () => execute({ path: tmpFile, edits: [{ action: 'insert', line: 5, position: 'after', text: 'NEW' }] }, ctx),
+      /lines 5-5 have not been read.*anchor_text/s,
+    );
+  });
+
+  it('preserves a partial read range after a successful edit (regression for 6056d27)', async () => {
+    const raw = await fs.readFile(tmpFile, 'utf8');
+    const state = new Map();
+    // a genuinely partial range — it must NOT become [[1, totalLines]] after the edit
+    state.set(tmpFile, { hash: hashContent(raw), lastReadTurn: 1, rangesRead: [[2, 3]], totalLines: 5 });
+    const ctx = makeCtx(state);
+    await execute({ path: tmpFile, edits: [{ action: 'replace', old_text: 'foo bar', new_text: 'FOO' }] }, ctx);
+    const entry = state.get(tmpFile);
+    assert.deepEqual(entry.rangesRead, [[2, 3]]);
+  });
 });
 
 describe('Edit — CRLF line endings', () => {

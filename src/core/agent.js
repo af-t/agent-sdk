@@ -769,10 +769,18 @@ class Agent {
   // never commits an assistant message — the caller decides based on the result.
   // Returns { continue: true, prompt } for a nudge, otherwise
   // { content, reasoning, tool_calls, finish_reason } to adopt.
-  async #resolveStop({ payload, isStreaming, signal: _signal, turn, content, reasoning, finish_reason }) {
+  async #resolveStop({ payload, isStreaming, signal, turn, content, reasoning, finish_reason }) {
     let tool_calls;
     let lastError;
     while (true) {
+      // Abort observed between retries: stop issuing new ones and terminate with
+      // the current message. Mirrors the run loop's between-turns signal check, so
+      // recovery never extends stop latency past a single in-flight REQUEST_TIMEOUT.
+      if (signal?.aborted) {
+        this.#stopAttempts = 0;
+        return { content, reasoning, tool_calls, finish_reason };
+      }
+
       if (this.#stopAttempts > MAX_STOP_RECOVERY) {
         logger.warn(`Agent: stop-recovery ceiling (${MAX_STOP_RECOVERY}) reached; forcing stop.`);
         this.#stopAttempts = 0;
@@ -813,12 +821,10 @@ class Agent {
         finish_reason = retryResponse.choices?.[0]?.finish_reason;
         lastError = null;
       } catch (err) {
+        // A failed raw retry (incl. a hard 4xx like a history-schema 400) leaves
+        // content empty and is surfaced via lastError; the recovery hook keys off
+        // lastError to escalate straight to the nudge on the next iteration.
         lastError = err;
-        if (err?.nonRetryable) {
-          // A hard 400 on a retry attempt (e.g. history schema error) means the
-          // raw-retry path is blocked; jump straight to nudge on next iteration.
-          content = null;
-        }
       }
 
       const recovered = tool_calls && tool_calls.length > 0;
