@@ -10,7 +10,9 @@ import {
   degradePayload,
   resolveDialect,
   buildRequestHeaders,
+  sanitizeAppName,
 } from '../../src/core/utils.js';
+import { ConfigError } from '../../src/core/errors.js';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
@@ -732,5 +734,37 @@ describe('buildRequestHeaders', () => {
     assert.equal(h['Content-Type'], 'application/json');
     assert.equal(h['HTTP-Referer'], undefined);
     assert.equal(h['X-OpenRouter-Title'], undefined);
+  });
+});
+
+describe('sanitizeAppName', () => {
+  it('returns a valid single-segment name unchanged', () => {
+    assert.equal(sanitizeAppName('agent-sdk'), 'agent-sdk');
+    assert.equal(sanitizeAppName('my_app.v2'), 'my_app.v2');
+  });
+
+  it('trims surrounding whitespace', () => {
+    assert.equal(sanitizeAppName('  myapp  '), 'myapp');
+  });
+
+  it('throws ConfigError for non-string input', () => {
+    assert.throws(() => sanitizeAppName(42), ConfigError);
+    assert.throws(() => sanitizeAppName(null), ConfigError);
+  });
+
+  it('throws ConfigError for empty or whitespace-only input', () => {
+    assert.throws(() => sanitizeAppName(''), ConfigError);
+    assert.throws(() => sanitizeAppName('   '), ConfigError);
+  });
+
+  it('throws ConfigError for path separators', () => {
+    assert.throws(() => sanitizeAppName('foo/bar'), ConfigError);
+    assert.throws(() => sanitizeAppName('foo\\bar'), ConfigError);
+  });
+
+  it('throws ConfigError for dot segments and null bytes', () => {
+    assert.throws(() => sanitizeAppName('.'), ConfigError);
+    assert.throws(() => sanitizeAppName('..'), ConfigError);
+    assert.throws(() => sanitizeAppName('a\0b'), ConfigError);
   });
 });

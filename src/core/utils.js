@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import ignore from 'ignore';
 import logger from './logger.js';
+import { ConfigError } from './errors.js';
 
 // Constants
 export const CONSTANTS = Object.freeze({
@@ -16,7 +17,29 @@ export const CONSTANTS = Object.freeze({
   FETCH_MAX_SIZE: 10 * 1024 * 1024, // 10MB — response body limit for WebFetch
   MAX_COMPLETION_TOKENS_SUBAGENT: 32000,
   MAX_TOOL_OUTPUT: 50_000,
+  DEFAULT_APP_NAME: 'agent-sdk',
 });
+
+// Validate appName is one safe path segment
+export function sanitizeAppName(name) {
+  if (typeof name !== 'string') {
+    throw new ConfigError(`appName must be a string (got ${typeof name})`);
+  }
+  const trimmed = name.trim();
+  if (trimmed.length === 0) {
+    throw new ConfigError('appName must not be empty');
+  }
+  if (trimmed.includes('\0')) {
+    throw new ConfigError('appName must not contain null bytes');
+  }
+  if (trimmed === '.' || trimmed === '..') {
+    throw new ConfigError('appName must not be "." or ".."');
+  }
+  if (trimmed.includes('/') || trimmed.includes('\\') || path.basename(trimmed) !== trimmed) {
+    throw new ConfigError('appName must be a single path segment (no path separators)');
+  }
+  return trimmed;
+}
 
 export function truncateOutput(text, maxChars = CONSTANTS.MAX_TOOL_OUTPUT) {
   if (typeof text !== 'string' || text.length <= maxChars) return text;
