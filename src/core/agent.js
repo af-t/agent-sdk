@@ -671,7 +671,7 @@ class Agent {
 
   #normalizeRecordConfig(opts = {}) {
     return {
-      dir: opts.dir ? path.resolve(opts.dir) : path.resolve('.openrouter/sessions'),
+      dir: opts.dir ? path.resolve(opts.dir) : path.resolve(`.${this.appName}/sessions`),
       level: opts.level || 'snapshots',
       redact: typeof opts.redact === 'function' ? opts.redact : undefined,
     };
@@ -1338,7 +1338,7 @@ class Agent {
     if (this._storageTmpDir) {
       dir = this._storageTmpDir;
     } else {
-      dir = path.join(os.tmpdir(), `openrouter-${process.pid}`);
+      dir = path.join(os.tmpdir(), `${this.appName}-${process.pid}`);
     }
     fs.mkdirSync(dir, { recursive: true });
     const real = fs.realpathSync(dir);

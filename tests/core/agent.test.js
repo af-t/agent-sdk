@@ -628,6 +628,27 @@ describe('Agent — storagePaths option', () => {
     assert.throws(() => new Agent({ apiKey: 'sk-test', appName: 'foo/bar' }), /single path segment/);
   });
 
+  it('record dir defaults to appName sessions dir', async () => {
+    const agent = new Agent({ apiKey: 'sk-test', appName: 'lumentest' });
+    const recPath = agent.startRecording();
+    try {
+      assert.ok(recPath.startsWith(path.resolve('.lumentest/sessions')));
+    } finally {
+      await agent.stopRecording();
+      fs.rmSync(path.resolve('.lumentest'), { recursive: true, force: true });
+    }
+  });
+
+  it('background log dir uses appName prefix', () => {
+    const agent = new Agent({ apiKey: 'sk-test', appName: 'lumentest' });
+    const dir = agent._resolveBackgroundLogDir();
+    try {
+      assert.ok(path.basename(dir).startsWith(`lumentest-${process.pid}`));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('trustedPaths contains external memoryDir', () => {
     const externalDir = path.join(os.tmpdir(), 'lumen-memory');
     const agent = new Agent({ apiKey: 'sk-test', storagePaths: { memoryDir: externalDir } });

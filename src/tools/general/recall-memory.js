@@ -17,7 +17,7 @@ export const input_schema = {
 
 export const execute = async ({ query, limit }, ctx = {}) => {
   const agent = ctx.agent || {};
-  const memoryDir = agent._memoryDir || '.openrouter/memory';
+  const memoryDir = agent._memoryDir || `.${agent.appName || 'agent-sdk'}/memory`;
 
   let n = Number.isFinite(limit) ? Math.floor(limit) : 5;
   if (n < 1) n = 1;
