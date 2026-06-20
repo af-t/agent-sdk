@@ -481,7 +481,7 @@ class Agent {
     if (!snap) {
       throw new Error(`No snapshot at turn ${turn} (record at level 'snapshots' or 'full' to enable forking)`);
     }
-    // storagePaths/trustedPaths intentionally not forwarded
+    // forward read-only pluginsDir only
     // the fork does not inherit recording
     const child = new Agent({
       apiKey: this.#apiKey,
@@ -492,6 +492,7 @@ class Agent {
       systemPrompt: this.systemPrompt,
       maxTurns: this.maxTurns,
       appName: this.appName,
+      storagePaths: { pluginsDir: this._pluginsDir },
     });
     // keep in sync with sampling params in constructor
     const carry = [

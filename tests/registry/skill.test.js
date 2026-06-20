@@ -76,6 +76,20 @@ describe('SkillRegistry (default singleton)', () => {
     assert.equal(singleton.list(), '');
   });
 
+  it('reset() lets the next _ensureDiscovered re-discover', async () => {
+    const singleton = skillModule.default;
+    singleton.configure({ pluginsDir: null });
+    singleton.reset();
+    await singleton._ensureDiscovered();
+    const countAfterFirst = singleton.skills.size;
+    assert.ok(countAfterFirst > 0, 'builtin skills should be discovered');
+    singleton.reset();
+    assert.equal(singleton.skills.size, 0);
+    await singleton._ensureDiscovered();
+    assert.equal(singleton.skills.size, countAfterFirst);
+    singleton.reset();
+  });
+
   it('refresh calls discover and does not throw', async () => {
     const singleton = skillModule.default;
     singleton.reset();

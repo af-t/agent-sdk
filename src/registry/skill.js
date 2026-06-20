@@ -231,5 +231,6 @@ export default {
   },
   reset() {
     registry.reset();
+    _discoveryPromise = null;
   },
 };
