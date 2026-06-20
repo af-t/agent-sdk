@@ -40,8 +40,8 @@ describe('Skill tool module', () => {
 describe('Skill tool — execute()', () => {
   let mod;
   let registry;
-  const testSkillDir = path.join(os.tmpdir(), 'test-skills-' + Date.now());
-  const skillFilePath = path.join(testSkillDir, 'my-custom-skill', 'SKILL.md');
+  const pluginsDir = path.join(os.tmpdir(), 'test-plugins-' + Date.now());
+  const skillFilePath = path.join(pluginsDir, 'test-plugin', 'skills', 'my-custom-skill', 'SKILL.md');
 
   before(async () => {
     // Reset and configure registry to find our test skill
@@ -69,13 +69,14 @@ describe('Skill tool — execute()', () => {
       'utf8',
     );
 
-    registry.configure({ extraSearchDirs: [testSkillDir] });
+    registry.configure({ pluginsDir });
     await registry.refresh();
   });
 
   after(async () => {
+    registry.configure({ pluginsDir: null });
     registry.reset();
-    await fs.rm(testSkillDir, { recursive: true, force: true });
+    await fs.rm(pluginsDir, { recursive: true, force: true });
   });
 
   it('execute("list") returns formatted list of skills', async () => {
