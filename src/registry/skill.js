@@ -2,7 +2,6 @@ import logger from '../core/logger.js';
 import fs from 'node:fs/promises';
 import { getDirname } from '../core/utils.js';
 import path from 'node:path';
-import os from 'node:os';
 
 const __dirname = getDirname(import.meta);
 
@@ -33,9 +32,9 @@ export class SkillRegistry {
 
   constructor(options = {}) {
     this.skills = new Map();
+    this.pluginInstructions = [];
     this.loaded = false;
-    this.scanAgentDirs = options.scanAgentDirs !== undefined ? options.scanAgentDirs : true;
-    this.extraSearchDirs = options.extraSearchDirs || [];
+    this.pluginsDir = options.pluginsDir || null;
   }
 
   async discover() {
@@ -43,31 +42,54 @@ export class SkillRegistry {
     this.loaded = true;
     this.#forceRefresh = false;
     this.skills.clear();
+    this.pluginInstructions = [];
 
-    const searchPaths = [{ dir: path.join(__dirname, '..', 'skills'), scope: 'builtin' }];
+    // Builtin skills are the only internal source
+    await this.#discover(path.join(__dirname, '..', 'skills'), 'builtin');
 
-    // Default directories for common AI tool config folders (configurable)
-    if (this.scanAgentDirs) {
-      const defaultAgentDirs = ['claude', 'hermes', 'gemini', 'kilo', 'pi'];
-      for (const x of defaultAgentDirs) {
-        searchPaths.push({ dir: path.join(process.cwd(), `.${x}`, 'skills'), scope: 'project' });
-        searchPaths.push({ dir: path.join(os.homedir(), `.${x}`, 'skills'), scope: 'user' });
-      }
+    // Plugins are the only external source
+    if (this.pluginsDir) {
+      await this.#discoverPlugins(this.pluginsDir);
     }
 
-    // Extra user-configured search directories
-    for (const extraDir of this.extraSearchDirs) {
-      searchPaths.push({ dir: extraDir, scope: 'extra' });
-    }
-
-    for (const { dir, scope } of searchPaths) {
-      await this.#discover(dir, scope);
-    }
-
-    logger.debug(`SkillRegistry: discovered ${this.skills.size} skills`);
+    logger.debug(
+      `SkillRegistry: discovered ${this.skills.size} skills, ${this.pluginInstructions.length} plugin instructions`,
+    );
   }
 
-  async #discover(dir, scope) {
+  async #discoverPlugins(root) {
+    let entries;
+    try {
+      entries = await fs.readdir(root, { withFileTypes: true });
+    } catch {
+      // plugins root missing — skip
+      return;
+    }
+
+    const pluginNames = entries
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
+
+    for (const name of pluginNames) {
+      const pluginDir = path.join(root, name);
+      await this.#discover(path.join(pluginDir, 'skills'), 'plugin', name);
+      await this.#readPluginInstructions(pluginDir, name);
+    }
+  }
+
+  async #readPluginInstructions(pluginDir, name) {
+    try {
+      const content = await fs.readFile(path.join(pluginDir, 'AGENTS.md'), 'utf8');
+      if (content.trim()) {
+        this.pluginInstructions.push({ plugin: name, content: content.trim() });
+      }
+    } catch {
+      // no AGENTS.md — skip
+    }
+  }
+
+  async #discover(dir, scope, plugin) {
     try {
       await fs.access(dir);
     } catch {
@@ -89,6 +111,7 @@ export class SkillRegistry {
 
         this.skills.set(name, {
           ...metadata,
+          ...(plugin ? { plugin } : {}),
           path: path.relative(process.cwd(), fullPath),
           parent: path.relative(process.cwd(), entry.parentPath),
           scope,
@@ -101,6 +124,10 @@ export class SkillRegistry {
         logger.error(`SkillRegistry: failed to load from ${entry.parentPath}:`, err.message);
       }
     }
+  }
+
+  getPluginInstructions() {
+    return [...this.pluginInstructions];
   }
 
   list() {
@@ -156,6 +183,7 @@ export class SkillRegistry {
 
   reset() {
     this.skills.clear();
+    this.pluginInstructions = [];
     this.loaded = false;
     this.#forceRefresh = false;
   }
@@ -167,11 +195,11 @@ let _discoveryPromise = null;
 
 export default {
   configure(options = {}) {
-    if (options.extraSearchDirs) {
-      registry.extraSearchDirs = options.extraSearchDirs;
-    }
-    if (options.scanAgentDirs !== undefined) {
-      registry.scanAgentDirs = options.scanAgentDirs;
+    if (options.pluginsDir !== undefined && (options.pluginsDir || null) !== registry.pluginsDir) {
+      registry.pluginsDir = options.pluginsDir || null;
+      registry.reset();
+      // invalidate cached discovery so the next _ensureDiscovered re-scans
+      _discoveryPromise = null;
     }
   },
   async _ensureDiscovered() {
@@ -179,6 +207,9 @@ export default {
       _discoveryPromise = registry.discover();
     }
     await _discoveryPromise;
+  },
+  getPluginInstructions() {
+    return registry.getPluginInstructions();
   },
   get skills() {
     return registry.skills;

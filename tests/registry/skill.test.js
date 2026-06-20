@@ -21,6 +21,7 @@ describe('SkillRegistry (default singleton)', () => {
     assert.equal(typeof singleton.refresh, 'function');
     assert.equal(typeof singleton.reset, 'function');
     assert.equal(typeof singleton._ensureDiscovered, 'function');
+    assert.equal(typeof singleton.getPluginInstructions, 'function');
   });
 
   it('has skills Map and loaded flag', () => {
@@ -36,21 +37,22 @@ describe('SkillRegistry (default singleton)', () => {
     assert.equal(singleton.skills.size, 0);
   });
 
-  it('configure sets extraSearchDirs without throwing', () => {
+  it('getPluginInstructions returns an empty array before discovery', () => {
     const singleton = skillModule.default;
-    singleton.configure({ extraSearchDirs: [path.join(os.tmpdir(), 'my-skills')] });
-    assert.ok(true);
+    singleton.reset();
+    assert.deepEqual(singleton.getPluginInstructions(), []);
   });
 
-  it('configure accepts scanAgentDirs: false', () => {
+  it('configure sets pluginsDir without throwing', () => {
     const singleton = skillModule.default;
-    singleton.configure({ scanAgentDirs: false });
+    singleton.configure({ pluginsDir: path.join(os.tmpdir(), 'my-plugins') });
     assert.ok(true);
+    singleton.configure({ pluginsDir: null });
   });
 
-  it('configure accepts scanAgentDirs: true', () => {
+  it('configure with no pluginsDir key is a no-op', () => {
     const singleton = skillModule.default;
-    singleton.configure({ scanAgentDirs: true });
+    singleton.configure({});
     assert.ok(true);
   });
 
@@ -77,107 +79,109 @@ describe('SkillRegistry (default singleton)', () => {
   it('refresh calls discover and does not throw', async () => {
     const singleton = skillModule.default;
     singleton.reset();
-    // refresh should not throw even with no skills dirs
     await singleton.refresh();
     assert.ok(true);
   });
 });
 
-describe('SkillRegistry — discovery with real SKILL.md files', () => {
+describe('SkillRegistry — plugin discovery', () => {
   let registry;
-  let tmpdir;
+  let pluginsDir;
 
   before(async () => {
     const mod = await import('../../src/registry/skill.js');
     registry = mod.default;
-    tmpdir = await fs.mkdtemp(path.join(os.tmpdir(), 'skill-reg-test-'));
+    pluginsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'plugins-test-'));
 
-    await fs.mkdir(path.join(tmpdir, 'alpha-skill'), { recursive: true });
+    // Plugin with both AGENTS.md and a skill
+    await fs.mkdir(path.join(pluginsDir, 'alpha', 'skills', 'do-alpha'), { recursive: true });
     await fs.writeFile(
-      path.join(tmpdir, 'alpha-skill', 'SKILL.md'),
-      [
-        '---',
-        'name: AlphaSkill',
-        'description: A skill about alpha things',
-        '---',
-        '',
-        'Alpha skill body content here.',
-      ].join('\n'),
+      path.join(pluginsDir, 'alpha', 'AGENTS.md'),
+      'Use alpha skills when the task is about alpha things.',
+      'utf8',
+    );
+    await fs.writeFile(
+      path.join(pluginsDir, 'alpha', 'skills', 'do-alpha', 'SKILL.md'),
+      ['---', 'name: AlphaSkill', 'description: A skill about alpha things', '---', '', 'Alpha body.'].join('\n'),
       'utf8',
     );
 
-    await fs.mkdir(path.join(tmpdir, 'beta-skill'), { recursive: true });
+    // Plugin with skills only (no AGENTS.md)
+    await fs.mkdir(path.join(pluginsDir, 'beta', 'skills', 'do-beta'), { recursive: true });
     await fs.writeFile(
-      path.join(tmpdir, 'beta-skill', 'SKILL.md'),
-      [
-        '---',
-        'name: BetaSkill',
-        'description: A skill about beta things',
-        '---',
-        '',
-        'Beta skill body content here.',
-      ].join('\n'),
+      path.join(pluginsDir, 'beta', 'skills', 'do-beta', 'SKILL.md'),
+      ['---', 'name: BetaSkill', 'description: A skill about beta things', '---', '', 'Beta body.'].join('\n'),
       'utf8',
     );
+
+    // Plugin with AGENTS.md only (no skills folder)
+    await fs.mkdir(path.join(pluginsDir, 'gamma'), { recursive: true });
+    await fs.writeFile(path.join(pluginsDir, 'gamma', 'AGENTS.md'), 'Gamma guidance text.', 'utf8');
 
     registry.reset();
-    registry.configure({ extraSearchDirs: [tmpdir], scanAgentDirs: false });
+    registry.configure({ pluginsDir });
     await registry.refresh();
   });
 
   after(async () => {
-    registry.configure({ extraSearchDirs: [], scanAgentDirs: true });
+    registry.configure({ pluginsDir: null });
     registry.reset();
-    await fs.rm(tmpdir, { recursive: true, force: true });
+    await fs.rm(pluginsDir, { recursive: true, force: true });
   });
 
-  it('list() returns string including both skill names', () => {
-    const result = registry.list();
-    assert.strictEqual(typeof result, 'string');
-    assert.ok(result.includes('AlphaSkill'));
-    assert.ok(result.includes('BetaSkill'));
-  });
-
-  it('get("AlphaSkill") returns a non-null object', () => {
-    const skill = registry.get('AlphaSkill');
-    assert.ok(skill !== null);
-    assert.strictEqual(typeof skill, 'object');
-  });
-
-  it('AlphaSkill description is correctly parsed from frontmatter', () => {
-    const skill = registry.get('AlphaSkill');
-    assert.ok(skill.description.toLowerCase().includes('alpha'));
-  });
-
-  it('get("NonExistentXYZ") returns null', () => {
-    assert.strictEqual(registry.get('NonExistentXYZ'), null);
-  });
-
-  it('search("alpha") returns array with AlphaSkill', () => {
-    const results = registry.search('alpha');
-    assert.ok(Array.isArray(results));
-    assert.ok(results.some((r) => r.name === 'AlphaSkill'));
-  });
-
-  it('search("zyxnonexistent999") returns empty array', () => {
-    const results = registry.search('zyxnonexistent999');
-    assert.ok(Array.isArray(results));
-    assert.strictEqual(results.length, 0);
-  });
-
-  it('BetaSkill description is correctly parsed from frontmatter', () => {
-    const skill = registry.get('BetaSkill');
-    assert.ok(skill !== null);
-    assert.ok(skill.description.toLowerCase().includes('beta'));
-  });
-
-  it('skill body is accessible via .content property', () => {
+  it('loads skills from plugin skills/ folders with scope "plugin"', () => {
     const alpha = registry.get('AlphaSkill');
-    assert.strictEqual(typeof alpha.content, 'string');
-    assert.ok(alpha.content.includes('Alpha skill body content here'));
-
     const beta = registry.get('BetaSkill');
-    assert.strictEqual(typeof beta.content, 'string');
-    assert.ok(beta.content.includes('Beta skill body content here'));
+    assert.ok(alpha, 'AlphaSkill should be discovered');
+    assert.ok(beta, 'BetaSkill should be discovered');
+    assert.equal(alpha.scope, 'plugin');
+    assert.equal(beta.scope, 'plugin');
+  });
+
+  it('tags plugin skills with their plugin name', () => {
+    assert.equal(registry.get('AlphaSkill').plugin, 'alpha');
+    assert.equal(registry.get('BetaSkill').plugin, 'beta');
+  });
+
+  it('skill body is accessible via .content', () => {
+    assert.ok(registry.get('AlphaSkill').content.includes('Alpha body'));
+  });
+
+  it('getPluginInstructions returns AGENTS.md entries for plugins that have them', () => {
+    const instructions = registry.getPluginInstructions();
+    const plugins = instructions.map((i) => i.plugin);
+    assert.ok(plugins.includes('alpha'), 'alpha has AGENTS.md');
+    assert.ok(plugins.includes('gamma'), 'gamma has AGENTS.md');
+    assert.ok(!plugins.includes('beta'), 'beta has no AGENTS.md');
+  });
+
+  it('getPluginInstructions entries carry the AGENTS.md content', () => {
+    const alpha = registry.getPluginInstructions().find((i) => i.plugin === 'alpha');
+    assert.ok(alpha.content.includes('Use alpha skills when'));
+  });
+
+  it('getPluginInstructions is ordered by plugin name', () => {
+    const order = registry.getPluginInstructions().map((i) => i.plugin);
+    assert.deepEqual(order, [...order].sort());
+  });
+});
+
+describe('SkillRegistry — missing plugins root', () => {
+  let registry;
+
+  before(async () => {
+    registry = (await import('../../src/registry/skill.js')).default;
+    registry.reset();
+    registry.configure({ pluginsDir: path.join(os.tmpdir(), 'does-not-exist-' + Date.now()) });
+    await registry.refresh();
+  });
+
+  after(() => {
+    registry.configure({ pluginsDir: null });
+    registry.reset();
+  });
+
+  it('does not throw and yields no plugin instructions', () => {
+    assert.deepEqual(registry.getPluginInstructions(), []);
   });
 });
