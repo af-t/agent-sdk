@@ -214,7 +214,7 @@ external events. Each event runs through a programmatic handler you write; the
 handler returns an action that the daemon actuates against the Agent.
 
 ```js
-import createAgent, { createDaemon, createTimerSource } from '@af-t/openrouter-agent-sdk';
+import createAgent, { createDaemon, createTimerSource } from '@af-t/agent-sdk';
 
 const agent = await createAgent();
 
@@ -245,7 +245,7 @@ return `null`. A source is any `{ start(emit), stop() }`; `createTimerSource` is
 `createFileWatchSource(options)` is a zero-dependency daemon source that emits filesystem-change events. It implements the same `{ start(emit), stop() }` interface as `createTimerSource`.
 
 ```js
-import createAgent, { createDaemon, createFileWatchSource } from '@af-t/openrouter-agent-sdk';
+import createAgent, { createDaemon, createFileWatchSource } from '@af-t/agent-sdk';
 
 const daemon = createDaemon({
   agent: await createAgent(),
@@ -277,7 +277,7 @@ Note: in `usePolling` mode, directories are expanded to the files present at `st
 `createHttpSource(options)` is a zero-dependency daemon source that turns inbound HTTP requests into events. It owns a `node:http` server and implements the same `{ start(emit), stop() }` interface as `createTimerSource` and `createFileWatchSource` (plus `address()` for the bound port).
 
 ```js
-import createAgent, { createDaemon, createHttpSource } from '@af-t/openrouter-agent-sdk';
+import createAgent, { createDaemon, createHttpSource } from '@af-t/agent-sdk';
 
 const daemon = createDaemon({
   agent: await createAgent(),
@@ -574,8 +574,11 @@ const agent = await createAgent({
 });
 ```
 
-- `memoryDir` — directory for persistent memory files (`MEMORY.md` + individual memory files). Default: `.openrouter/memory` in the project root.
-- `tmpDir` — directory for temporary files. When set, the todo file is created as `todos-XXXXX.json` inside this directory with a random 5-character suffix per agent instance. Default: `.openrouter/todos.json` in the project root.
+- `memoryDir` — directory for persistent memory files (`MEMORY.md` + individual memory files). Default: `.agent-sdk/memory` in the project root (derived from `appName`).
+- `tmpDir` — directory for temporary files. When set, the todo file is created as `todos-XXXXX.json` inside this directory with a random 5-character suffix per agent instance. Default: `.agent-sdk/todos.json` in the project root (derived from `appName`).
+- `pluginsDir` — directory scanned for plugins (each contributing an optional `skills/` folder and `AGENTS.md`). Default: `.agent-sdk/plugins` in the project root (derived from `appName`).
+
+The `.agent-sdk` namespace comes from the `appName` constructor option (default `agent-sdk`, env `AGENT_SDK_APP_NAME`). Set `appName` to rename every default storage directory at once (`.<appName>/memory`, `.<appName>/todos.json`, `.<appName>/plugins`, and the `<appName>-<pid>` background-log dir in the OS temp dir).
 
 Paths support `~` expansion. Both accept paths inside or outside the project root.
 
@@ -608,7 +611,7 @@ try {
 ### File Layout
 
 ```
-<cwd>/.openrouter/memory/
+<cwd>/.agent-sdk/memory/
 ├── MEMORY.md                       # Index — one line per memory
 ├── feedback-prefers-pnpm.md        # Individual memory file
 ├── project-deadline-q3.md

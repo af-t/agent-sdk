@@ -23,7 +23,7 @@ test('Delegate-spawned subagent inherits parent.restricted', async () => {
 
 test('Delegate-spawned subagent shares parent storagePaths.tmpDir', async () => {
   mock.method(Agent.prototype, 'run', async () => 'r');
-  const tmpDir = path.join(os.tmpdir(), 'openrouter-parent-test');
+  const tmpDir = path.join(os.tmpdir(), 'agent-sdk-parent-test');
   const parent = await createAgent({
     apiKey: 'x',
     storagePaths: { tmpDir },

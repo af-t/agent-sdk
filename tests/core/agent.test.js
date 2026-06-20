@@ -662,7 +662,7 @@ describe('Agent — storagePaths option', () => {
   });
 
   it('trustedPaths is empty when all paths are within project root', () => {
-    const agent = new Agent({ apiKey: 'sk-test', storagePaths: { memoryDir: '.openrouter/memory' } });
+    const agent = new Agent({ apiKey: 'sk-test', storagePaths: { memoryDir: '.agent-sdk/memory' } });
     assert.strictEqual(agent.trustedPaths.size, 0);
   });
 });

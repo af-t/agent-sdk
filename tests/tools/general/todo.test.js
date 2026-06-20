@@ -504,7 +504,7 @@ describe('Todo Tool', () => {
     const os_ = await import('node:os');
     const path_ = await import('node:path');
     const base = await fsP.mkdtemp(path_.join(os_.tmpdir(), 'todo-mkdir-'));
-    const nestedFile = path_.join(base, '.openrouter', 'todos.json');
+    const nestedFile = path_.join(base, '.agent-sdk', 'todos.json');
 
     const mod = await import('../../../src/tools/general/todo.js');
     const ctx = { agent: { _todoFile: nestedFile, trustedPaths: new Set([base]) } };
