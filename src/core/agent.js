@@ -327,17 +327,22 @@ class Agent {
     this.appName = sanitizeAppName(appName ?? config.APP_NAME ?? CONSTANTS.DEFAULT_APP_NAME);
     const resolvedMemoryDir = resolveStoragePath(storagePaths?.memoryDir) || path.resolve(`.${this.appName}/memory`);
     const resolvedTmpDir = resolveStoragePath(storagePaths?.tmpDir) || null;
+    const resolvedPluginsDir = resolveStoragePath(storagePaths?.pluginsDir) || path.resolve(`.${this.appName}/plugins`);
 
     this._memoryDir = resolvedMemoryDir;
     this._storageTmpDir = resolvedTmpDir;
+    this._pluginsDir = resolvedPluginsDir;
     this._storagePaths = options.storagePaths ?? null;
     this._todoFile = resolvedTmpDir
       ? path.join(resolvedTmpDir, `todos-${Math.random().toString(36).slice(2, 7)}.json`)
       : path.resolve(`.${this.appName}/todos.json`);
 
+    // plugins feed skills and injector
+    skillRegistry.configure({ pluginsDir: this._pluginsDir });
+
     const _projectRoot = path.resolve(process.cwd());
     this.trustedPaths = new Set();
-    for (const dir of [resolvedMemoryDir, resolvedTmpDir].filter(Boolean)) {
+    for (const dir of [resolvedMemoryDir, resolvedTmpDir, resolvedPluginsDir].filter(Boolean)) {
       const rel = path.relative(_projectRoot, dir);
       if (rel.startsWith('..') || path.isAbsolute(rel)) this.trustedPaths.add(dir);
     }
@@ -374,6 +379,9 @@ class Agent {
 
     if (injectors?.skillList !== false) {
       this.registerInjector({ name: 'skillList', scope: 'first-turn', fn: skillListInjector });
+    }
+    if (injectors?.pluginInstructions !== false) {
+      this.registerInjector({ name: 'pluginInstructions', scope: 'first-turn', fn: pluginInstructionsInjector });
     }
   }
 
@@ -417,7 +425,14 @@ class Agent {
       model: recording.model,
       tools,
       maxTurns: 0,
-      injectors: { date: false, contextFiles: false, memoryIndex: false, memoryHint: false, skillList: false },
+      injectors: {
+        date: false,
+        contextFiles: false,
+        memoryIndex: false,
+        memoryHint: false,
+        skillList: false,
+        pluginInstructions: false,
+      },
     });
 
     // return the recorded response for the turn the loop is on
@@ -1900,6 +1915,19 @@ async function skillListInjector() {
     'Do not invent alternative approaches or formats when a skill provides authoritative guidance ' +
     'for the task at hand. Skill bodies are the source of truth for their respective domains.'
   );
+}
+
+async function pluginInstructionsInjector() {
+  try {
+    await skillRegistry._ensureDiscovered();
+  } catch (err) {
+    logger.warn(`Skill discovery failed: ${err?.message || err}`);
+    return '';
+  }
+  const instructions = skillRegistry.getPluginInstructions();
+  if (!instructions || instructions.length === 0) return '';
+  const sections = instructions.map(({ plugin, content }) => `### ${plugin}\n${content}`);
+  return `## Plugin instructions\n\n${sections.join('\n\n')}`;
 }
 
 export default Agent;

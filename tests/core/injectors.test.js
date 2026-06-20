@@ -2,6 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 
 function makeJsonResponse(body) {
   const text = JSON.stringify(body);
@@ -696,6 +697,94 @@ describe('Agent — skillList first-turn injector', () => {
         const desc = line.split(' — ')[1];
         assert.ok(desc.length <= 120, `description for '${line}' is too long: ${desc.length} chars`);
       }
+    }
+  });
+});
+
+describe('Agent — pluginInstructions first-turn injector', () => {
+  let Agent;
+  let skillRegistry;
+  let originalFetch;
+  let pluginsDir;
+
+  before(async () => {
+    Agent = (await import('../../src/core/agent.js')).default;
+    skillRegistry = (await import('../../src/registry/skill.js')).default;
+    originalFetch = global.fetch;
+
+    pluginsDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'agent-plugins-test-'));
+    await fs.promises.mkdir(path.join(pluginsDir, 'alpha'), { recursive: true });
+    await fs.promises.writeFile(
+      path.join(pluginsDir, 'alpha', 'AGENTS.md'),
+      'Use alpha skills when the task is about alpha things.',
+      'utf8',
+    );
+  });
+
+  after(async () => {
+    global.fetch = originalFetch;
+    skillRegistry.configure({ pluginsDir: null });
+    skillRegistry.reset();
+    await fs.promises.rm(pluginsDir, { recursive: true, force: true });
+  });
+
+  it('injects plugin AGENTS.md into the first-turn reminder', async () => {
+    const fetchStub = captureFetch();
+    global.fetch = fetchStub;
+
+    const agent = new Agent({
+      apiKey: 'sk-test',
+      injectors: { date: false, contextFiles: false, memoryIndex: false, memoryHint: false, skillList: false },
+      storagePaths: { pluginsDir },
+    });
+    await agent.run('hi');
+
+    const part = findReminderPart(fetchStub.captured[0]);
+    assert.ok(part, 'expected a reminder block');
+    assert.match(part.text, /## Plugin instructions/);
+    assert.match(part.text, /### alpha/);
+    assert.match(part.text, /Use alpha skills when/);
+  });
+
+  it('opt-out via injectors.pluginInstructions = false omits the section', async () => {
+    const fetchStub = captureFetch();
+    global.fetch = fetchStub;
+
+    const agent = new Agent({
+      apiKey: 'sk-test',
+      injectors: {
+        date: false,
+        contextFiles: false,
+        memoryIndex: false,
+        memoryHint: false,
+        skillList: false,
+        pluginInstructions: false,
+      },
+      storagePaths: { pluginsDir },
+    });
+    await agent.run('hi');
+
+    const part = findReminderPart(fetchStub.captured[0]);
+    if (part) assert.doesNotMatch(part.text, /## Plugin instructions/);
+  });
+
+  it('no plugin AGENTS.md yields no plugin section', async () => {
+    const emptyDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'agent-plugins-empty-'));
+    try {
+      const fetchStub = captureFetch();
+      global.fetch = fetchStub;
+
+      const agent = new Agent({
+        apiKey: 'sk-test',
+        injectors: { date: false, contextFiles: false, memoryIndex: false, memoryHint: false, skillList: false },
+        storagePaths: { pluginsDir: emptyDir },
+      });
+      await agent.run('hi');
+
+      const part = findReminderPart(fetchStub.captured[0]);
+      if (part) assert.doesNotMatch(part.text, /## Plugin instructions/);
+    } finally {
+      await fs.promises.rm(emptyDir, { recursive: true, force: true });
     }
   });
 });
