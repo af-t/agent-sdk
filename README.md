@@ -513,7 +513,7 @@ The combined output of both scopes is joined with `\n\n`, wrapped in a single `<
 | Name           | Scope      | What it injects                                                                         |
 | -------------- | ---------- | --------------------------------------------------------------------------------------- |
 | `date`         | per-turn   | `Current date: YYYY-MM-DD HH:MM UTC`                                                    |
-| `contextFiles` | first-turn | Concatenated contents of files listed in `contextFiles` option (defaults to `AGENT.md`) |
+| `contextFiles` | first-turn | Concatenated contents of files listed in `contextFiles` option (defaults to `AGENTS.md`) |
 | `memoryIndex`  | first-turn | Contents of `<memoryDir>/MEMORY.md`, if present                                         |
 | `memoryHint`   | first-turn | Brief description of the memory directory and the available memory types                |
 | `skillList`    | first-turn | Name + truncated description of every discovered skill                                  |
@@ -753,7 +753,7 @@ Factory function to create an Agent instance.
 | `maxToolOutputChars`                                       | number   | Cap (in chars) for tool output before truncation. Default `50_000`.                                                                                                                                                       |
 | `restricted`                                               | boolean  | Security mode. Default `true`. Set `false` to lift path-boundary checks, env filtering, and shell command blocks (logs a warning).                                                                                        |
 | `storagePaths`                                             | object   | `{ memoryDir?, tmpDir? }`. Paths support `~` expansion. External dirs are auto-added to `trustedPaths`.                                                                                                                   |
-| `contextFiles`                                             | string[] | Files to inject on the first turn. Default `['AGENT.md']`. Missing files are skipped.                                                                                                                                     |
+| `contextFiles`                                             | string[] | Files to inject on the first turn. Default `['AGENTS.md']`. Missing files are skipped.                                                                                                                                     |
 | `memoryTypes`                                              | object   | Custom memory type descriptions; merged over the four built-in types.                                                                                                                                                     |
 | `injectors`                                                | object   | Disable built-in injectors by name, e.g. `{ date: false, skillList: false }`.                                                                                                                                             |
 

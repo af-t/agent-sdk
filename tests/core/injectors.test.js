@@ -506,14 +506,14 @@ describe('Agent — contextFiles first-turn injector', () => {
     global.fetch = originalFetch;
   });
 
-  it('AGENT.md loaded when present', async () => {
+  it('AGENTS.md loaded when present', async () => {
     const fetchStub = captureFetch();
     global.fetch = fetchStub;
 
     const agent = new Agent({
       apiKey: 'sk-test',
       injectors: { date: false },
-      contextFiles: [path.join(fixtureDir, 'AGENT.md')],
+      contextFiles: [path.join(fixtureDir, 'AGENTS.md')],
     });
     await agent.run('hi');
 
@@ -544,13 +544,13 @@ describe('Agent — contextFiles first-turn injector', () => {
     const agent = new Agent({
       apiKey: 'sk-test',
       injectors: { date: false },
-      contextFiles: [path.join(fixtureDir, 'AGENT.md'), path.join(fixtureDir, 'PROJECT.md')],
+      contextFiles: [path.join(fixtureDir, 'AGENTS.md'), path.join(fixtureDir, 'PROJECT.md')],
     });
     await agent.run('hi');
 
     const part = findReminderPart(fetchStub.captured[0]);
     assert.ok(part, 'expected a <system-reminder> block with multiple file content');
-    assert.match(part.text, /## AGENT\.md/);
+    assert.match(part.text, /## AGENTS\.md/);
     assert.match(part.text, /## PROJECT\.md/);
     assert.match(part.text, /This is a test agent context file/);
     assert.match(part.text, /Some project notes here/);
@@ -578,7 +578,7 @@ describe('Agent — contextFiles first-turn injector', () => {
     const agent = new Agent({
       apiKey: 'sk-test',
       injectors: { date: false, contextFiles: false, memoryIndex: false, memoryHint: false, skillList: false },
-      contextFiles: [path.join(fixtureDir, 'AGENT.md')],
+      contextFiles: [path.join(fixtureDir, 'AGENTS.md')],
     });
     await agent.run('hi');
 
@@ -586,16 +586,16 @@ describe('Agent — contextFiles first-turn injector', () => {
     assert.equal(part, null, 'expected no reminder block when contextFiles injector is disabled');
   });
 
-  it('default contextFiles is [AGENT.md] when no option provided', async () => {
+  it('default contextFiles is [AGENTS.md] when no option provided', async () => {
     const fetchStub = captureFetch();
     global.fetch = fetchStub;
 
-    // Create a temp project dir with AGENT.md at cwd
+    // Create a temp project dir with AGENTS.md at cwd
     const tmpDir = path.join(fixtureDir, 'tmp-test-project');
     const origCwd = process.cwd();
     try {
       fs.mkdirSync(tmpDir, { recursive: true });
-      fs.writeFileSync(path.join(tmpDir, 'AGENT.md'), '# Default Agent\nDefault context.');
+      fs.writeFileSync(path.join(tmpDir, 'AGENTS.md'), '# Default Agent\nDefault context.');
       process.chdir(tmpDir);
 
       const agent = new Agent({
@@ -605,7 +605,7 @@ describe('Agent — contextFiles first-turn injector', () => {
       await agent.run('hi');
 
       const part = findReminderPart(fetchStub.captured[0]);
-      assert.ok(part, 'expected a <system-reminder> block from default AGENT.md');
+      assert.ok(part, 'expected a <system-reminder> block from default AGENTS.md');
       assert.match(part.text, /Default context/);
     } finally {
       process.chdir(origCwd);

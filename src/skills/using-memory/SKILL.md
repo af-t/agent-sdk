@@ -73,7 +73,7 @@ Save a memory when you encounter something you'd want to know in a future conver
 
 - Information derivable from code or git (`package.json`, git log, file structure).
 - Temporary runtime state (running processes, current time).
-- Obvious project conventions already in CLAUDE.md or AGENT.md.
+- Obvious project conventions already in CLAUDE.md or AGENTS.md.
 - Large documents or logs — link to them instead.
 - Secrets, tokens, or passwords.
 

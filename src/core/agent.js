@@ -316,7 +316,7 @@ class Agent {
     }
 
     if (injectors?.contextFiles !== false) {
-      const files = Array.isArray(contextFiles) && contextFiles.length > 0 ? contextFiles : ['AGENT.md'];
+      const files = Array.isArray(contextFiles) && contextFiles.length > 0 ? contextFiles : ['AGENTS.md'];
       this.registerInjector({
         name: 'contextFiles',
         scope: 'first-turn',
