@@ -41,6 +41,11 @@ describe('reasoning — streaming accumulation', () => {
     assert.deepStrictEqual(finalizeReasoningDetails(acc), [{ type: 'reasoning.text', text: 'Half whole' }]);
   });
 
+  it('returns acc unchanged when deltaDetails is not an array', () => {
+    const acc = [{ type: 'reasoning.text', text: 'A', index: 0 }];
+    assert.deepStrictEqual(mergeReasoningDelta(acc, null), acc);
+  });
+
   it('does not mutate the input accumulator', () => {
     const acc = [{ type: 'reasoning.text', text: 'A', index: 0 }];
     const next = mergeReasoningDelta(acc, [{ type: 'reasoning.text', text: 'B', index: 0 }]);
@@ -69,6 +74,11 @@ describe('reasoning — payload sanitizer', () => {
     const msg = { role: 'assistant', reasoning: 'why', content: 'hi' };
     const out = sanitizeAssistantReasoning(msg, 'openrouter');
     assert.strictEqual(out, msg);
+  });
+
+  it('leaves a string-only assistant message with empty details unchanged on openrouter', () => {
+    const msg = { role: 'assistant', reasoning: 'why', reasoning_details: [], content: 'hi' };
+    assert.strictEqual(sanitizeAssistantReasoning(msg, 'openrouter'), msg);
   });
 
   it('strips reasoning_details on the openai dialect', () => {

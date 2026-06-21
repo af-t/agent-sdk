@@ -20,6 +20,7 @@ export function finalizeReasoningDetails(acc) {
   return acc.slice().sort((a, b) => indexOf(a) - indexOf(b));
 }
 
+// index-less blocks sort as 0; stable sort preserves insertion order
 function indexOf(block) {
   return typeof block.index === 'number' ? block.index : 0;
 }
@@ -34,6 +35,7 @@ function findSlot(out, block) {
   return -1;
 }
 
+// drops unknown fields (forward-compat assumption)
 function cloneBlock(block) {
   const b = {};
   for (const key of ['type', 'index', 'id', 'format', 'text', 'summary', 'data', 'signature']) {
@@ -54,7 +56,7 @@ function mergeBlock(existing, block) {
   return b;
 }
 
-// Produce a payload-ready copy: prefer details, strip per dialect.
+// payload-ready copy, dialect-aware
 export function sanitizeAssistantReasoning(msg, dialect) {
   if (!msg || msg.role !== 'assistant') return msg;
 
