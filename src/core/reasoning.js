@@ -53,3 +53,23 @@ function mergeBlock(existing, block) {
   }
   return b;
 }
+
+// Produce a payload-ready copy: prefer details, strip per dialect.
+export function sanitizeAssistantReasoning(msg, dialect) {
+  if (!msg || msg.role !== 'assistant') return msg;
+
+  if (dialect === 'openai') {
+    if (msg.reasoning_details === undefined) return msg;
+    const out = { ...msg };
+    delete out.reasoning_details;
+    return out;
+  }
+
+  const hasDetails = Array.isArray(msg.reasoning_details) && msg.reasoning_details.length > 0;
+  if (hasDetails && msg.reasoning !== undefined) {
+    const out = { ...msg };
+    delete out.reasoning;
+    return out;
+  }
+  return msg;
+}

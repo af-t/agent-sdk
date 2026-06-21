@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeReasoningDelta, finalizeReasoningDetails } from '../../src/core/reasoning.js';
+import { mergeReasoningDelta, finalizeReasoningDetails, sanitizeAssistantReasoning } from '../../src/core/reasoning.js';
 
 describe('reasoning — streaming accumulation', () => {
   it('concatenates consecutive text chunks sharing an index', () => {
@@ -51,5 +51,35 @@ describe('reasoning — streaming accumulation', () => {
   it('returns undefined when the accumulator is empty', () => {
     assert.strictEqual(finalizeReasoningDetails([]), undefined);
     assert.strictEqual(finalizeReasoningDetails(undefined), undefined);
+  });
+});
+
+describe('reasoning — payload sanitizer', () => {
+  const details = [{ type: 'reasoning.text', text: 'why', signature: 'sig', index: 0 }];
+
+  it('drops the reasoning string when details exist on openrouter', () => {
+    const msg = { role: 'assistant', reasoning: 'why', reasoning_details: details, content: 'hi' };
+    const out = sanitizeAssistantReasoning(msg, 'openrouter');
+    assert.strictEqual(out.reasoning, undefined);
+    assert.deepStrictEqual(out.reasoning_details, details);
+    assert.strictEqual(msg.reasoning, 'why'); // input not mutated
+  });
+
+  it('leaves a string-only assistant message unchanged on openrouter', () => {
+    const msg = { role: 'assistant', reasoning: 'why', content: 'hi' };
+    const out = sanitizeAssistantReasoning(msg, 'openrouter');
+    assert.strictEqual(out, msg);
+  });
+
+  it('strips reasoning_details on the openai dialect', () => {
+    const msg = { role: 'assistant', reasoning: 'why', reasoning_details: details, content: 'hi' };
+    const out = sanitizeAssistantReasoning(msg, 'openai');
+    assert.strictEqual(out.reasoning_details, undefined);
+    assert.deepStrictEqual(msg.reasoning_details, details); // input not mutated
+  });
+
+  it('returns non-assistant messages untouched', () => {
+    const msg = { role: 'user', content: 'hi' };
+    assert.strictEqual(sanitizeAssistantReasoning(msg, 'openrouter'), msg);
   });
 });
