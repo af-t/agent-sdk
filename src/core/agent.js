@@ -9,6 +9,7 @@ import {
   buildRequestHeaders,
   sanitizeAppName,
 } from './utils.js';
+import { mergeReasoningDelta, finalizeReasoningDetails, sanitizeAssistantReasoning } from './reasoning.js';
 import { ToolRegistry } from '../registry/tool.js';
 import { ApiError, ConfigError } from './errors.js';
 import logger from './logger.js';
@@ -789,7 +790,7 @@ class Agent {
   // never commits an assistant message — the caller decides based on the result.
   // Returns { continue: true, prompt } for a nudge, otherwise
   // { content, reasoning, tool_calls, finish_reason } to adopt.
-  async #resolveStop({ payload, isStreaming, signal, turn, content, reasoning, finish_reason }) {
+  async #resolveStop({ payload, isStreaming, signal, turn, content, reasoning, reasoning_details, finish_reason }) {
     let tool_calls;
     let lastError;
     while (true) {
@@ -798,13 +799,13 @@ class Agent {
       // recovery never extends stop latency past a single in-flight REQUEST_TIMEOUT.
       if (signal?.aborted) {
         this.#stopAttempts = 0;
-        return { content, reasoning, tool_calls, finish_reason };
+        return { content, reasoning, reasoning_details, tool_calls, finish_reason };
       }
 
       if (this.#stopAttempts > MAX_STOP_RECOVERY) {
         logger.warn(`Agent: stop-recovery ceiling (${MAX_STOP_RECOVERY}) reached; forcing stop.`);
         this.#stopAttempts = 0;
-        return { content, reasoning, tool_calls, finish_reason };
+        return { content, reasoning, reasoning_details, tool_calls, finish_reason };
       }
 
       const decision = await this.#runStopHooks({
@@ -827,7 +828,7 @@ class Agent {
       if (action !== 'retry') {
         // 'stop' or unknown — allow termination with the current message.
         this.#stopAttempts = 0;
-        return { content, reasoning, tool_calls, finish_reason };
+        return { content, reasoning, reasoning_details, tool_calls, finish_reason };
       }
 
       // action === 'retry': re-send the identical payload.
@@ -837,6 +838,7 @@ class Agent {
         const retryMessage = retryResponse.choices?.[0]?.message;
         content = retryMessage?.content || null;
         reasoning = retryMessage?.reasoning || undefined;
+        reasoning_details = retryMessage?.reasoning_details || undefined;
         tool_calls = retryMessage?.tool_calls || null;
         finish_reason = retryResponse.choices?.[0]?.finish_reason;
         lastError = null;
@@ -850,7 +852,7 @@ class Agent {
       const recovered = tool_calls && tool_calls.length > 0;
       if (recovered) {
         this.#stopAttempts = 0;
-        return { content, reasoning, tool_calls, finish_reason };
+        return { content, reasoning, reasoning_details, tool_calls, finish_reason };
       }
       // still empty — loop and re-evaluate hooks with the incremented attempt
     }
@@ -1023,6 +1025,7 @@ class Agent {
 
     let content = '';
     let reasoning = '';
+    let reasoningDetails = [];
     let finishReason = null;
     const tcMap = {};
     const reader = res.body.getReader();
@@ -1047,6 +1050,10 @@ class Agent {
       const rd = delta.reasoning || '';
       if (cd) content += cd;
       if (rd) reasoning += rd;
+
+      if (Array.isArray(delta.reasoning_details) && delta.reasoning_details.length) {
+        reasoningDetails = mergeReasoningDelta(reasoningDetails, delta.reasoning_details);
+      }
 
       for (const tc of delta.tool_calls || []) {
         if (!tcMap[tc.index]) {
@@ -1125,7 +1132,12 @@ class Agent {
     return {
       choices: [
         {
-          message: { content: content || null, reasoning: reasoning || null, tool_calls },
+          message: {
+            content: content || null,
+            reasoning: reasoning || null,
+            reasoning_details: finalizeReasoningDetails(reasoningDetails),
+            tool_calls,
+          },
           finish_reason: finishReason,
         },
       ],
@@ -1588,6 +1600,7 @@ class Agent {
 
         let { content, tool_calls } = message;
         let reasoning = message.reasoning || undefined;
+        let reasoning_details = message.reasoning_details || undefined;
         let finish_reason = response.choices?.[0]?.finish_reason;
 
         // Stop hooks / empty-turn recovery run only on a terminal (no-tool_calls)
@@ -1602,6 +1615,7 @@ class Agent {
             turn: loopCount,
             content,
             reasoning,
+            reasoning_details,
             finish_reason,
           });
           if (r.continue) {
@@ -1611,6 +1625,7 @@ class Agent {
           }
           content = r.content;
           reasoning = r.reasoning;
+          reasoning_details = r.reasoning_details;
           tool_calls = r.tool_calls;
           finish_reason = r.finish_reason;
         }
@@ -1637,7 +1652,7 @@ class Agent {
           }
         }
 
-        this.messages.push({ role: 'assistant', reasoning, content, tool_calls });
+        this.messages.push({ role: 'assistant', reasoning, reasoning_details, content, tool_calls });
         this.#recorder?.recordAssistant(loopCount, { content, reasoning, tool_calls });
 
         if (!tool_calls || tool_calls.length === 0) {
