@@ -63,3 +63,56 @@ describe('Agent — reasoning_details capture', () => {
     ]);
   });
 });
+
+describe('Agent — reasoning_details round-trip', () => {
+  let originalFetch;
+  beforeEach(() => {
+    originalFetch = global.fetch;
+  });
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  const details = [{ type: 'reasoning.text', text: 'thinking', signature: 'sig', index: 0 }];
+
+  function mockTwoTurns(bodies) {
+    global.fetch = async (url, options) => {
+      bodies.push(JSON.parse(options.body));
+      const turn = bodies.length;
+      const message =
+        turn === 1
+          ? { role: 'assistant', content: 'First', reasoning: 'thinking', reasoning_details: details }
+          : { role: 'assistant', content: 'Second' };
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ choices: [{ message }], usage: { cost: 0.001, total_tokens: 20 } }),
+      };
+    };
+  }
+
+  it('round-trips reasoning_details and drops the string on openrouter', async () => {
+    const bodies = [];
+    mockTwoTurns(bodies);
+
+    const agent = new Agent({ apiKey: 'sk-custom' });
+    await agent.run('Hello');
+    await agent.run('Continue');
+
+    const assistantMsg = bodies[1].messages.find((m) => m.role === 'assistant');
+    assert.deepStrictEqual(assistantMsg.reasoning_details, details);
+    assert.strictEqual(assistantMsg.reasoning, undefined);
+  });
+
+  it('strips reasoning_details on the openai dialect', async () => {
+    const bodies = [];
+    mockTwoTurns(bodies);
+
+    const agent = new Agent({ apiKey: 'sk-custom', baseUrl: 'https://api.openai.com/v1' });
+    await agent.run('Hello');
+    await agent.run('Continue');
+
+    const assistantMsg = bodies[1].messages.find((m) => m.role === 'assistant');
+    assert.strictEqual(assistantMsg.reasoning_details, undefined);
+  });
+});

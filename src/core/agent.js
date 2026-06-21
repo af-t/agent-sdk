@@ -879,6 +879,9 @@ class Agent {
         });
         return { ...msg, content: contentCopy };
       }
+      if (msg.role === 'assistant') {
+        return sanitizeAssistantReasoning(msg, this.dialect);
+      }
       return msg;
     });
 
