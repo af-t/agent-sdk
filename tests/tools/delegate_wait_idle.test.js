@@ -7,10 +7,7 @@ test('foreground Delegate waits for subagent background jobs to finish', async (
   const parent = await createAgent({ apiKey: 'x' });
 
   // When subagent runs, it simulates returning a report but leaving a running job
-  let subagentInstance;
   mock.method(Agent.prototype, 'run', async function () {
-    subagentInstance = this;
-
     // Simulate a background job
     this.backgroundJobs.set('bg-test', {
       status: 'running',

@@ -98,6 +98,18 @@ describe('Agent', () => {
       assert.equal(agent.effort, 'low');
     });
 
+    it('syncs reasoning.effort with root effort option when reasoning is provided without effort', () => {
+      const agent = new Agent({ apiKey: 'sk-key', effort: 'max', reasoning: { maxTokens: 100 } });
+      assert.equal(agent.effort, 'max');
+      assert.equal(agent.reasoning?.effort, 'max');
+    });
+
+    it('keeps reasoning.effort priority if reasoning.effort is explicitly set', () => {
+      const agent = new Agent({ apiKey: 'sk-key', effort: 'max', reasoning: { effort: 'low' } });
+      assert.equal(agent.effort, 'low');
+      assert.equal(agent.reasoning?.effort, 'low');
+    });
+
     it('default effort is high unless OPENROUTER_REASONING_EFFORT overrides it', () => {
       const agent = new Agent({ apiKey: 'sk-key' });
       const expectedEffort = process.env.OPENROUTER_REASONING_EFFORT || 'high';

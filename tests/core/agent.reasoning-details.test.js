@@ -104,7 +104,7 @@ describe('Agent — reasoning_details round-trip', () => {
     assert.strictEqual(assistantMsg.reasoning, undefined);
   });
 
-  it('strips reasoning_details on the openai dialect', async () => {
+  it('retains reasoning_details on the openai dialect', async () => {
     const bodies = [];
     mockTwoTurns(bodies);
 
@@ -113,6 +113,6 @@ describe('Agent — reasoning_details round-trip', () => {
     await agent.run('Continue');
 
     const assistantMsg = bodies[1].messages.find((m) => m.role === 'assistant');
-    assert.strictEqual(assistantMsg.reasoning_details, undefined);
+    assert.deepStrictEqual(assistantMsg.reasoning_details, details);
   });
 });

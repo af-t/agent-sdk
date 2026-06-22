@@ -446,16 +446,6 @@ export async function withRetry(func, count = config.MAX_RETRIES, callback) {
   throw lastError;
 }
 
-async function isDirectory(dirPath) {
-  try {
-    const stat = await fs.stat(dirPath);
-    return stat.isDirectory();
-  } catch (err) {
-    logger.debug('isDirectory stat failed:', err.message);
-    return false;
-  }
-}
-
 // Decide API dialect from the base URL host.
 // openrouter.ai (and subdomains) -> 'openrouter'; anything else -> 'openai'.
 export function resolveDialect(baseUrl) {

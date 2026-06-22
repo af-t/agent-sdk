@@ -237,10 +237,19 @@ class Agent {
     this.responseFormat = responseFormat;
     this.stop = stop;
 
+    // Resolve effort parameter with proper fallback order (explicit reasoning.effort > explicit effort > config.REASONING_EFFORT > 'high')
+    let resolvedEffort = config.REASONING_EFFORT;
+    if (effort !== undefined) {
+      resolvedEffort = effort;
+    }
+    if (reasoning && typeof reasoning === 'object' && reasoning.effort !== undefined) {
+      resolvedEffort = reasoning.effort;
+    }
+
     this.reasoning = undefined;
     if (reasoning && typeof reasoning === 'object') {
       this.reasoning = {
-        effort: reasoning.effort !== undefined ? reasoning.effort : config.REASONING_EFFORT,
+        effort: resolvedEffort !== undefined ? resolvedEffort : config.REASONING_EFFORT,
         maxTokens:
           reasoning.maxTokens !== undefined
             ? reasoning.maxTokens
@@ -251,23 +260,17 @@ class Agent {
         enabled: reasoning.enabled !== undefined ? reasoning.enabled : config.REASONING_ENABLED,
       };
     } else if (
-      config.REASONING_EFFORT ||
+      resolvedEffort !== undefined ||
       config.REASONING_MAX_TOKENS !== undefined ||
       config.REASONING_EXCLUDE !== undefined ||
       config.REASONING_ENABLED !== undefined
     ) {
       this.reasoning = {
-        effort: config.REASONING_EFFORT,
+        effort: resolvedEffort,
         maxTokens: config.REASONING_MAX_TOKENS !== undefined ? parseInt(config.REASONING_MAX_TOKENS) : undefined,
         exclude: config.REASONING_EXCLUDE,
         enabled: config.REASONING_ENABLED,
       };
-    }
-
-    if (this.reasoning) {
-      this.effort = effort || this.reasoning.effort || config.REASONING_EFFORT || 'high';
-    } else {
-      this.effort = effort || config.REASONING_EFFORT || 'high';
     }
 
     this.usage = { cost: 0, tokens: 0, cachedTokens: 0, cacheWriteTokens: 0 };
@@ -383,6 +386,24 @@ class Agent {
     }
     if (injectors?.pluginInstructions !== false) {
       this.registerInjector({ name: 'pluginInstructions', scope: 'first-turn', fn: pluginInstructionsInjector });
+    }
+  }
+
+  // Shorthand/compatibility getter and setter for reasoning effort
+  get effort() {
+    return this.reasoning?.effort ?? config.REASONING_EFFORT ?? 'high';
+  }
+
+  set effort(val) {
+    if (!this.reasoning) {
+      this.reasoning = {
+        effort: val,
+        maxTokens: undefined,
+        exclude: undefined,
+        enabled: undefined,
+      };
+    } else {
+      this.reasoning.effort = val;
     }
   }
 
@@ -916,7 +937,7 @@ class Agent {
     }
 
     if (isOpenAI) {
-      const effort = this.reasoning?.effort ?? this.effort;
+      const effort = this.effort;
       if (effort !== undefined) payload.reasoning_effort = effort;
     } else {
       const reasoningPayload = {};
@@ -1054,8 +1075,13 @@ class Agent {
       if (cd) content += cd;
       if (rd) reasoning += rd;
 
-      if (Array.isArray(delta.reasoning_details) && delta.reasoning_details.length) {
-        reasoningDetails = mergeReasoningDelta(reasoningDetails, delta.reasoning_details);
+      if (delta.reasoning_details) {
+        const detailsArray = Array.isArray(delta.reasoning_details)
+          ? delta.reasoning_details
+          : [delta.reasoning_details];
+        if (detailsArray.length) {
+          reasoningDetails = mergeReasoningDelta(reasoningDetails, detailsArray);
+        }
       }
 
       for (const tc of delta.tool_calls || []) {

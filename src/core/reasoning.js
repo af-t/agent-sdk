@@ -57,21 +57,24 @@ function mergeBlock(existing, block) {
 }
 
 // payload-ready copy, dialect-aware
-export function sanitizeAssistantReasoning(msg, dialect) {
+export function sanitizeAssistantReasoning(msg) {
   if (!msg || msg.role !== 'assistant') return msg;
 
-  if (dialect === 'openai') {
-    if (msg.reasoning_details === undefined) return msg;
-    const out = { ...msg };
-    delete out.reasoning_details;
-    return out;
+  // If reasoning_details is present, we keep it regardless of the dialect.
+  // We only delete reasoning if reasoning_details is a non-empty array/object to avoid redundancy.
+  const hasDetails =
+    msg.reasoning_details !== undefined &&
+    msg.reasoning_details !== null &&
+    (!Array.isArray(msg.reasoning_details) || msg.reasoning_details.length > 0);
+
+  if (hasDetails) {
+    if (msg.reasoning !== undefined) {
+      const out = { ...msg };
+      delete out.reasoning;
+      return out;
+    }
+    return msg;
   }
 
-  const hasDetails = Array.isArray(msg.reasoning_details) && msg.reasoning_details.length > 0;
-  if (hasDetails && msg.reasoning !== undefined) {
-    const out = { ...msg };
-    delete out.reasoning;
-    return out;
-  }
   return msg;
 }

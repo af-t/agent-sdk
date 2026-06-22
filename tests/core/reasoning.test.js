@@ -81,11 +81,10 @@ describe('reasoning — payload sanitizer', () => {
     assert.strictEqual(sanitizeAssistantReasoning(msg, 'openrouter'), msg);
   });
 
-  it('strips reasoning_details on the openai dialect', () => {
+  it('retains reasoning_details on the openai dialect', () => {
     const msg = { role: 'assistant', reasoning: 'why', reasoning_details: details, content: 'hi' };
     const out = sanitizeAssistantReasoning(msg, 'openai');
-    assert.strictEqual(out.reasoning_details, undefined);
-    assert.deepStrictEqual(msg.reasoning_details, details); // input not mutated
+    assert.deepStrictEqual(out.reasoning_details, details);
   });
 
   it('returns non-assistant messages untouched', () => {

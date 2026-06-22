@@ -1,8 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import createAgent from '../../src/index.js';
-import path from 'node:path';
-import os from 'node:os';
 
 // Helper: create a minimal agent with a stubbed _sendForTest to avoid real API calls.
 async function makeAgent(opts = {}) {
