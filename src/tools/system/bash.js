@@ -10,6 +10,11 @@ let _ptyModule = null;
 
 async function getPty() {
   if (_ptyModule === null) {
+    // node-pty data loss under Bun
+    if (process.versions.bun) {
+      _ptyModule = false;
+      return _ptyModule;
+    }
     try {
       const pty = await import('node-pty');
       // Probe if node-pty actually works and produces output in this environment
