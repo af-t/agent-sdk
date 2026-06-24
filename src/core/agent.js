@@ -1270,9 +1270,12 @@ class Agent {
     }
   }
 
-  // Fold queued bg-exit events into a single trailing user message.
+  // Fold queued bg-exit events into a trailing user message. Returns true when
+  // something was drained. Routes through #appendUserContent so a drain at run
+  // start merges into the fresh prompt instead of emitting a stray
+  // user-after-user message.
   #drainBgExits() {
-    if (this.#pendingBgDrains.length === 0) return;
+    if (this.#pendingBgDrains.length === 0) return false;
     const events = this.#pendingBgDrains.splice(0);
     const lines = [];
     for (const e of events) {
@@ -1284,7 +1287,8 @@ class Agent {
       }
     }
     const text = `<system-reminder>\nBackground job(s) exited:\n${lines.join('\n')}\n</system-reminder>`;
-    this.messages.push({ role: 'user', content: [{ type: 'text', text }] });
+    this.#appendUserContent([{ type: 'text', text }]);
+    return true;
   }
 
   // Flush queued steer prompts into messages as a trailing user message.
@@ -1511,6 +1515,12 @@ class Agent {
         this.#appendUserContent(normalizePrompt(prompt));
       }
 
+      // Surface background-exit reminders that queued while idle so the model
+      // sees them on the first turn (merged with the prompt) instead of only
+      // after the first tool group. Late exits during the run still drain at
+      // tool boundaries / termination below.
+      this.#drainBgExits();
+
       let loopCount = 0;
 
       while (true) {
@@ -1670,7 +1680,9 @@ class Agent {
             turn_end: { turn: loopCount, terminal: true, finish_reason, empty: true, reasoning },
           });
           if (await this.#drainPending()) continue;
-          this.#drainBgExits();
+          // A late bg exit on this terminal turn: with autoWake, resume so the
+          // model acts on it rather than stranding the reminder in history.
+          if (this.#drainBgExits() && this.autoWake) continue;
           return content ?? '';
         }
 
@@ -1689,8 +1701,10 @@ class Agent {
           await this.#broadcast({ turn_end: { turn: loopCount, terminal: true, finish_reason } });
           // A steer delivered during the final turn keeps the loop alive.
           if (await this.#drainPending()) continue;
-          // Fold any late bg exits into messages before terminating.
-          this.#drainBgExits();
+          // Fold any late bg exits into messages before terminating; with
+          // autoWake, resume so the model acts on the exit instead of leaving
+          // the reminder stranded in history.
+          if (this.#drainBgExits() && this.autoWake) continue;
           break;
         }
 

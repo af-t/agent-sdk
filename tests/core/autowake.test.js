@@ -379,3 +379,121 @@ test('onBackgroundExit listeners do NOT fire during active run (events queued)',
 
   assert.equal(listenerCalls, 0, 'onBackgroundExit listener should NOT fire during active run');
 });
+
+// --- Reminder placement: drain queued exits at run start ---
+
+test('queued bg exit drains at run start, merged with the prompt (single reminder)', async () => {
+  const agent = await makeAgent({ autoWake: false });
+  agent.use({
+    name: 'noop',
+    description: 'd',
+    input_schema: { type: 'object', properties: {} },
+    execute: async () => 'ok',
+  });
+
+  // Exit queued while idle, before the next manual run().
+  agent._fireBackgroundExit({
+    id: 'bg-start',
+    kind: 'bash',
+    exitCode: 0,
+    durationMs: 100,
+    logPath: '/tmp/s.log',
+    status: 'exited',
+  });
+
+  let call = 0;
+  agent._sendForTest = async () => {
+    call += 1;
+    if (call === 1) {
+      return {
+        choices: [
+          {
+            message: {
+              content: '',
+              reasoning: null,
+              tool_calls: [{ id: 't1', function: { name: 'noop', arguments: '{}' } }],
+            },
+          },
+        ],
+        usage: { cost: 0, total_tokens: 0 },
+      };
+    }
+    return terminalResponse('done');
+  };
+
+  await agent.run('gimana');
+
+  const reminders = agent.messages.filter(
+    (m) => m.role === 'user' && JSON.stringify(m.content).includes('Background job(s) exited'),
+  );
+  // Exactly one reminder — drained once at run start, not again after the tool group.
+  assert.equal(reminders.length, 1, 'exactly one bg-exit reminder');
+  // It is merged into the prompt message so the model sees it on turn 1.
+  assert.match(JSON.stringify(reminders[0].content), /gimana/);
+});
+
+// --- autoWake: resume when a late exit lands on the terminal turn ---
+
+test('autoWake resumes the loop when a bg exit lands on the terminal turn', async () => {
+  const agent = await makeAgent({ autoWake: true });
+
+  let call = 0;
+  agent._sendForTest = async () => {
+    call += 1;
+    if (call === 1) {
+      // Exit arrives mid-run (queued, isRunning=true) on the way to a terminal turn.
+      agent._fireBackgroundExit({
+        id: 'bg-term',
+        kind: 'bash',
+        exitCode: 0,
+        durationMs: 100,
+        logPath: '/tmp/t.log',
+        status: 'exited',
+      });
+      return terminalResponse('first');
+    }
+    return terminalResponse('second');
+  };
+
+  const result = await agent.run('go');
+
+  // The loop must resume so the model actually acts on the late exit.
+  assert.equal(result, 'second', 'loop resumed and produced a follow-up turn');
+  const reminders = agent.messages.filter((m) => m.role === 'user' && JSON.stringify(m.content).includes('bg-term'));
+  assert.equal(reminders.length, 1, 'exactly one bg-exit reminder');
+  const firstIdx = agent.messages.findIndex((m) => m.role === 'assistant' && m.content === 'first');
+  const remIdx = agent.messages.findIndex((m) => m.role === 'user' && JSON.stringify(m.content).includes('bg-term'));
+  const secondIdx = agent.messages.findIndex((m) => m.role === 'assistant' && m.content === 'second');
+  assert.ok(firstIdx >= 0 && remIdx > firstIdx && secondIdx > remIdx, 'order: first -> reminder -> second');
+});
+
+test('autoWake:false does NOT resume on a terminal-turn exit (consumer controls wake)', async () => {
+  const agent = await makeAgent({ autoWake: false });
+
+  let call = 0;
+  agent._sendForTest = async () => {
+    call += 1;
+    if (call === 1) {
+      agent._fireBackgroundExit({
+        id: 'bg-noresume',
+        kind: 'bash',
+        exitCode: 0,
+        durationMs: 100,
+        logPath: '/tmp/nr.log',
+        status: 'exited',
+      });
+      return terminalResponse('only');
+    }
+    throw new Error('should not run a second turn when autoWake is false');
+  };
+
+  await agent.run('go');
+
+  // No resume: the second turn (which throws) is never reached.
+  assert.equal(call, 1, 'run ends on the terminal turn without resuming');
+  // The reminder is still folded into history for the next manual run().
+  const reminders = agent.messages.filter(
+    (m) => m.role === 'user' && JSON.stringify(m.content).includes('bg-noresume'),
+  );
+  assert.equal(reminders.length, 1, 'reminder is preserved in history');
+});
