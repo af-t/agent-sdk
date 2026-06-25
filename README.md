@@ -28,7 +28,7 @@ Minimal SDK for building AI agents connected to the [OpenRouter API](https://ope
 - **OpenRouter Integration** — Access 300+ LLM models through a single API with provider routing (order/only).
 - **Automatic Tool Execution Loop** — The agent automatically calls tools, receives results, and continues the conversation until a final answer is produced.
 - **MCP (Model Context Protocol) Support** — Connect your agent to external tools via stdio-based MCP servers.
-- **Skill Discovery System** — Discover and load skills from SKILL.md files across builtin, project, and user directories.
+- **Skill Discovery System** — Discover and load skills from SKILL.md files across builtin (`src/skills/`) and plugin directories.
 - **Built-in Tools** — File operations (Read, Write, Edit, Find, List), shell command execution (Bash with optional **node-pty** support), web search (Tavily), web fetch (using **cheerio**), and subagent delegation.
 - **Safety & Validation** — Tool inputs are validated against their schema (type checks, required fields, enums). Path traversal protection on Read, Write, Edit, List, and Find tools; **.gitignore** filtering on List (and on Find when ripgrep is available) — Read, Write, and Edit do _not_ consult .gitignore, so ignored files inside the project root (such as `.env`) remain accessible to the agent. Dangerous shell command detection.
 - **Retry with Exponential Backoff** — Auto-retry with jitter to handle rate limits and transient errors.
@@ -435,10 +435,12 @@ await agent.tools.connectMcpServer({
 | `Find`      | File     | Search for files by name or content                                                   |
 | `List`      | File     | List directory contents (ls alternative)                                              |
 | `Todo`      | General  | Manage a todo list (add, list, complete, delete, update, clear) with persistence      |
+| `RecallMemory` | General | Semantic search over stored memory files (embeddings, with lexical fallback)        |
 | `Bash`      | System   | Execute shell commands (pty with fallback to child_process); supports background mode |
 | `Delegate`  | System   | Delegate tasks to a sub-agent; supports background mode                               |
 | `Remind`    | System   | Pause execution until a duration elapses or an absolute time is reached               |
 | `Skill`     | System   | Manage and load skills                                                                |
+| `Jobs`      | System   | List and stop background jobs (Bash / Delegate / Remind)                              |
 | `WebSearch` | Web      | Web search via Tavily API                                                             |
 | `WebFetch`  | Web      | Extract content from URLs                                                             |
 
@@ -489,12 +491,10 @@ See `src/core/mcp.js` for the full implementation.
 
 The SDK has a discovery system for skills based on `SKILL.md` files. Skills are searched in:
 
-1. **Builtin** — `src/skills/` (inside the package)
-2. **Project** — `.claude/skills/`, `.hermes/skills/`, `.gemini/skills/` (in the project directory)
-3. **User** — `~/.claude/skills/`, `~/.hermes/skills/` (global user scope)
-4. **Extra** — additional directories via `SkillRegistry.configure()`
+1. **Builtin** — `src/skills/` (inside the package; the only internal source)
+2. **Plugins** — `<pluginsDir>/*/skills/**/SKILL.md`, where `pluginsDir` defaults to `.agent-sdk/plugins` (override via `storagePaths.pluginsDir`). Each plugin may also ship an `AGENTS.md`, surfaced through the `pluginInstructions` injector.
 
-Each SKILL.md contains YAML frontmatter (name, description, etc.) and a markdown body.
+Each SKILL.md contains simple `--- key: value ---` frontmatter (name, description, etc., parsed without a YAML library) and a markdown body.
 
 ## Context Injection Layer
 
@@ -517,6 +517,7 @@ The combined output of both scopes is joined with `\n\n`, wrapped in a single `<
 | `memoryIndex`  | first-turn | Contents of `<memoryDir>/MEMORY.md`, if present                                         |
 | `memoryHint`   | first-turn | Brief description of the memory directory and the available memory types                |
 | `skillList`    | first-turn | Name + truncated description of every discovered skill                                  |
+| `pluginInstructions` | first-turn | Each plugin's `AGENTS.md`, merged into the first-turn reminder                    |
 
 Disable any builtin individually via the `injectors` option:
 
@@ -721,8 +722,8 @@ openrouter/
 │   │   └── skill.js       # SkillRegistry — discover & load SKILL.md
 │   └── tools/
 │       ├── file/          # Read, Write, Edit, Find, List
-│       ├── general/       # Todo
-│       ├── system/        # Bash, Delegate, Remind, Skill
+│       ├── general/       # Todo, RecallMemory
+│       ├── system/        # Bash, Delegate, Remind, Skill, Jobs
 │       └── web/           # Search (Tavily), Fetch
 ├── CONTRIBUTING.md        # Contribution guidelines
 ├── LICENSE                # MIT License
@@ -755,7 +756,7 @@ Factory function to create an Agent instance.
 | `effort`                                                   | string   | Reasoning effort: `'low'`, `'medium'`, `'high'`. Default `'high'`.                                                                                                                                                        |
 | `maxToolOutputChars`                                       | number   | Cap (in chars) for tool output before truncation. Default `50_000`.                                                                                                                                                       |
 | `restricted`                                               | boolean  | Security mode. Default `true`. Set `false` to lift path-boundary checks, env filtering, and shell command blocks (logs a warning).                                                                                        |
-| `storagePaths`                                             | object   | `{ memoryDir?, tmpDir? }`. Paths support `~` expansion. External dirs are auto-added to `trustedPaths`.                                                                                                                   |
+| `storagePaths`                                             | object   | `{ memoryDir?, tmpDir?, pluginsDir? }`. Paths support `~` expansion. External dirs are auto-added to `trustedPaths`.                                                                                                                   |
 | `contextFiles`                                             | string[] | Files to inject on the first turn. Default `['AGENTS.md']`. Missing files are skipped.                                                                                                                                     |
 | `memoryTypes`                                              | object   | Custom memory type descriptions; merged over the four built-in types.                                                                                                                                                     |
 | `injectors`                                                | object   | Disable built-in injectors by name, e.g. `{ date: false, skillList: false }`.                                                                                                                                             |
