@@ -156,10 +156,12 @@ export function ensureSafePath(filePath, allowedRoots = new Set(), options = {})
   }
   if (
     /%2e%2e|%2f|%5c/i.test(filePath) ||
-    (filePath.includes('%') && (decoded.includes('/') || decoded.includes('\\'))) ||
-    (restricted && decoded.includes('..'))
+    (filePath.includes('%') && (decoded.includes('/') || decoded.includes('\\')))
   ) {
     throw new Error('Access denied: Path contains URL-encoded traversal characters');
+  }
+  if (restricted && decoded.includes('..')) {
+    throw new Error('Access denied: Path contains directory traversal ("..")');
   }
 
   // 3. Reject protocol handlers

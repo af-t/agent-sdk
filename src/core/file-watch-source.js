@@ -175,6 +175,7 @@ function startNativeWatch({ paths, recursive }, onRaw) {
 
 function startPolling({ paths, recursive, pollIntervalMs }, onRaw) {
   const watched = new Set();
+  const watchedDirs = new Set();
   function watchOne(file) {
     if (watched.has(file)) return;
     watched.add(file);
@@ -182,6 +183,11 @@ function startPolling({ paths, recursive, pollIntervalMs }, onRaw) {
       const existed = prev.mtimeMs !== 0;
       const exists = curr.mtimeMs !== 0;
       onRaw(file, existed !== exists ? 'rename' : 'change');
+      // a deleted file keeps no watcher; a later re-create is rediscovered by rescan
+      if (!exists) {
+        fs.unwatchFile(file);
+        watched.delete(file);
+      }
     });
   }
   function expand(p) {
@@ -196,6 +202,7 @@ function startPolling({ paths, recursive, pollIntervalMs }, onRaw) {
       watchOne(p);
       return;
     }
+    watchedDirs.add(p);
     let entries;
     try {
       entries = fs.readdirSync(p, { withFileTypes: true });
@@ -212,9 +219,37 @@ function startPolling({ paths, recursive, pollIntervalMs }, onRaw) {
       }
     }
   }
+  // fs.watchFile cannot see files created after start, so periodically re-scan
+  // watched directories to pick up new entries (emitting 'rename' like fs.watch).
+  function rescan() {
+    for (const dir of [...watchedDirs]) {
+      let entries;
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        const child = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (recursive && !watchedDirs.has(child)) {
+            expand(child);
+            onRaw(child, 'rename');
+          }
+        } else if (!watched.has(child)) {
+          watchOne(child);
+          onRaw(child, 'rename');
+        }
+      }
+    }
+  }
   for (const p of paths) expand(p);
+  const rescanTimer = setInterval(rescan, pollIntervalMs);
+  if (typeof rescanTimer.unref === 'function') rescanTimer.unref();
   return () => {
+    clearInterval(rescanTimer);
     for (const file of watched) fs.unwatchFile(file);
     watched.clear();
+    watchedDirs.clear();
   };
 }

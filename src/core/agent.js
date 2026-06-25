@@ -1025,7 +1025,8 @@ class Agent {
       res = await fetch(`${this.#baseUrl}/chat/completions`, {
         method: 'POST',
         headers: buildRequestHeaders({ apiKey: this.#apiKey, dialect: this.dialect }),
-        body: JSON.stringify({ ...payload, stream: true }),
+        // Request streamed usage so strict OpenAI-compatible servers report token usage.
+        body: JSON.stringify({ ...payload, stream: true, stream_options: { include_usage: true } }),
         signal: controller.signal,
       });
     } catch (err) {
@@ -1178,7 +1179,10 @@ class Agent {
     const tool_call_id = tc.id;
     let input;
     try {
-      input = JSON.parse(tc.function.arguments);
+      // Zero-parameter tools stream an empty arguments string; treat
+      // empty/whitespace/missing as an empty object instead of failing.
+      const rawArgs = tc.function.arguments;
+      input = rawArgs && rawArgs.trim() ? JSON.parse(rawArgs.trim()) : {};
     } catch (parseErr) {
       logger.warn(`Agent: failed to parse tool arguments for "${name}": ${parseErr.message}`);
       throw new Error(`invalid JSON arguments — ${parseErr.message}`, { cause: parseErr });

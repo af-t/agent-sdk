@@ -43,7 +43,7 @@ describe('ensureSafePath', () => {
   });
 
   it('rejects path with .. traversal', () => {
-    assert.throws(() => ensureSafePath('../../etc/passwd'), { message: /URL-encoded traversal|outside project root/ });
+    assert.throws(() => ensureSafePath('../../etc/passwd'), { message: /directory traversal|outside project root/ });
   });
 
   it('rejects URL-encoded path traversal %2e%2e', () => {

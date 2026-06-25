@@ -129,7 +129,7 @@ export const execute = async ({ description, prompt, persona, id, background = f
         crashed = true;
         report = `Error: ${err.message}`;
       }
-      await writer.close();
+      await writer.close().catch(() => {});
       const wasAborted = jobController.signal.aborted;
       job.endedAt = Date.now();
       job.exitCode = wasAborted || crashed ? -1 : 0;
@@ -146,7 +146,13 @@ export const execute = async ({ description, prompt, persona, id, background = f
         `Duration: ${((job.endedAt - job.startedAt) / 1000).toFixed(2)}s\n` +
         `Usage delta: cost=$${costDelta.toFixed(6)}, tokens=${tokensDelta}\n` +
         `Status: ${job.status}`;
-      fs.writeFileSync(logPath, report + footer);
+      // A removed log dir (e.g. cleanup() ran mid-flight) must not crash the
+      // host; still fire the exit event so the parent learns the job ended.
+      try {
+        fs.writeFileSync(logPath, report + footer);
+      } catch (err) {
+        logger.warn(`Delegate background log write failed: ${err.message}`);
+      }
 
       agent._fireBackgroundExit({
         id: bgId,
@@ -157,7 +163,7 @@ export const execute = async ({ description, prompt, persona, id, background = f
         logPath,
         traceLogPath,
       });
-    })();
+    })().catch((err) => logger.warn(`Delegate background finalize failed: ${err.message}`));
 
     return (
       `Subagent started in background.\n` +
