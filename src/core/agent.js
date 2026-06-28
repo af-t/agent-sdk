@@ -903,6 +903,12 @@ class Agent {
       if (msg.role === 'assistant') {
         return sanitizeAssistantReasoning(msg, this.dialect);
       }
+      // Tool messages carry internal history/UI metadata (duration_ms) that must
+      // not reach the provider. Rebuild the exact wire shape rather than clone +
+      // delete (which deopts V8 to dictionary mode), so no internal field leaks.
+      if (msg.role === 'tool') {
+        return { role: 'tool', content: msg.content, tool_call_id: msg.tool_call_id };
+      }
       return msg;
     });
 
@@ -1254,8 +1260,11 @@ class Agent {
 
     await this.#broadcast({ tool_end: payload });
 
-    if (toolError) throw toolError;
-    return { output, richParts };
+    if (toolError) {
+      toolError.duration_ms = duration_ms;
+      throw toolError;
+    }
+    return { output, richParts, duration_ms };
   }
 
   #injectBlock(block) {
@@ -1721,8 +1730,8 @@ class Agent {
           const r = settled[i];
           const tool_call_id = tc.id;
           if (r.status === 'fulfilled') {
-            const { output, richParts } = r.value;
-            this.messages.push({ role: 'tool', content: output, tool_call_id });
+            const { output, richParts, duration_ms } = r.value;
+            this.messages.push({ role: 'tool', content: output, tool_call_id, duration_ms });
             if (richParts.length > 0) {
               richPartsOrdered.push(...richParts);
               richToolIds.push(tool_call_id);
@@ -1734,6 +1743,7 @@ class Agent {
               role: 'tool',
               content: `Error: ${r.reason?.message ?? r.reason}`,
               tool_call_id,
+              duration_ms: r.reason?.duration_ms,
             });
           }
         }
