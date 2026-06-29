@@ -13,6 +13,13 @@ function stripTags(str) {
   return str.replace(/<[^>]+>/g, '').trim();
 }
 
+function createAbortTimer(signal, timeoutMs) {
+  const controller = new AbortController();
+  if (signal) signal.addEventListener('abort', () => controller.abort(), { once: true });
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return { controller, timer };
+}
+
 export const name = 'WebSearch';
 export const description =
   'Search the web. Uses Tavily when TAVILY_API_KEY is configured, otherwise falls back to DuckDuckGo. Use to find current information, research topics, or answer questions that require up-to-date web data. Returns results with snippets and source URLs.';
@@ -41,9 +48,7 @@ export const input_schema = {
 };
 
 export async function ddgJsonSearch(query, maxResults, signal) {
-  const controller = new AbortController();
-  if (signal) signal.addEventListener('abort', () => controller.abort(), { once: true });
-  const timer = setTimeout(() => controller.abort(), CONSTANTS.FETCH_TIMEOUT_MS);
+  const { controller, timer } = createAbortTimer(signal, CONSTANTS.FETCH_TIMEOUT_MS);
 
   try {
     const res = await fetch(
@@ -75,9 +80,7 @@ export async function ddgJsonSearch(query, maxResults, signal) {
 }
 
 export async function ddgHtmlSearch(query, maxResults, signal) {
-  const controller = new AbortController();
-  if (signal) signal.addEventListener('abort', () => controller.abort(), { once: true });
-  const timer = setTimeout(() => controller.abort(), CONSTANTS.FETCH_TIMEOUT_MS);
+  const { controller, timer } = createAbortTimer(signal, CONSTANTS.FETCH_TIMEOUT_MS);
 
   try {
     const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
@@ -177,11 +180,7 @@ export const execute = async (
     }
   }
 
-  const controller = new AbortController();
-  if (ctx.signal) {
-    ctx.signal.addEventListener('abort', () => controller.abort(), { once: true });
-  }
-  const timeout = setTimeout(() => controller.abort(), CONSTANTS.FETCH_TIMEOUT_MS);
+  const { controller, timer: timeout } = createAbortTimer(ctx.signal, CONSTANTS.FETCH_TIMEOUT_MS);
 
   try {
     const body = {

@@ -608,26 +608,7 @@ class Agent {
       }
     }
 
-    if (this.autoWake && !this.#wakeScheduled) {
-      this.#wakeScheduled = true;
-      // Coalesce multiple rapid exits into a single wake-up by deferring
-      // via queueMicrotask.  All events that arrive before the microtask
-      // fires will be batched into #pendingBgDrains and drained together.
-      queueMicrotask(() => {
-        this.#wakeScheduled = false;
-        if (this.#running) return; // a user-initiated run started in the meantime
-        if (this.#pendingBgDrains.length === 0) return; // already consumed
-
-        // Drain the queued events into messages *before* running so the
-        // model sees the reminder on the very first turn of the wake-up.
-        this.#drainBgExits();
-
-        const notify = typeof this.autoWakeNotify === 'function' ? this.autoWakeNotify : null;
-        this.run(null, notify, this.autoWakeOptions ?? {}).catch((err) =>
-          logger.warn(`autoWake run failed: ${err.message}`),
-        );
-      });
-    }
+    this.#triggerAutoWake();
   }
 
   _onBackgroundExitRaw(fn) {
@@ -987,16 +968,20 @@ class Agent {
     return payload;
   }
 
+  async #sendTestStub(payload) {
+    const stub = await this._sendForTest(payload);
+    this.usage.cost += stub.usage?.cost || 0;
+    this.usage.tokens += stub.usage?.total_tokens || 0;
+    if (stub.usage?.prompt_tokens_details) {
+      this.usage.cachedTokens += stub.usage.prompt_tokens_details.cached_tokens || 0;
+      this.usage.cacheWriteTokens += stub.usage.prompt_tokens_details.cache_write_tokens || 0;
+    }
+    return stub;
+  }
+
   async #send(payload) {
     if (typeof this._sendForTest === 'function') {
-      const stub = await this._sendForTest(payload);
-      this.usage.cost += stub.usage?.cost || 0;
-      this.usage.tokens += stub.usage?.total_tokens || 0;
-      if (stub.usage?.prompt_tokens_details) {
-        this.usage.cachedTokens += stub.usage.prompt_tokens_details.cached_tokens || 0;
-        this.usage.cacheWriteTokens += stub.usage.prompt_tokens_details.cache_write_tokens || 0;
-      }
-      return stub;
+      return this.#sendTestStub(payload);
     }
     logger.debug(`Sending request to LLM (${this.model})...`);
     const response = await this.#request(payload);
@@ -1014,14 +999,7 @@ class Agent {
 
   async #sendStream(payload) {
     if (typeof this._sendForTest === 'function') {
-      const stub = await this._sendForTest(payload);
-      this.usage.cost += stub.usage?.cost || 0;
-      this.usage.tokens += stub.usage?.total_tokens || 0;
-      if (stub.usage?.prompt_tokens_details) {
-        this.usage.cachedTokens += stub.usage.prompt_tokens_details.cached_tokens || 0;
-        this.usage.cacheWriteTokens += stub.usage.prompt_tokens_details.cache_write_tokens || 0;
-      }
-      return stub;
+      return this.#sendTestStub(payload);
     }
     const controller = new AbortController();
     const idle = makeIdleTimer(REQUEST_TIMEOUT, controller);
@@ -1302,6 +1280,29 @@ class Agent {
     const text = `<system-reminder>\nBackground job(s) exited:\n${lines.join('\n')}\n</system-reminder>`;
     this.#appendUserContent([{ type: 'text', text }]);
     return true;
+  }
+
+  #triggerAutoWake() {
+    if (this.autoWake && !this.#wakeScheduled) {
+      this.#wakeScheduled = true;
+      // Coalesce multiple rapid exits into a single wake-up by deferring
+      // via queueMicrotask.  All events that arrive before the microtask
+      // fires will be batched into #pendingBgDrains and drained together.
+      queueMicrotask(() => {
+        this.#wakeScheduled = false;
+        if (this.#running) return; // a user-initiated run started in the meantime
+        if (this.#pendingBgDrains.length === 0) return; // already consumed
+
+        // Drain the queued events into messages *before* running so the
+        // model sees the reminder on the very first turn of the wake-up.
+        this.#drainBgExits();
+
+        const notify = typeof this.autoWakeNotify === 'function' ? this.autoWakeNotify : null;
+        this.run(null, notify, this.autoWakeOptions ?? {}).catch((err) =>
+          logger.warn(`autoWake run failed: ${err.message}`),
+        );
+      });
+    }
   }
 
   // Flush queued steer prompts into messages as a trailing user message.
@@ -1808,18 +1809,8 @@ class Agent {
       // between the last #drainBgExits() in the run loop and this point
       // (#running was still true), re-trigger the autoWake mechanism so
       // they are not stranded (fixes the "window miss" race condition).
-      if (this.autoWake && this.#pendingBgDrains.length > 0 && !this.#wakeScheduled) {
-        this.#wakeScheduled = true;
-        queueMicrotask(() => {
-          this.#wakeScheduled = false;
-          if (this.#running) return;
-          if (this.#pendingBgDrains.length === 0) return;
-          this.#drainBgExits();
-          const notify = typeof this.autoWakeNotify === 'function' ? this.autoWakeNotify : null;
-          this.run(null, notify, this.autoWakeOptions ?? {}).catch((err) =>
-            logger.warn(`autoWake run failed: ${err.message}`),
-          );
-        });
+      if (this.#pendingBgDrains.length > 0) {
+        this.#triggerAutoWake();
       }
     }
   }

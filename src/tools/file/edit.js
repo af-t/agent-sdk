@@ -75,28 +75,37 @@ function validateEdit(edit, i) {
   }
 }
 
+function verifyOldText(content, oldText, label) {
+  const occurrences = content.split(oldText).length - 1;
+  if (occurrences === 0) {
+    const snippet = fmtSnippet(oldText);
+    throw new Error(
+      `${label}: 'old_text' not found in file.\n  Searched for: "${snippet}"\n  Tip: check for trailing whitespace or indentation differences.`,
+    );
+  }
+  if (occurrences > 1) {
+    const snippet = fmtSnippet(oldText);
+    throw new Error(`${label}: 'old_text' found multiple times. Provide more context. Searched for: "${snippet}"`);
+  }
+}
+
+function getLineBoundaries(content, startLine, endLine, lineOffset) {
+  const lines = content.split('\n');
+  const start = Math.max(0, startLine + lineOffset - 1);
+  const end = Math.min(lines.length, endLine + lineOffset);
+  return { lines, start, end };
+}
+
 function applyEdit(content, edit, i, lineOffset) {
   const label = `edit[${i}]`;
 
   if (edit.action === 'replace') {
     if (edit.old_text) {
-      const occurrences = content.split(edit.old_text).length - 1;
-      if (occurrences === 0) {
-        const snippet = fmtSnippet(edit.old_text);
-        throw new Error(
-          `${label}: 'old_text' not found in file.\n  Searched for: "${snippet}"\n  Tip: check for trailing whitespace or indentation differences.`,
-        );
-      }
-      if (occurrences > 1) {
-        const snippet = fmtSnippet(edit.old_text);
-        throw new Error(`${label}: 'old_text' found multiple times. Provide more context. Searched for: "${snippet}"`);
-      }
+      verifyOldText(content, edit.old_text, label);
       const delta = edit.new_text.split('\n').length - edit.old_text.split('\n').length;
       return { content: content.replace(edit.old_text, () => edit.new_text), delta };
     }
-    const lines = content.split('\n');
-    const start = Math.max(0, edit.start_line + lineOffset - 1);
-    const end = Math.min(lines.length, edit.end_line + lineOffset);
+    const { lines, start, end } = getLineBoundaries(content, edit.start_line, edit.end_line, lineOffset);
     lines.splice(start, end - start, edit.new_text);
     const delta = edit.new_text.split('\n').length - (edit.end_line - edit.start_line + 1);
     return { content: lines.join('\n'), delta };
@@ -123,23 +132,11 @@ function applyEdit(content, edit, i, lineOffset) {
 
   if (edit.action === 'delete') {
     if (edit.old_text) {
-      const occurrences = content.split(edit.old_text).length - 1;
-      if (occurrences === 0) {
-        const snippet = fmtSnippet(edit.old_text);
-        throw new Error(
-          `${label}: 'old_text' not found in file.\n  Searched for: "${snippet}"\n  Tip: check for trailing whitespace or indentation differences.`,
-        );
-      }
-      if (occurrences > 1) {
-        const snippet = fmtSnippet(edit.old_text);
-        throw new Error(`${label}: 'old_text' found multiple times. Provide more context. Searched for: "${snippet}"`);
-      }
+      verifyOldText(content, edit.old_text, label);
       const delta = -(edit.old_text.split('\n').length - 1);
       return { content: content.replace(edit.old_text, () => ''), delta };
     }
-    const lines = content.split('\n');
-    const start = Math.max(0, edit.start_line + lineOffset - 1);
-    const end = Math.min(lines.length, edit.end_line + lineOffset);
+    const { lines, start, end } = getLineBoundaries(content, edit.start_line, edit.end_line, lineOffset);
     lines.splice(start, end - start);
     return { content: lines.join('\n'), delta: -(edit.end_line - edit.start_line + 1) };
   }

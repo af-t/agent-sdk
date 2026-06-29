@@ -170,6 +170,81 @@ const SIGKILL_GRACE_MS = 2000;
 
 // spawn fallback (used when node-pty is unavailable)
 
+function getExitStatus(code, signal) {
+  if (code === 0) return 'exited';
+  if (code === null || signal) return 'killed';
+  return 'crashed';
+}
+
+function setupBackgroundJob(agent, child, startedAt, reason, kind = 'bash') {
+  const id = generateJobId();
+  const dir = agent._resolveBackgroundLogDir();
+  const logPath = path.join(dir, `background-${id}.log`);
+  const stream = fs.createWriteStream(logPath, { flags: 'a' });
+
+  const job = {
+    id,
+    kind,
+    child,
+    logPath,
+    startedAt,
+    endedAt: null,
+    exitCode: null,
+    status: 'running',
+    reason,
+  };
+  agent.backgroundJobs.set(id, job);
+
+  const handleExit = (exitCode, status) => {
+    stream.end();
+    job.endedAt = Date.now();
+    job.exitCode = exitCode;
+    job.status = status;
+    agent._fireBackgroundExit({
+      id,
+      kind,
+      exitCode,
+      durationMs: job.endedAt - job.startedAt,
+      status,
+      logPath,
+    });
+  };
+
+  return { id, logPath, stream, handleExit, job };
+}
+
+function handleForegroundExit({
+  detachedToBackground,
+  timer,
+  killTimer,
+  signal,
+  onAbort,
+  aborted,
+  output,
+  exitCode,
+  exitSignal,
+  resolve,
+  reject,
+}) {
+  if (detachedToBackground) return;
+  clearTimeout(timer);
+  clearTimeout(killTimer);
+  if (signal) signal.removeEventListener('abort', onAbort);
+  if (aborted) {
+    reject(new Error(`Bash execution aborted\n\nPartial Output:\n${output}`));
+    return;
+  }
+  if (exitCode !== 0) {
+    const signalMsg = exitSignal ? ` (signal ${exitSignal})` : '';
+    const msg = output
+      ? `Process exited with code ${exitCode}${signalMsg}\n\nOutput:\n${output}`
+      : `Process exited with code ${exitCode}${exitSignal ? ' and signal ' + exitSignal : ''}`;
+    reject(new Error(msg));
+  } else {
+    resolve(output);
+  }
+}
+
 function runWithSpawn(command, cwd, env, timeout, signal, agent) {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
@@ -206,40 +281,14 @@ function runWithSpawn(command, cwd, env, timeout, signal, agent) {
     const timer = setTimeout(() => {
       if (agent) {
         detachedToBackground = true;
-        const id = generateJobId();
-        const dir = agent._resolveBackgroundLogDir();
-        const logPath = path.join(dir, `background-${id}.log`);
-        const stream = fs.createWriteStream(logPath, { flags: 'a' });
+        const { id, logPath, stream, handleExit } = setupBackgroundJob(agent, child, startedAt, 'timeout');
         stream.write(output);
         // stderr is folded into stdout at the shell level (exec 2>&1), so only stdout carries output
         child.stdout.removeAllListeners('data');
         child.stdout.pause();
         child.stdout.pipe(stream);
-        const job = {
-          id,
-          kind: 'bash',
-          child,
-          logPath,
-          startedAt,
-          endedAt: null,
-          exitCode: null,
-          status: 'running',
-          reason: 'timeout',
-        };
-        agent.backgroundJobs.set(id, job);
         child.on('close', (code) => {
-          stream.end();
-          job.endedAt = Date.now();
-          job.exitCode = code;
-          job.status = code === 0 ? 'exited' : code === null ? 'killed' : 'crashed';
-          agent._fireBackgroundExit({
-            id,
-            kind: 'bash',
-            exitCode: code,
-            durationMs: job.endedAt - job.startedAt,
-            status: job.status,
-            logPath,
-          });
+          handleExit(code, getExitStatus(code, null));
         });
         resolve(
           `Command exceeded timeout (${timeout}ms) — transitioned to background.\n` +
@@ -254,22 +303,19 @@ function runWithSpawn(command, cwd, env, timeout, signal, agent) {
     }, timeout);
 
     child.on('close', (code) => {
-      if (detachedToBackground) return;
-      clearTimeout(timer);
-      clearTimeout(killTimer);
-      if (signal) signal.removeEventListener('abort', onAbort);
-      if (aborted) {
-        reject(new Error(`Bash execution aborted\n\nPartial Output:\n${output}`));
-        return;
-      }
-      if (code !== 0) {
-        const msg = output
-          ? `Process exited with code ${code}\n\nOutput:\n${output}`
-          : `Process exited with code ${code}`;
-        reject(new Error(msg));
-      } else {
-        resolve(output);
-      }
+      handleForegroundExit({
+        detachedToBackground,
+        timer,
+        killTimer,
+        signal,
+        onAbort,
+        aborted,
+        output,
+        exitCode: code,
+        exitSignal: null,
+        resolve,
+        reject,
+      });
     });
 
     child.on('error', (err) => {
@@ -326,39 +372,13 @@ function runWithPty(command, cwd, env, timeout, signal, agent) {
     const timer = setTimeout(() => {
       if (agent) {
         detachedToBackground = true;
-        const id = generateJobId();
-        const dir = agent._resolveBackgroundLogDir();
-        const logPath = path.join(dir, `background-${id}.log`);
-        const stream = fs.createWriteStream(logPath, { flags: 'a' });
+        const { id, logPath, stream, handleExit } = setupBackgroundJob(agent, ptyProcess, startedAt, 'timeout');
         stream.write(output);
         // Stop accumulating into output; pipe remaining data to the log stream.
         dataDisposer.dispose();
         ptyProcess.onData((d) => stream.write(d));
-        const job = {
-          id,
-          kind: 'bash',
-          child: ptyProcess,
-          logPath,
-          startedAt,
-          endedAt: null,
-          exitCode: null,
-          status: 'running',
-          reason: 'timeout',
-        };
-        agent.backgroundJobs.set(id, job);
         ptyProcess.onExit(({ exitCode, signal: sig }) => {
-          stream.end();
-          job.endedAt = Date.now();
-          job.exitCode = exitCode;
-          job.status = exitCode === 0 ? 'exited' : sig ? 'killed' : 'crashed';
-          agent._fireBackgroundExit({
-            id,
-            kind: 'bash',
-            exitCode,
-            durationMs: job.endedAt - job.startedAt,
-            status: job.status,
-            logPath,
-          });
+          handleExit(exitCode, getExitStatus(exitCode, sig));
         });
         resolve(
           `Command exceeded timeout (${timeout}ms) — transitioned to background.\n` +
@@ -377,22 +397,19 @@ function runWithPty(command, cwd, env, timeout, signal, agent) {
     });
 
     ptyProcess.onExit(({ exitCode, signal: exitSignal }) => {
-      if (detachedToBackground) return;
-      clearTimeout(timer);
-      clearTimeout(killTimer);
-      if (signal) signal.removeEventListener('abort', onAbort);
-      if (aborted) {
-        reject(new Error(`Bash execution aborted\n\nPartial Output:\n${output}`));
-        return;
-      }
-      if (exitCode !== 0) {
-        const msg = output
-          ? `Process exited with code ${exitCode}${exitSignal ? ' (signal ' + exitSignal + ')' : ''}\n\nOutput:\n${output}`
-          : `Process exited with code ${exitCode}${exitSignal ? ' and signal ' + exitSignal : ''}`;
-        reject(new Error(msg));
-      } else {
-        resolve(output);
-      }
+      handleForegroundExit({
+        detachedToBackground,
+        timer,
+        killTimer,
+        signal,
+        onAbort,
+        aborted,
+        output,
+        exitCode,
+        exitSignal,
+        resolve,
+        reject,
+      });
     });
   });
 }
@@ -402,39 +419,13 @@ function generateJobId() {
 }
 
 function runWithSpawnBackground(command, cwd, env, signal, agent) {
-  const id = generateJobId();
-  const dir = agent._resolveBackgroundLogDir();
-  const logPath = path.join(dir, `background-${id}.log`);
-  const stream = fs.createWriteStream(logPath, { flags: 'a' });
+  const startedAt = Date.now();
   const child = spawn('bash', ['-c', 'exec 2>&1; ' + command], { cwd, env });
+  const { id, logPath, stream, handleExit, job } = setupBackgroundJob(agent, child, startedAt, 'explicit');
   child.stdout.pipe(stream);
 
-  const job = {
-    id,
-    kind: 'bash',
-    child,
-    logPath,
-    startedAt: Date.now(),
-    endedAt: null,
-    exitCode: null,
-    status: 'running',
-    reason: 'explicit',
-  };
-  agent.backgroundJobs.set(id, job);
-
   child.on('close', (code) => {
-    stream.end();
-    job.endedAt = Date.now();
-    job.exitCode = code;
-    job.status = code === 0 ? 'exited' : code === null ? 'killed' : 'crashed';
-    agent._fireBackgroundExit({
-      id,
-      kind: 'bash',
-      exitCode: code,
-      durationMs: job.endedAt - job.startedAt,
-      status: job.status,
-      logPath,
-    });
+    handleExit(code, getExitStatus(code, null));
   });
 
   child.on('error', (err) => {
@@ -469,62 +460,31 @@ function runWithSpawnBackground(command, cwd, env, signal, agent) {
 }
 
 function runWithPtyBackground(command, cwd, env, signal, agent) {
-  const id = generateJobId();
-  const dir = agent._resolveBackgroundLogDir();
-  const logPath = path.join(dir, `background-${id}.log`);
-  const stream = fs.createWriteStream(logPath, { flags: 'a' });
+  const startedAt = Date.now();
+  const ptyProcess = _ptyModule.spawn('bash', ['-c', command], {
+    name: 'xterm-color',
+    cols: 80,
+    rows: 24,
+    cwd,
+    env,
+  });
 
-  let ptyProcess;
-  try {
-    ptyProcess = _ptyModule.spawn('bash', ['-c', command], {
-      name: 'xterm-color',
-      cols: 80,
-      rows: 24,
-      cwd,
-      env,
-    });
-  } catch (err) {
-    stream.end();
-    throw err;
-  }
+  const { id, logPath, stream, handleExit } = setupBackgroundJob(agent, ptyProcess, startedAt, 'explicit');
 
   try {
     ptyProcess.onData((d) => stream.write(d));
   } catch (err) {
     stream.end();
+    agent.backgroundJobs.delete(id);
     try {
       ptyProcess.kill();
     } catch {}
     throw err;
   }
 
-  const job = {
-    id,
-    kind: 'bash',
-    child: ptyProcess,
-    logPath,
-    startedAt: Date.now(),
-    endedAt: null,
-    exitCode: null,
-    status: 'running',
-    reason: 'explicit',
-  };
-  agent.backgroundJobs.set(id, job);
-
   try {
     ptyProcess.onExit(({ exitCode, signal: sig }) => {
-      stream.end();
-      job.endedAt = Date.now();
-      job.exitCode = exitCode;
-      job.status = exitCode === 0 ? 'exited' : sig ? 'killed' : 'crashed';
-      agent._fireBackgroundExit({
-        id,
-        kind: 'bash',
-        exitCode,
-        durationMs: job.endedAt - job.startedAt,
-        status: job.status,
-        logPath,
-      });
+      handleExit(exitCode, getExitStatus(exitCode, sig));
     });
   } catch (err) {
     stream.end();

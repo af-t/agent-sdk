@@ -29,6 +29,19 @@ const generateId = () => {
   return Math.random().toString(36).substring(2, 7);
 };
 
+const formatTodoDetails = (todo) => {
+  const status = todo.completed ? '[done]' : '[pending]';
+  const priorityLabel = { high: '[high]', medium: '[medium]', low: '[low]' }[todo.priority];
+
+  let dueInfo = '';
+  if (todo.due_date) {
+    const dueDate = new Date(todo.due_date);
+    const isOverdue = !todo.completed && dueDate < new Date();
+    dueInfo = ` | ${isOverdue ? '[overdue]' : 'due:'} ${dueDate.toLocaleDateString('en-US')}`;
+  }
+  return { status, priorityLabel, dueInfo };
+};
+
 export const name = 'Todo';
 
 export const description =
@@ -169,15 +182,7 @@ export const execute = async (
         output += `${'-'.repeat(60)}\n`;
 
         filteredTodos.forEach((todo, index) => {
-          const status = todo.completed ? '[done]' : '[pending]';
-          const priorityLabel = { high: '[high]', medium: '[medium]', low: '[low]' }[todo.priority];
-
-          let dueInfo = '';
-          if (todo.due_date) {
-            const dueDate = new Date(todo.due_date);
-            const isOverdue = !todo.completed && dueDate < new Date();
-            dueInfo = ` | ${isOverdue ? '[overdue]' : 'due:'} ${dueDate.toLocaleDateString('en-US')}`;
-          }
+          const { status, priorityLabel, dueInfo } = formatTodoDetails(todo);
 
           output += `${index + 1}. ${status} ${priorityLabel} ${todo.text}\n`;
           output += `   ID: ${todo.id} | ${todo.category.toUpperCase()} | Created: ${new Date(todo.created_at).toLocaleDateString('en-US')}${dueInfo}\n`;
@@ -274,15 +279,7 @@ export const execute = async (
           return `No changes applied to todo "${todo.text}".`;
         }
 
-        const statusLabel = todo.completed ? '[done]' : '[pending]';
-        const priorityLabel = { high: '[high]', medium: '[medium]', low: '[low]' }[todo.priority];
-
-        let dueInfo = '';
-        if (todo.due_date) {
-          const dueDate = new Date(todo.due_date);
-          const isOverdue = !todo.completed && dueDate < new Date();
-          dueInfo = ` | ${isOverdue ? '[overdue]' : 'due:'} ${dueDate.toLocaleDateString('en-US')}`;
-        }
+        const { status: statusLabel, priorityLabel, dueInfo } = formatTodoDetails(todo);
 
         return `Todo updated:
    "${todo.text}"

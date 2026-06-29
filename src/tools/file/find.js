@@ -75,20 +75,24 @@ function commandAvailable(cmd) {
   });
 }
 
+function makeToRelative(absPath, cwd) {
+  const searchRootPrefix = absPath.endsWith(path.sep) ? absPath : absPath + path.sep;
+  const subdirPrefix = path.relative(cwd, absPath);
+  const isSubdir = subdirPrefix && subdirPrefix !== '.';
+
+  return function toRelative(absFilePath) {
+    let rel = absFilePath.startsWith(searchRootPrefix) ? absFilePath.slice(searchRootPrefix.length) : absFilePath;
+    if (isSubdir) rel = subdirPrefix + path.sep + rel;
+    return rel;
+  };
+}
+
 // Native fallback: recursive Node.js walk
 
 async function nativeSearch({ absPath, pattern, mode, cwd, signal }) {
   const regex = new RegExp(pattern, 'i');
   const matches = [];
-  const searchRootPrefix = absPath.endsWith(path.sep) ? absPath : absPath + path.sep;
-  const subdirPrefix = path.relative(cwd, absPath);
-  const isSubdir = subdirPrefix && subdirPrefix !== '.';
-
-  function toRelative(absFilePath) {
-    let rel = absFilePath.startsWith(searchRootPrefix) ? absFilePath.slice(searchRootPrefix.length) : absFilePath;
-    if (isSubdir) rel = subdirPrefix + path.sep + rel;
-    return rel;
-  }
+  const toRelative = makeToRelative(absPath, cwd);
 
   const walk = async (currentDir) => {
     if (signal?.aborted) throw new Error('Find aborted');
@@ -154,16 +158,8 @@ async function nativeSearch({ absPath, pattern, mode, cwd, signal }) {
 // Shell-accelerated search
 
 function shellFindByRegex(absPath, pattern, cwd, signal) {
-  const searchRootPrefix = absPath.endsWith(path.sep) ? absPath : absPath + path.sep;
-  const subdirPrefix = path.relative(cwd, absPath);
-  const isSubdir = subdirPrefix && subdirPrefix !== '.';
   const regex = new RegExp(pattern, 'i');
-
-  function toRelative(absFilePath) {
-    let rel = absFilePath.startsWith(searchRootPrefix) ? absFilePath.slice(searchRootPrefix.length) : absFilePath;
-    if (isSubdir) rel = subdirPrefix + path.sep + rel;
-    return rel;
-  }
+  const toRelative = makeToRelative(absPath, cwd);
 
   return spawnCommand(['find', absPath, '-type', 'f'], signal).then((output) => {
     const files = output
@@ -177,15 +173,7 @@ function shellFindByRegex(absPath, pattern, cwd, signal) {
 }
 
 function shellRgSearch(absPath, pattern, cwd, signal) {
-  const searchRootPrefix = absPath.endsWith(path.sep) ? absPath : absPath + path.sep;
-  const subdirPrefix = path.relative(cwd, absPath);
-  const isSubdir = subdirPrefix && subdirPrefix !== '.';
-
-  function toRelative(absFilePath) {
-    let rel = absFilePath.startsWith(searchRootPrefix) ? absFilePath.slice(searchRootPrefix.length) : absFilePath;
-    if (isSubdir) rel = subdirPrefix + path.sep + rel;
-    return rel;
-  }
+  const toRelative = makeToRelative(absPath, cwd);
 
   return spawnCommand(
     [
