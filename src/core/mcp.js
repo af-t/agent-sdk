@@ -180,17 +180,12 @@ export class McpNativeClient extends EventEmitter {
   }
 
   #handleMessage(message) {
-    if (message.id !== undefined) {
-      const pending = this.pendingRequests.get(message.id);
-      if (pending) {
-        this.pendingRequests.delete(message.id);
-        if (message.error) {
-          pending.reject(message.error);
-        } else {
-          pending.resolve(message.result);
-        }
-      } else {
-        // Return standard JSON-RPC error response for server-to-client requests to avoid hangs
+    // JSON-RPC: anything carrying `method` is a request or notification FROM
+    // the server. Its `id` lives in the server's id namespace and must never
+    // be matched against our pending (client-issued) request ids.
+    if (message.method !== undefined) {
+      if (message.id !== undefined) {
+        // server-to-client request: unsupported; answer so the server doesn't hang
         try {
           this.process?.stdin?.write(
             JSON.stringify({
@@ -202,9 +197,24 @@ export class McpNativeClient extends EventEmitter {
         } catch (err) {
           logger.debug('Failed to write JSON-RPC method not found error:', err.message);
         }
+      } else {
+        this.emit('notification', message);
       }
-    } else if (message.method) {
-      this.emit('notification', message);
+      return;
+    }
+
+    if (message.id !== undefined) {
+      const pending = this.pendingRequests.get(message.id);
+      if (!pending) {
+        logger.debug(`MCP: response for unknown request id ${message.id}; ignoring.`);
+        return;
+      }
+      this.pendingRequests.delete(message.id);
+      if (message.error) {
+        pending.reject(message.error);
+      } else {
+        pending.resolve(message.result);
+      }
     }
   }
 

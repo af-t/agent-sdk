@@ -202,9 +202,7 @@ describe('Agent — stop hooks & empty-turn recovery', () => {
     ]);
     agent._sendForTest = stub;
 
-    const result = await agent.run('hi', undefined, { signal: controller.signal });
-
-    assert.equal(result, '');
+    await assert.rejects(() => agent.run('hi', undefined, { signal: controller.signal }), /Agent run aborted/);
     assert.equal(stub.state.calls, 2, 'no new retry after the abort is observed');
     assert.equal(assistants(agent).length, 0, 'empty turn not committed on abort');
     assert.equal(hasText(agent.messages, NUDGE_NEEDLE), false, 'aborted before any nudge');

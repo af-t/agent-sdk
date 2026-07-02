@@ -48,6 +48,15 @@ function makeIdleTimer(ms, controller) {
     },
   };
 }
+
+// Error for a request that failed because the caller aborted the run.
+// `.aborted = true` makes withRetry fail fast instead of retrying.
+function callerAbortError() {
+  const err = new Error('Agent run aborted');
+  err.aborted = true;
+  return err;
+}
+
 const DEFAULT_MAX_TURNS = 25;
 const BG_KILL_GRACE_MS = 2000;
 const VALID_INJECTOR_SCOPES = new Set(['first-turn', 'per-turn']);
@@ -730,15 +739,18 @@ class Agent {
     await Promise.all(promises);
   }
 
-  async #request(payload) {
+  async #request(payload, signal) {
     const controller = new AbortController();
     const idle = makeIdleTimer(REQUEST_TIMEOUT, controller);
+    // Compose the caller's signal with the idle-timeout controller so a
+    // caller abort cancels the in-flight fetch immediately.
+    const fetchSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     try {
       const res = await fetch(`${this.#baseUrl}/chat/completions`, {
         method: 'POST',
         headers: buildRequestHeaders({ apiKey: this.#apiKey, dialect: this.dialect }),
         body: JSON.stringify({ ...payload, stream: false }),
-        signal: controller.signal,
+        signal: fetchSignal,
       });
 
       // connection established — reset idle clock for body read
@@ -763,6 +775,9 @@ class Agent {
       }
 
       return responseBody;
+    } catch (err) {
+      if (signal?.aborted) throw callerAbortError();
+      throw err;
     } finally {
       idle.clear();
     }
@@ -836,7 +851,10 @@ class Agent {
       // action === 'retry': re-send the identical payload.
       this.#stopAttempts++;
       try {
-        const retryResponse = await withRetry(() => (isStreaming ? this.#sendStream(payload) : this.#send(payload)), 5);
+        const retryResponse = await withRetry(
+          () => (isStreaming ? this.#sendStream(payload, signal) : this.#send(payload, signal)),
+          5,
+        );
         const retryMessage = retryResponse.choices?.[0]?.message;
         content = retryMessage?.content || null;
         reasoning = retryMessage?.reasoning || undefined;
@@ -979,12 +997,12 @@ class Agent {
     return stub;
   }
 
-  async #send(payload) {
+  async #send(payload, signal) {
     if (typeof this._sendForTest === 'function') {
       return this.#sendTestStub(payload);
     }
     logger.debug(`Sending request to LLM (${this.model})...`);
-    const response = await this.#request(payload);
+    const response = await this.#request(payload, signal);
     logger.debug(`Received response from LLM.`);
 
     this.usage.cost += response.usage?.cost || 0;
@@ -997,12 +1015,13 @@ class Agent {
     return response;
   }
 
-  async #sendStream(payload) {
+  async #sendStream(payload, signal) {
     if (typeof this._sendForTest === 'function') {
       return this.#sendTestStub(payload);
     }
     const controller = new AbortController();
     const idle = makeIdleTimer(REQUEST_TIMEOUT, controller);
+    const fetchSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
 
     let res;
     try {
@@ -1011,10 +1030,11 @@ class Agent {
         headers: buildRequestHeaders({ apiKey: this.#apiKey, dialect: this.dialect }),
         // Request streamed usage so strict OpenAI-compatible servers report token usage.
         body: JSON.stringify({ ...payload, stream: true, stream_options: { include_usage: true } }),
-        signal: controller.signal,
+        signal: fetchSignal,
       });
     } catch (err) {
       idle.clear();
+      if (signal?.aborted) throw callerAbortError();
       throw err;
     }
 
@@ -1132,6 +1152,9 @@ class Agent {
           }
         }
       }
+    } catch (err) {
+      if (signal?.aborted) throw callerAbortError();
+      throw err;
     } finally {
       idle.clear();
       reader.releaseLock();
@@ -1598,7 +1621,10 @@ class Agent {
         this.#recorder?.request(loopCount, payload);
         let response;
         try {
-          response = await withRetry(() => (isStreaming ? this.#sendStream(payload) : this.#send(payload)), 5);
+          response = await withRetry(
+            () => (isStreaming ? this.#sendStream(payload, signal) : this.#send(payload, signal)),
+            5,
+          );
           this.#pendingRichCallIds.clear();
           this.#richUserMsgIdx = -1;
         } catch (err) {
@@ -1638,13 +1664,19 @@ class Agent {
                 break;
               }
             }
-            response = await withRetry(() => (isStreaming ? this.#sendStream(payload) : this.#send(payload)), 5);
+            response = await withRetry(
+              () => (isStreaming ? this.#sendStream(payload, signal) : this.#send(payload, signal)),
+              5,
+            );
           } else {
             this.#pendingRichCallIds.clear();
             throw err;
           }
         }
         this.#recorder?.response(loopCount, response);
+        // Response landed after the caller aborted: don't commit or act on it.
+        if (signal?.aborted) throw new Error('Agent run aborted');
+
         const message = response.choices?.[0]?.message;
         if (!message) {
           logger.warn('Agent: LLM returned no message in response. Breaking loop.');
@@ -1682,6 +1714,8 @@ class Agent {
           tool_calls = r.tool_calls;
           finish_reason = r.finish_reason;
         }
+
+        if (signal?.aborted) throw new Error('Agent run aborted');
 
         const isEmptyTerminal =
           (!tool_calls || tool_calls.length === 0) && (content == null || String(content).trim() === '');

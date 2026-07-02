@@ -331,4 +331,20 @@ describe('McpClientWrapper — functional', () => {
       await assert.doesNotReject(() => wrapper.close());
     },
   );
+
+  it(
+    'does not resolve a pending request with a server-to-client request that reuses the id',
+    { skip: !nodeAvailable ? 'node not spawnable' : undefined },
+    async () => {
+      const mockScript = path.join(fixturesDir, 'mock-mcp-id-collision.js');
+      const wrapper = new McpClientWrapper({ command: process.execPath, args: [mockScript], timeout: 2000 });
+      try {
+        const tools = await wrapper.connectAndGetTools();
+        assert.equal(tools.length, 1);
+        assert.equal(tools[0].name, 'echo');
+      } finally {
+        await wrapper.close();
+      }
+    },
+  );
 });

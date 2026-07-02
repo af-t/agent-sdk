@@ -751,3 +751,113 @@ describe('Edit — error message quality', () => {
     );
   });
 });
+
+describe('Edit — mixed content-anchored and line-based edits', () => {
+  let execute;
+  before(async () => {
+    await fs.mkdir(FIXTURES, { recursive: true });
+    await reset();
+    execute = (await import('../../../src/tools/file/edit.js')).execute;
+  });
+  after(() => fs.rm(TEST_FILE, { force: true }));
+  beforeEach(reset);
+
+  it('line-based edit above an earlier old_text edit that added lines is not shifted', async () => {
+    // REVIEW.md finding 2: +1-line old_text edit at line 4, then start_line 2.
+    // The buggy global offset shifted the target down to line 3.
+    await execute({
+      path: TEST_FILE,
+      edits: [
+        { action: 'replace', old_text: 'Line four: lorem ipsum', new_text: 'Line four: lorem ipsum\nLine 4.5: EXTRA' },
+        { action: 'replace', start_line: 2, end_line: 2, new_text: 'TWO' },
+      ],
+    });
+    const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');
+    assert.deepEqual(lines, [
+      'Line one: hello world',
+      'TWO',
+      'Line three: baz qux',
+      'Line four: lorem ipsum',
+      'Line 4.5: EXTRA',
+      'Line five: dolor sit amet',
+    ]);
+  });
+
+  it('line-based edit below an earlier old_text edit that added lines is shifted correctly', async () => {
+    await execute({
+      path: TEST_FILE,
+      edits: [
+        { action: 'replace', old_text: 'Line two: foo bar', new_text: 'Line two: foo bar\nLine 2.5: EXTRA' },
+        { action: 'replace', start_line: 4, end_line: 4, new_text: 'FOUR' },
+      ],
+    });
+    const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');
+    assert.deepEqual(lines, [
+      'Line one: hello world',
+      'Line two: foo bar',
+      'Line 2.5: EXTRA',
+      'Line three: baz qux',
+      'FOUR',
+      'Line five: dolor sit amet',
+    ]);
+  });
+
+  it('line-based edit below an earlier old_text delete is shifted correctly', async () => {
+    await execute({
+      path: TEST_FILE,
+      edits: [
+        { action: 'delete', old_text: 'Line two: foo bar\n' },
+        { action: 'replace', start_line: 4, end_line: 4, new_text: 'FOUR' },
+      ],
+    });
+    const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');
+    assert.deepEqual(lines, ['Line one: hello world', 'Line three: baz qux', 'FOUR', 'Line five: dolor sit amet']);
+  });
+
+  it('insert by line number below an earlier old_text edit is shifted correctly', async () => {
+    await execute({
+      path: TEST_FILE,
+      edits: [
+        { action: 'replace', old_text: 'Line one: hello world', new_text: 'ONE\nONE-B' },
+        { action: 'insert', line: 3, position: 'after', text: 'INSERTED' },
+      ],
+    });
+    const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');
+    assert.deepEqual(lines, [
+      'ONE',
+      'ONE-B',
+      'Line two: foo bar',
+      'Line three: baz qux',
+      'INSERTED',
+      'Line four: lorem ipsum',
+      'Line five: dolor sit amet',
+    ]);
+  });
+
+  it('throws when a line-based edit targets a line rewritten by an earlier old_text edit', async () => {
+    await assert.rejects(
+      () =>
+        execute({
+          path: TEST_FILE,
+          edits: [
+            { action: 'replace', old_text: 'Line three: baz qux', new_text: 'X\nY' },
+            { action: 'replace', start_line: 3, end_line: 3, new_text: 'Z' },
+          ],
+        }),
+      /edit\[1\]: line 3 was changed by an earlier edit in this call/,
+    );
+    // failed multi-edit must not touch the file
+    assert.equal(await fs.readFile(TEST_FILE, 'utf8'), INITIAL);
+  });
+
+  it('throws when a line-based edit references a line beyond the original file', async () => {
+    await assert.rejects(
+      () =>
+        execute({
+          path: TEST_FILE,
+          edits: [{ action: 'replace', start_line: 9, end_line: 9, new_text: 'X' }],
+        }),
+      /edit\[0\]: line 9 is out of range \(file has 5 lines\)/,
+    );
+  });
+});

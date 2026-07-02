@@ -146,4 +146,68 @@ describe('Agent — abort propagation', () => {
     const elapsed = Date.now() - t0;
     assert.ok(elapsed >= 90, `expected at least 90ms (tool must finish), got ${elapsed}ms`);
   });
+
+  it('aborts the in-flight LLM fetch; run() rejects without waiting for the response', async () => {
+    const ctrl = new AbortController();
+    global.fetch = (_url, init) =>
+      new Promise((resolve, reject) => {
+        const timer = setTimeout(
+          () =>
+            resolve(
+              makeJsonResponse({ choices: [{ message: { content: 'ok' } }], usage: { cost: 0, total_tokens: 1 } }),
+            ),
+          300,
+        );
+        if (init.signal?.aborted) {
+          clearTimeout(timer);
+          reject(Object.assign(new Error('This operation was aborted'), { name: 'AbortError' }));
+          return;
+        }
+        init.signal?.addEventListener('abort', () => {
+          clearTimeout(timer);
+          reject(Object.assign(new Error('This operation was aborted'), { name: 'AbortError' }));
+        });
+      });
+
+    const agent = new Agent({ apiKey: 'sk-test' });
+    setTimeout(() => ctrl.abort(), 30);
+    const t0 = Date.now();
+    await assert.rejects(() => agent.run('go', null, { signal: ctrl.signal }), /Agent run aborted/);
+    const elapsed = Date.now() - t0;
+    assert.ok(elapsed < 250, `run should reject before the 300ms response, got ${elapsed}ms`);
+  });
+
+  it('rejects instead of resolving when abort lands before a terminal response is committed', async () => {
+    // fetch deliberately ignores init.signal — exercises the post-response check
+    const ctrl = new AbortController();
+    global.fetch = async () => {
+      await new Promise((r) => setTimeout(r, 100));
+      return makeJsonResponse({ choices: [{ message: { content: 'ok' } }], usage: { cost: 0, total_tokens: 1 } });
+    };
+    const agent = new Agent({ apiKey: 'sk-test' });
+    setTimeout(() => ctrl.abort(), 30);
+    await assert.rejects(() => agent.run('go', null, { signal: ctrl.signal }), /Agent run aborted/);
+  });
+
+  it('streaming: mid-stream abort rejects with Agent run aborted', async () => {
+    const ctrl = new AbortController();
+    global.fetch = async (_url, init) => ({
+      ok: true,
+      status: 200,
+      body: new ReadableStream({
+        start(streamCtrl) {
+          streamCtrl.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"he"}}]}\n\n'));
+          const fail = () =>
+            streamCtrl.error(Object.assign(new Error('This operation was aborted'), { name: 'AbortError' }));
+          if (init.signal?.aborted) return fail();
+          init.signal?.addEventListener('abort', fail);
+          // stream never closes on its own; only the abort tears it down
+        },
+      }),
+    });
+    const agent = new Agent({ apiKey: 'sk-test' });
+    setTimeout(() => ctrl.abort(), 30);
+    // a notify callback forces the streaming (#sendStream) path
+    await assert.rejects(() => agent.run('go', () => {}, { signal: ctrl.signal }), /Agent run aborted/);
+  });
 });

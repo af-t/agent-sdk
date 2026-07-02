@@ -89,26 +89,57 @@ function verifyOldText(content, oldText, label) {
   }
 }
 
-function getLineBoundaries(content, startLine, endLine, lineOffset) {
-  const lines = content.split('\n');
-  const start = Math.max(0, startLine + lineOffset - 1);
-  const end = Math.min(lines.length, endLine + lineOffset);
-  return { lines, start, end };
+// originMap: index = current 0-based content line, value = original 1-based
+// line number, null for lines created or rewritten by an earlier edit in this
+// call. Kept in lockstep with content so line-based edits resolve against
+// original-file coordinates no matter where earlier edits landed.
+function spliceOriginMap(map, start, deleteCount, insertCount) {
+  map.splice(start, deleteCount, ...new Array(insertCount).fill(null));
 }
 
-function applyEdit(content, edit, i, lineOffset) {
+function resolveOriginalLine(map, origLine, origLineCount, label) {
+  if (origLine < 1 || origLine > origLineCount) {
+    throw new Error(`${label}: line ${origLine} is out of range (file has ${origLineCount} lines)`);
+  }
+  const idx = map.indexOf(origLine);
+  if (idx === -1) {
+    throw new Error(
+      `${label}: line ${origLine} was changed by an earlier edit in this call. ` +
+        `Use old_text (content-anchored) or split into separate Edit calls.`,
+    );
+  }
+  return idx;
+}
+
+function applyEdit(content, edit, i, map, origLineCount) {
   const label = `edit[${i}]`;
 
-  if (edit.action === 'replace') {
+  if (edit.action === 'replace' || edit.action === 'delete') {
+    const replacement = edit.action === 'replace' ? edit.new_text : '';
     if (edit.old_text) {
       verifyOldText(content, edit.old_text, label);
-      const delta = edit.new_text.split('\n').length - edit.old_text.split('\n').length;
-      return { content: content.replace(edit.old_text, () => edit.new_text), delta };
+      const matchStart = content.indexOf(edit.old_text);
+      const firstLine = content.slice(0, matchStart).split('\n').length - 1;
+      const matchLineCount = edit.old_text.split('\n').length;
+      // The whole-line region containing the match goes from matchLineCount
+      // lines to matchLineCount + delta lines (prefix/suffix of the boundary
+      // lines carry no newlines, so the arithmetic is exact).
+      const delta = replacement.split('\n').length - matchLineCount;
+      spliceOriginMap(map, firstLine, matchLineCount, matchLineCount + delta);
+      return content.replace(edit.old_text, () => replacement);
     }
-    const { lines, start, end } = getLineBoundaries(content, edit.start_line, edit.end_line, lineOffset);
-    lines.splice(start, end - start, edit.new_text);
-    const delta = edit.new_text.split('\n').length - (edit.end_line - edit.start_line + 1);
-    return { content: lines.join('\n'), delta };
+    const startIdx = resolveOriginalLine(map, edit.start_line, origLineCount, label);
+    const endIdx = resolveOriginalLine(map, edit.end_line, origLineCount, label);
+    const lines = content.split('\n');
+    const removed = endIdx - startIdx + 1;
+    if (edit.action === 'replace') {
+      lines.splice(startIdx, removed, edit.new_text);
+      spliceOriginMap(map, startIdx, removed, edit.new_text.split('\n').length);
+    } else {
+      lines.splice(startIdx, removed);
+      spliceOriginMap(map, startIdx, removed, 0);
+    }
+    return lines.join('\n');
   }
 
   if (edit.action === 'insert') {
@@ -119,26 +150,12 @@ function applyEdit(content, edit, i, lineOffset) {
       if (idx === -1) throw new Error(`${label}: 'anchor_text' not found`);
       insertIndex = edit.position === 'after' ? idx + 1 : idx;
     } else {
-      const adjustedLine = edit.line + lineOffset;
-      const M = lines.length;
-      if (adjustedLine < 1 || adjustedLine > M) {
-        throw new Error(`${label}: line ${edit.line} is out of range (file has ${M} lines)`);
-      }
-      insertIndex = edit.position === 'after' ? adjustedLine : adjustedLine - 1;
+      const idx = resolveOriginalLine(map, edit.line, origLineCount, label);
+      insertIndex = edit.position === 'after' ? idx + 1 : idx;
     }
     lines.splice(insertIndex, 0, edit.text);
-    return { content: lines.join('\n'), delta: edit.text.split('\n').length };
-  }
-
-  if (edit.action === 'delete') {
-    if (edit.old_text) {
-      verifyOldText(content, edit.old_text, label);
-      const delta = -(edit.old_text.split('\n').length - 1);
-      return { content: content.replace(edit.old_text, () => ''), delta };
-    }
-    const { lines, start, end } = getLineBoundaries(content, edit.start_line, edit.end_line, lineOffset);
-    lines.splice(start, end - start);
-    return { content: lines.join('\n'), delta: -(edit.end_line - edit.start_line + 1) };
+    spliceOriginMap(map, insertIndex, 0, edit.text.split('\n').length);
+    return lines.join('\n');
   }
 }
 
@@ -149,6 +166,8 @@ export const description =
   'Prefer old_text over line numbers — old_text is content-anchored and immune to shifting. ' +
   'When using line-based edits in a multi-edit call, line numbers are automatically adjusted ' +
   'for insertions and deletions made by earlier actions in the same call. ' +
+  'A line whose content was rewritten by an earlier action in the same call can no longer be addressed by line number — ' +
+  'use old_text for it, or split into separate Edit calls. ' +
   'Line-based edits must be specified in top-to-bottom order (ascending start_line). Side effect: mutates the target file. Do not issue parallel Edit/Write calls against the same path.';
 
 export const input_schema = {
@@ -221,7 +240,8 @@ export const execute = async ({ path: filePath, edits }, ctx = {}) => {
   const usesCrlf = rawContent.includes('\r\n');
   let content = usesCrlf ? rawContent.replace(/\r\n/g, '\n') : rawContent;
 
-  let lineOffset = 0;
+  const origLineCount = content.split('\n').length;
+  const originMap = Array.from({ length: origLineCount }, (_, idx) => idx + 1);
   let lastOriginalEndLine = -Infinity;
 
   for (let i = 0; i < edits.length; i++) {
@@ -251,9 +271,7 @@ export const execute = async ({ path: filePath, edits }, ctx = {}) => {
       lastOriginalEndLine = edit.end_line ?? origStart;
     }
 
-    const { content: newContent, delta } = applyEdit(content, edit, i, lineOffset);
-    content = newContent;
-    lineOffset += delta;
+    content = applyEdit(content, edit, i, originMap, origLineCount);
   }
 
   const output = usesCrlf ? content.replace(/\n/g, '\r\n') : content;
