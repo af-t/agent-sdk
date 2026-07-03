@@ -119,13 +119,20 @@ function applyEdit(content, edit, i, map, origLineCount) {
     if (edit.old_text) {
       verifyOldText(content, edit.old_text, label);
       const matchStart = content.indexOf(edit.old_text);
+      const matchEnd = matchStart + edit.old_text.length;
       const firstLine = content.slice(0, matchStart).split('\n').length - 1;
-      const matchLineCount = edit.old_text.split('\n').length;
-      // The whole-line region containing the match goes from matchLineCount
-      // lines to matchLineCount + delta lines (prefix/suffix of the boundary
-      // lines carry no newlines, so the arithmetic is exact).
-      const delta = replacement.split('\n').length - matchLineCount;
-      spliceOriginMap(map, firstLine, matchLineCount, matchLineCount + delta);
+      // Use matchEnd - 1 (the match's last actual character) rather than
+      // matchEnd itself, so a trailing '\n' in old_text doesn't get counted
+      // as spilling onto the next (untouched) line.
+      const lastLine = content.slice(0, Math.max(matchStart, matchEnd - 1)).split('\n').length - 1;
+      const origSpanLines = lastLine - firstLine + 1;
+      // The total line-count change from the substring swap is exact
+      // regardless of boundary alignment (content.replace always changes the
+      // newline count by exactly this much); apply it on top of the
+      // corrected span so the origin map's length still exactly tracks the
+      // real content after the splice.
+      const delta = replacement.split('\n').length - edit.old_text.split('\n').length;
+      spliceOriginMap(map, firstLine, origSpanLines, origSpanLines + delta);
       return content.replace(edit.old_text, () => replacement);
     }
     const startIdx = resolveOriginalLine(map, edit.start_line, origLineCount, label);

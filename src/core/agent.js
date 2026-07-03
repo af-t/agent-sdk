@@ -8,6 +8,7 @@ import {
   resolveDialect,
   buildRequestHeaders,
   sanitizeAppName,
+  callerAbortedError,
 } from './utils.js';
 import { mergeReasoningDelta, finalizeReasoningDetails, sanitizeAssistantReasoning } from './reasoning.js';
 import { ToolRegistry } from '../registry/tool.js';
@@ -50,11 +51,25 @@ function makeIdleTimer(ms, controller) {
 }
 
 // Error for a request that failed because the caller aborted the run.
-// `.aborted = true` makes withRetry fail fast instead of retrying.
-function callerAbortError() {
-  const err = new Error('Agent run aborted');
-  err.aborted = true;
-  return err;
+// `.aborted = true` makes withRetry fail fast instead of retrying. `cause`
+// preserves the error that was in flight when the abort was observed (e.g. a
+// real ApiError) so it isn't silently discarded — inspect err.cause for it.
+function callerAbortError(cause) {
+  return callerAbortedError('Agent run aborted', cause);
+}
+
+// Compose the caller's signal with a per-request idle-timeout controller so
+// a caller abort cancels the in-flight fetch immediately.
+function composeFetchSignal(signal, controllerSignal) {
+  return signal ? AbortSignal.any([signal, controllerSignal]) : controllerSignal;
+}
+
+// Shared tail for request catch blocks: if the caller's signal is why this
+// failed, replace the error with a fast-failing, retry-skipping abort error
+// (keeping the original as .cause); otherwise rethrow it unchanged.
+function rethrowAsAbortIfCaller(err, signal) {
+  if (signal?.aborted) throw callerAbortError(err);
+  throw err;
 }
 
 const DEFAULT_MAX_TURNS = 25;
@@ -744,7 +759,7 @@ class Agent {
     const idle = makeIdleTimer(REQUEST_TIMEOUT, controller);
     // Compose the caller's signal with the idle-timeout controller so a
     // caller abort cancels the in-flight fetch immediately.
-    const fetchSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+    const fetchSignal = composeFetchSignal(signal, controller.signal);
     try {
       const res = await fetch(`${this.#baseUrl}/chat/completions`, {
         method: 'POST',
@@ -776,8 +791,7 @@ class Agent {
 
       return responseBody;
     } catch (err) {
-      if (signal?.aborted) throw callerAbortError();
-      throw err;
+      rethrowAsAbortIfCaller(err, signal);
     } finally {
       idle.clear();
     }
@@ -1021,7 +1035,7 @@ class Agent {
     }
     const controller = new AbortController();
     const idle = makeIdleTimer(REQUEST_TIMEOUT, controller);
-    const fetchSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+    const fetchSignal = composeFetchSignal(signal, controller.signal);
 
     let res;
     try {
@@ -1034,8 +1048,7 @@ class Agent {
       });
     } catch (err) {
       idle.clear();
-      if (signal?.aborted) throw callerAbortError();
-      throw err;
+      rethrowAsAbortIfCaller(err, signal);
     }
 
     // connection established — reset idle clock before stream begins
@@ -1049,7 +1062,8 @@ class Agent {
       } catch {
         body = {};
       }
-      throw new ApiError(body?.error?.message || `OpenRouter API error (${res.status})`, res.status, body);
+      const apiErr = new ApiError(body?.error?.message || `OpenRouter API error (${res.status})`, res.status, body);
+      rethrowAsAbortIfCaller(apiErr, signal);
     }
 
     let content = '';
@@ -1153,8 +1167,7 @@ class Agent {
         }
       }
     } catch (err) {
-      if (signal?.aborted) throw callerAbortError();
-      throw err;
+      rethrowAsAbortIfCaller(err, signal);
     } finally {
       idle.clear();
       reader.releaseLock();
@@ -1675,7 +1688,7 @@ class Agent {
         }
         this.#recorder?.response(loopCount, response);
         // Response landed after the caller aborted: don't commit or act on it.
-        if (signal?.aborted) throw new Error('Agent run aborted');
+        if (signal?.aborted) throw callerAbortError();
 
         const message = response.choices?.[0]?.message;
         if (!message) {
@@ -1715,7 +1728,7 @@ class Agent {
           finish_reason = r.finish_reason;
         }
 
-        if (signal?.aborted) throw new Error('Agent run aborted');
+        if (signal?.aborted) throw callerAbortError();
 
         const isEmptyTerminal =
           (!tool_calls || tool_calls.length === 0) && (content == null || String(content).trim() === '');

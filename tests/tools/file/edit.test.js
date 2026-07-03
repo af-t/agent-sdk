@@ -860,4 +860,25 @@ describe('Edit — mixed content-anchored and line-based edits', () => {
       /edit\[0\]: line 9 is out of range \(file has 5 lines\)/,
     );
   });
+
+  it('line-based edit on the line immediately after an old_text delete-with-trailing-newline is not falsely invalidated', async () => {
+    // The over-nulling bug: old_text 'Line two: foo bar\n' has a trailing
+    // newline, so its own split('\n').length (2) over-counts the whole-line
+    // span it actually touches (1 line — line 2). The buggy code nulled out
+    // line 3 too, even though line 3's content never changed.
+    await execute({
+      path: TEST_FILE,
+      edits: [
+        { action: 'delete', old_text: 'Line two: foo bar\n' },
+        { action: 'replace', start_line: 3, end_line: 3, new_text: 'THREE-REPLACED' },
+      ],
+    });
+    const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');
+    assert.deepEqual(lines, [
+      'Line one: hello world',
+      'THREE-REPLACED',
+      'Line four: lorem ipsum',
+      'Line five: dolor sit amet',
+    ]);
+  });
 });

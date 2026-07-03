@@ -1,4 +1,4 @@
-import { withRetry, resolveDialect, buildRequestHeaders } from './utils.js';
+import { withRetry, resolveDialect, buildRequestHeaders, callerAbortedError } from './utils.js';
 import { ApiError } from './errors.js';
 
 const EMBED_TIMEOUT = 120_000;
@@ -54,11 +54,7 @@ export async function embedTexts(texts, { apiKey, baseUrl, model, signal } = {})
       return body;
     } catch (err) {
       // Caller aborted — flag it so withRetry fails fast instead of retrying.
-      if (signal?.aborted) {
-        const aborted = new Error('Embeddings request aborted');
-        aborted.aborted = true;
-        throw aborted;
-      }
+      if (signal?.aborted) throw callerAbortedError('Embeddings request aborted', err);
       throw err;
     } finally {
       clearTimeout(timer);

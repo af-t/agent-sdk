@@ -208,6 +208,25 @@ describe('McpNativeClient — mock server connections', () => {
       }
     },
   );
+
+  it(
+    "drops messages with method: null or method: '' instead of emitting them as notifications",
+    { skip: !nodeAvailable ? 'node not spawnable' : undefined },
+    async () => {
+      const mockScript = path.join(fixturesDir, 'mock-mcp-null-method.js');
+      const client = new McpNativeClient({ command: process.execPath, args: [mockScript], timeout: 2000 });
+      const notifications = [];
+      client.on('notification', (msg) => notifications.push(msg));
+      try {
+        await client.connect();
+        await new Promise((r) => setTimeout(r, 200));
+        assert.equal(notifications.length, 1, 'only the well-formed notification should be emitted');
+        assert.equal(notifications[0].method, 'test/ping');
+      } finally {
+        await client.close();
+      }
+    },
+  );
 });
 
 describe('McpClientWrapper', () => {

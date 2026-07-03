@@ -183,7 +183,7 @@ export class McpNativeClient extends EventEmitter {
     // JSON-RPC: anything carrying `method` is a request or notification FROM
     // the server. Its `id` lives in the server's id namespace and must never
     // be matched against our pending (client-issued) request ids.
-    if (message.method !== undefined) {
+    if (typeof message.method === 'string' && message.method !== '') {
       if (message.id !== undefined) {
         // server-to-client request: unsupported; answer so the server doesn't hang
         try {

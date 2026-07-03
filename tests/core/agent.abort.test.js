@@ -210,4 +210,63 @@ describe('Agent — abort propagation', () => {
     // a notify callback forces the streaming (#sendStream) path
     await assert.rejects(() => agent.run('go', () => {}, { signal: ctrl.signal }), /Agent run aborted/);
   });
+
+  it('streaming: a retryable non-ok response observed after caller abort rejects fast instead of retrying', async () => {
+    const ctrl = new AbortController();
+    let calls = 0;
+    global.fetch = async () => {
+      calls++;
+      // Simulate the response landing right as the caller cancels.
+      ctrl.abort();
+      return { ok: false, status: 429, json: async () => ({ error: { message: 'rate limited' } }) };
+    };
+    const agent = new Agent({ apiKey: 'sk-test' });
+    const t0 = Date.now();
+    // a notify callback forces the streaming (#sendStream) path
+    await assert.rejects(() => agent.run('go', () => {}, { signal: ctrl.signal }), /Agent run aborted/);
+    assert.equal(calls, 1, 'must not retry once the caller signal is observed as aborted');
+    assert.ok(
+      Date.now() - t0 < 500,
+      `expected a fast rejection, not a multi-second retry backoff, got ${Date.now() - t0}ms`,
+    );
+  });
+
+  it('preserves the original error as err.cause when the caller aborted mid-request', async () => {
+    const ctrl = new AbortController();
+    global.fetch = async () => {
+      ctrl.abort();
+      return {
+        ok: false,
+        status: 402,
+        text: async () => JSON.stringify({ error: { message: 'Insufficient balance' } }),
+      };
+    };
+    const agent = new Agent({ apiKey: 'sk-test' });
+    try {
+      await agent.run('go', null, { signal: ctrl.signal });
+      assert.fail('expected run() to reject');
+    } catch (err) {
+      assert.match(err.message, /Agent run aborted/);
+      assert.equal(err.aborted, true);
+      assert.equal(err.cause?.status, 402, 'expected the original ApiError preserved as err.cause');
+      assert.match(err.cause?.message, /Insufficient balance/);
+    }
+  });
+
+  it('the post-response abort check uses callerAbortError so .aborted is set', async () => {
+    const ctrl = new AbortController();
+    global.fetch = async () => {
+      await new Promise((r) => setTimeout(r, 100));
+      return makeJsonResponse({ choices: [{ message: { content: 'ok' } }], usage: { cost: 0, total_tokens: 1 } });
+    };
+    const agent = new Agent({ apiKey: 'sk-test' });
+    setTimeout(() => ctrl.abort(), 30);
+    try {
+      await agent.run('go', null, { signal: ctrl.signal });
+      assert.fail('expected run() to reject');
+    } catch (err) {
+      assert.match(err.message, /Agent run aborted/);
+      assert.equal(err.aborted, true, 'expected callerAbortError(), not a bare new Error()');
+    }
+  });
 });

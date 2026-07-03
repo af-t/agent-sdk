@@ -397,6 +397,17 @@ export function formatSize(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + sizes[i];
 }
 
+// Error for a request that failed because the caller's AbortSignal fired.
+// `.aborted = true` makes withRetry (below) fail fast instead of retrying.
+// `cause` preserves the in-flight error (if any) so it isn't silently
+// discarded when the caller aborts around the same time it occurs.
+export function callerAbortedError(message, cause) {
+  const err = new Error(message);
+  err.aborted = true;
+  if (cause !== undefined) err.cause = cause;
+  return err;
+}
+
 export async function withRetry(func, count = config.MAX_RETRIES, callback) {
   let delay = CONSTANTS.RETRY_BASE_DELAY_MS;
   let lastError;
