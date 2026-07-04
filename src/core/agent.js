@@ -1306,8 +1306,10 @@ class Agent {
     const events = this.#pendingBgDrains.splice(0);
     const lines = [];
     for (const e of events) {
+      const reasonNote = e.reason ? `, reason: "${e.reason}"` : '';
+      if (e.prompt) lines.push(`- ${e.prompt}`);
       lines.push(
-        `- ${e.id} (${e.kind}): ${e.status}, exit ${e.exitCode}, ${Math.round(e.durationMs / 100) / 10}s, log: ${e.logPath}`,
+        `- ${e.id} (${e.kind}): ${e.status}, exit ${e.exitCode}, ${Math.round(e.durationMs / 100) / 10}s, log: ${e.logPath}${reasonNote}`,
       );
       if (Array.isArray(e.watch) && e.watch.length) {
         for (const wid of e.watch) lines.push(describeJob(this, wid, e.tailBytes ?? 4096));
@@ -1370,7 +1372,7 @@ class Agent {
     this.#multimodalUnsupported = false;
   }
 
-  _scheduleTimer({ durationMs, watch = [], tailBytes = 4096 }) {
+  _scheduleTimer({ durationMs, watch = [], tailBytes = 4096, reason, prompt }) {
     const id = 'bg-' + crypto.randomBytes(4).toString('hex').slice(0, 5);
     const job = {
       id,
@@ -1382,6 +1384,8 @@ class Agent {
       logPath: null,
       watch,
       tailBytes,
+      reason,
+      prompt,
       timer: null,
     };
     job.timer = setTimeout(() => {
@@ -1397,6 +1401,8 @@ class Agent {
         logPath: null,
         watch,
         tailBytes,
+        reason,
+        prompt,
       });
     }, durationMs);
     this.backgroundJobs.set(id, job);

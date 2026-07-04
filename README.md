@@ -323,12 +323,13 @@ const jobInfo = await agent.run('Run the test suite in the background.');
 // (Delegate tool called with background:true inside the agent's tool loop)
 ```
 
-The `Remind` tool complements background jobs — it pauses the run loop until a duration elapses or a specific time is reached, optionally short-circuiting when any watched background job exits:
+The `Wakeup` tool complements background jobs — it pauses the run loop until a duration elapses or a specific time is reached, optionally short-circuiting when any watched background job exits:
 
 ```
-Remind({ wait_ms: 30000 })              // wait 30 s
-Remind({ until: '2026-01-01T00:00:00Z' }) // wait until a timestamp
-Remind({ wait_ms: 60000, watch: ['bg-a1b2c'] }) // wake early if job finishes
+Wakeup({ delay_ms: 30000 })              // wait 30 s
+Wakeup({ at: '2026-01-01T00:00:00Z' })   // wait until a timestamp
+Wakeup({ delay_ms: 60000, watch: ['bg-a1b2c'] }) // wake early if job finishes
+Wakeup({ delay_ms: 60000, reason: 'pace check-in', prompt: 'resume the task' }) // self-documenting, custom wake text
 ```
 
 Register a listener for background-job completion from outside the run loop:
@@ -438,9 +439,9 @@ await agent.tools.connectMcpServer({
 | `RecallMemory` | General | Semantic search over stored memory files (embeddings, with lexical fallback)        |
 | `Bash`      | System   | Execute shell commands (pty with fallback to child_process); supports background mode |
 | `Delegate`  | System   | Delegate tasks to a sub-agent; supports background mode                               |
-| `Remind`    | System   | Pause execution until a duration elapses or an absolute time is reached               |
+| `Wakeup`    | System   | Pause execution until a duration elapses or an absolute time is reached               |
 | `Skill`     | System   | Manage and load skills                                                                |
-| `Jobs`      | System   | List and stop background jobs (Bash / Delegate / Remind)                              |
+| `Jobs`      | System   | List and stop background jobs (Bash / Delegate / Wakeup)                              |
 | `WebSearch` | Web      | Web search via Tavily API                                                             |
 | `WebFetch`  | Web      | Extract content from URLs                                                             |
 
@@ -723,7 +724,7 @@ openrouter/
 │   └── tools/
 │       ├── file/          # Read, Write, Edit, Find, List
 │       ├── general/       # Todo, RecallMemory
-│       ├── system/        # Bash, Delegate, Remind, Skill, Jobs
+│       ├── system/        # Bash, Delegate, Jobs, Skill, Wakeup
 │       └── web/           # Search (Tavily), Fetch
 ├── CONTRIBUTING.md        # Contribution guidelines
 ├── LICENSE                # MIT License

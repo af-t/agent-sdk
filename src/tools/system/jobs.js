@@ -1,6 +1,6 @@
 export const name = 'Jobs';
 export const description =
-  'Inspect and control background jobs started in this session: Bash background commands (Bash({background:true})), background Delegate subagents (Delegate({background:true})), and Remind timers. action="list" enumerates jobs (running only by default; pass all=true to include finished ones). action="stop" terminates a running job by its job_id (the bg-xxxxx id returned when you started it). Side effect: "stop" sends SIGTERM/SIGKILL to a background process or aborts a background subagent. Stopping a Bash job takes effect immediately; stopping a Delegate takes effect at its next turn boundary.';
+  'Inspect and control background jobs started in this session: Bash background commands (Bash({background:true})), background Delegate subagents (Delegate({background:true})), and Wakeup timers. action="list" enumerates jobs (running only by default; pass all=true to include finished ones). action="stop" terminates a running job by its job_id (the bg-xxxxx id returned when you started it). Side effect: "stop" sends SIGTERM/SIGKILL to a background process or aborts a background subagent. Stopping a Bash job takes effect immediately; stopping a Delegate takes effect at its next turn boundary.';
 export const input_schema = {
   type: 'object',
   properties: {
@@ -61,6 +61,7 @@ function listJobs(agent, all) {
     let line = `${job.id} (${job.kind}): ${job.status}, ${elapsed.toFixed(1)}s`;
     if (job.exitCode != null) line += `, code ${job.exitCode}`;
     if (job.logPath) line += `, log ${job.logPath}`;
+    if (job.reason) line += `, reason: "${job.reason}"`;
     lines.push(line);
   }
   if (lines.length === 0) {

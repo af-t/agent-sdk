@@ -1154,6 +1154,26 @@ describe('run() — steering applied in-loop', () => {
       assert.equal(events.length, 0);
       assert.equal(agent.backgroundJobs.get(id).status, 'killed');
     });
+
+    it('threads reason/prompt through to the stored job and the fired exit event', async () => {
+      const agent = new Agent({ apiKey: 'x' });
+      const events = [];
+      agent._onBackgroundExitRaw((e) => events.push(e));
+      const { id } = agent._scheduleTimer({
+        durationMs: 20,
+        watch: [],
+        tailBytes: 4096,
+        reason: 'pace check-in',
+        prompt: 'resume the task',
+      });
+      const job = agent.backgroundJobs.get(id);
+      assert.equal(job.reason, 'pace check-in');
+      assert.equal(job.prompt, 'resume the task');
+      await new Promise((r) => setTimeout(r, 50));
+      assert.equal(events.length, 1);
+      assert.equal(events[0].reason, 'pace check-in');
+      assert.equal(events[0].prompt, 'resume the task');
+    });
   });
 
   describe('autoWake self-resume', () => {

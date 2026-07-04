@@ -171,7 +171,7 @@ export const execute = async ({ description, prompt, persona, id, background = f
       `Subagent ID: ${resolvedId} (${isNew ? 'new' : 'reused'})\n` +
       `Log: ${logPath}\n` +
       `Trace (live): ${traceLogPath}\n` +
-      `Use Remind({ wait_ms, watch: ['${bgId}'] }) to wait/peek, or Read the log.`
+      `Use Wakeup({ delay_ms, watch: ['${bgId}'] }) to wait/peek, or Read the log.`
     );
   }
 

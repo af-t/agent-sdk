@@ -8,8 +8,8 @@ import * as todoTool from './general/todo.js';
 import * as bashTool from './system/bash.js';
 import * as delegateTool from './system/delegate.js';
 import * as jobsTool from './system/jobs.js';
-import * as remindTool from './system/remind.js';
 import * as skillTool from './system/skill.js';
+import * as wakeupTool from './system/wakeup.js';
 import * as fetchTool from './web/fetch.js';
 import * as searchTool from './web/search.js';
 
@@ -24,8 +24,8 @@ export const builtinTools = [
   bashTool,
   delegateTool,
   jobsTool,
-  remindTool,
   skillTool,
+  wakeupTool,
   fetchTool,
   searchTool,
 ].map((mod) => ({
