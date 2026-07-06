@@ -325,6 +325,19 @@ describe('withRetry', () => {
     assert.equal(count, 1);
   });
 
+  it('circuit breaker: does not retry 501', async () => {
+    let count = 0;
+    await assert.rejects(
+      () =>
+        withRetry(async () => {
+          count++;
+          throw { status: 501, message: 'Not Implemented' };
+        }, 3),
+      { status: 501 },
+    );
+    assert.equal(count, 1);
+  });
+
   it('calls callback on final failure', async () => {
     const realSetTimeout = globalThis.setTimeout;
     globalThis.setTimeout = (fn, _delay, ...args) => realSetTimeout(fn, 1, ...args);
