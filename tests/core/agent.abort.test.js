@@ -110,6 +110,7 @@ describe('Agent — abort propagation', () => {
     global.fetch = async () => {
       llmCalls++;
       if (llmCalls === 1) {
+        setTimeout(() => ctrl.abort(), 10);
         return makeJsonResponse({
           choices: [
             {
@@ -140,7 +141,6 @@ describe('Agent — abort propagation', () => {
       },
     });
 
-    setTimeout(() => ctrl.abort(), 30);
     const t0 = Date.now();
     await assert.rejects(() => agent.run('go', null, { signal: ctrl.signal }), /Agent run aborted/);
     const elapsed = Date.now() - t0;

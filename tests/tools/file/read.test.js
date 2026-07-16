@@ -341,6 +341,44 @@ describe('read.js — fileState caching', () => {
     assert.equal(entryAfter.totalLines, 25);
   });
 
+  it('implements exact-offset caching logic where identical offsets trigger cache and changed offsets or file updates do not', async () => {
+    const ctx = makeCtx({ turn: 1 });
+
+    // Ensure clean initial content
+    const originalContent = Array.from({ length: 20 }, (_, i) => `Line ${i + 1}`).join('\n');
+    await fs.writeFile(tmpFile, originalContent, 'utf8');
+
+    // 1. First read of the file should return the content normally
+    const res1 = await mod.execute({ path: tmpFile, start_line: 1, end_line: 10 }, ctx);
+    assert.ok(!res1.startsWith('[CACHED]'), 'initial read should return content normally');
+    assert.ok(res1.includes('     1\tLine 1'));
+
+    // 2. Reading with a different offset returns content normally (even if it overlaps with a prior read)
+    const res2 = await mod.execute({ path: tmpFile, start_line: 2, end_line: 5 }, ctx);
+    assert.ok(!res2.startsWith('[CACHED]'), 'read with a different offset should return content normally');
+    assert.ok(res2.includes('     2\tLine 2'));
+
+    // 3. Repeating the read with the exact same offset triggers the cache
+    const res3 = await mod.execute({ path: tmpFile, start_line: 2, end_line: 5 }, ctx);
+    assert.ok(res3.startsWith('[CACHED]'), 'repeating the read with the identical offset should hit the cache');
+
+    // 4. Repeating the initial read (lines 1-10) also hits the cache
+    const res4 = await mod.execute({ path: tmpFile, start_line: 1, end_line: 10 }, ctx);
+    assert.ok(res4.startsWith('[CACHED]'), 'repeating the initial offset read should hit the cache');
+
+    // 5. Reading after editing the file returns content normally
+    try {
+      await fs.writeFile(tmpFile, originalContent + '\nEdited line', 'utf8');
+
+      const res5 = await mod.execute({ path: tmpFile, start_line: 2, end_line: 5 }, ctx);
+      assert.ok(!res5.startsWith('[CACHED]'), 'read after editing the file should return content normally');
+      assert.ok(res5.includes('     2\tLine 2'));
+    } finally {
+      // restore file
+      await fs.writeFile(tmpFile, originalContent, 'utf8');
+    }
+  });
+
   it('works without ctx.agent (legacy callers)', async () => {
     const legacyFile = path.join(FIXTURES, 'read-state-legacy.txt');
     await fs.writeFile(legacyFile, 'a\nb\nc\n', 'utf8');

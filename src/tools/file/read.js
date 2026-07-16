@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ensureSafePath } from '../../core/utils.js';
-import { hashContent, isRangeCovered, mergeRanges } from '../../core/file-state.js';
+import { hashContent, mergeRanges } from '../../core/file-state.js';
 import { detectFileType, imageDimensions, hexPreview, humanSize, magicByteType } from '../../core/file-type.js';
 import { flattenNotebook } from '../../core/notebook.js';
 
@@ -62,12 +62,22 @@ async function readText(safePath, filePath, { start_line = 1, end_line = Infinit
   if (fileState) {
     const hash = hashContent(content);
     const prev = fileState.get(safePath);
-    if (prev && prev.hash === hash && isRangeCovered(prev.rangesRead, requestedStart, effectiveEnd)) {
+    const prevExactRanges = (prev && prev.hash === hash ? prev.exactRangesRead : null) || [];
+    const hasExactMatch = prevExactRanges.some(([s, e]) => s === requestedStart && e === effectiveEnd);
+
+    if (prev && prev.hash === hash && hasExactMatch) {
       return `[CACHED] ${filePath} unchanged since turn ${prev.lastReadTurn}. Lines ${requestedStart}-${effectiveEnd} already in context. (Total: ${totalLines} lines)`;
     }
     const baseRanges = prev && prev.hash === hash ? prev.rangesRead : [];
     const newRanges = mergeRanges([...baseRanges, [requestedStart, effectiveEnd]]);
-    fileState.set(safePath, { hash, lastReadTurn: turn, rangesRead: newRanges, totalLines });
+    const nextExactRanges = [...prevExactRanges, [requestedStart, effectiveEnd]];
+    fileState.set(safePath, {
+      hash,
+      lastReadTurn: turn,
+      rangesRead: newRanges,
+      exactRangesRead: nextExactRanges,
+      totalLines,
+    });
   }
 
   let result = slice
