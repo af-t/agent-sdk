@@ -21,4 +21,11 @@ describe('lexicalRank', () => {
     const scores = lexicalRank('zzz qqq', ['alpha beta gamma']);
     assert.equal(scores[0], 0);
   });
+
+  it('weights repeated query terms without changing document order', () => {
+    const scores = lexicalRank('alpha alpha beta', ['alpha', 'beta', 'gamma']);
+    assert.equal(scores.length, 3);
+    assert.ok(scores[0] > scores[1]);
+    assert.equal(scores[2], 0);
+  });
 });
