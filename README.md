@@ -33,7 +33,7 @@ Minimal SDK for building AI agents connected to the [OpenRouter API](https://ope
 - **Safety & Validation** — Tool inputs are validated against their schema (type checks, required fields, enums). Path traversal protection on Read, Write, Edit, List, and Find tools; **.gitignore** filtering on List (and on Find when ripgrep is available) — Read, Write, and Edit do _not_ consult .gitignore, so ignored files inside the project root (such as `.env`) remain accessible to the agent. Dangerous shell command detection.
 - **Retry with Exponential Backoff** — Auto-retry with jitter to handle rate limits and transient errors.
 - **Abort Signal Support** — Cancel agent execution at any point.
-- **Ephemeral Caching** — Automatic `cache_control` on system prompt and the last user message.
+- **Ephemeral Caching** — Automatic `cache_control` on the system prompt and the final user or string tool-result message in each request.
 
 ## Execution Flow
 
@@ -125,7 +125,9 @@ cp .env.example .env
 The dialect is auto-detected from the `baseUrl` host. An `openrouter.ai` host (or
 subdomain) uses the OpenRouter dialect — OpenRouter-only headers (`HTTP-Referer`,
 `X-OpenRouter-Title`), the `provider` routing block, the unified `reasoning`
-object, and `cache_control` prompt-cache markers. Any other host uses the standard
+object, `cache_control` prompt-cache markers, and a stable `session_id` per Agent.
+Pass `sessionId` to supply that ID yourself; it helps OpenRouter keep sequential
+turns routed to a provider with a warm prompt cache. Any other host uses the standard
 OpenAI chat-completions dialect: those headers and fields are dropped, and
 `reasoning` is sent as a top-level `reasoning_effort`. Non-standard sampling
 controls (`min_p`, `top_k`, `repetition_penalty`) are still sent as extensions, so
@@ -742,6 +744,7 @@ Factory function to create an Agent instance.
 | ---------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `apiKey`                                                   | string   | OpenRouter API key (overrides `.env`).                                                                                                                                                                                    |
 | `model`                                                    | string   | Model identifier.                                                                                                                                                                                                         |
+| `sessionId`                                                | string   | Stable OpenRouter session ID. A UUID is generated once per Agent when omitted; not sent in the OpenAI dialect.                                                                                                             |
 | `order`                                                    | string[] | Provider routing order.                                                                                                                                                                                                   |
 | `only`                                                     | string[] | Restrict to specific providers.                                                                                                                                                                                           |
 | `provider`                                                 | object   | Provider routing: `{ order, only, avoid, sort, allowFallbacks, requireParameters, dataCollection }`. Merged with env. Sent on the wire as OpenRouter's `ignore`/`allow_fallbacks`/`require_parameters`/`data_collection`. |

@@ -104,6 +104,7 @@ class Agent {
   #recoveryHook = null;
   #stopAttempts = 0;
   #recordConfig = null;
+  #sessionId;
   #envInfo = [
     '',
     '',
@@ -154,6 +155,7 @@ class Agent {
       autoWakeOptions,
       record,
       emptyTurnRecovery,
+      sessionId,
     } = options;
 
     this.restricted = restricted !== false;
@@ -169,6 +171,7 @@ class Agent {
     this.#apiKey = apiKey || config.API_KEY;
     this.#baseUrl = baseUrl || config.BASE_URL || 'https://openrouter.ai/api/v1';
     this.dialect = resolveDialect(this.#baseUrl);
+    this.#sessionId = sessionId ?? crypto.randomUUID();
 
     // Empty-turn recovery is a built-in stop hook (default on). It re-sends the
     // same payload (raw retry) then nudges, so a terminal turn that carried only
@@ -896,8 +899,8 @@ class Agent {
     const isOpenAI = this.dialect === 'openai';
     const messagesCopy = [...this.messages];
     const messagesForPayload = messagesCopy.map((msg, idx) => {
-      // NOTE: Caching is intentionally only placed on the last 'user' role message
-      // to follow standard Anthropic messages format guidelines and prevent caching logic complexity.
+      // User content is already structured, so put the cache breakpoint on its
+      // final part without changing the stored conversation history.
       if (
         !isOpenAI &&
         idx === messagesCopy.length - 1 &&
@@ -920,7 +923,11 @@ class Agent {
       // not reach the provider. Rebuild the exact wire shape rather than clone +
       // delete (which deopts V8 to dictionary mode), so no internal field leaks.
       if (msg.role === 'tool') {
-        return { role: 'tool', content: msg.content, tool_call_id: msg.tool_call_id };
+        const content =
+          !isOpenAI && idx === messagesCopy.length - 1 && typeof msg.content === 'string'
+            ? [{ type: 'text', text: msg.content, cache_control: { type: 'ephemeral' } }]
+            : msg.content;
+        return { role: 'tool', content, tool_call_id: msg.tool_call_id };
       }
       return msg;
     });
@@ -939,6 +946,8 @@ class Agent {
     };
 
     if (payload.tools.length === 0) delete payload.tools;
+
+    if (!isOpenAI) payload.session_id = this.#sessionId;
 
     if (this.temperature !== undefined) payload.temperature = this.temperature;
     if (this.topP !== undefined) payload.top_p = this.topP;

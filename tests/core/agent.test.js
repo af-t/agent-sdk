@@ -499,6 +499,75 @@ describe('run() — cache_control placement', () => {
     const origUser = agent.messages.find((m) => m.role === 'user');
     assert.strictEqual(origUser.content[0].cache_control, undefined);
   });
+
+  it('adds cache_control to a string tool result in the payload without changing history', async () => {
+    const payloads = [];
+    let requests = 0;
+    global.fetch = async (_url, opts) => {
+      payloads.push(JSON.parse(opts.body));
+      requests++;
+      if (requests === 1) {
+        return makeJsonResponse({
+          choices: [
+            {
+              message: {
+                content: null,
+                reasoning: null,
+                tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'Probe', arguments: '{}' } }],
+              },
+            },
+          ],
+          usage: { cost: 0, total_tokens: 1 },
+        });
+      }
+      return makeJsonResponse({
+        choices: [{ message: { content: 'done', reasoning: null, tool_calls: null } }],
+        usage: { cost: 0, total_tokens: 1 },
+      });
+    };
+
+    const agent = new Agent({ apiKey: 'sk-test' });
+    agent.use({
+      name: 'Probe',
+      description: 'returns text',
+      input_schema: { type: 'object', properties: {}, required: [] },
+      execute: async () => 'tool result',
+    });
+
+    await agent.run('start');
+
+    const toolInPayload = payloads[1].messages.find((message) => message.role === 'tool');
+    assert.deepEqual(toolInPayload.content, [
+      { type: 'text', text: 'tool result', cache_control: { type: 'ephemeral' } },
+    ]);
+    const toolInHistory = agent.messages.find((message) => message.role === 'tool');
+    assert.equal(toolInHistory.content, 'tool result');
+  });
+
+  it('sends a stable default session_id per agent and accepts a custom sessionId', async () => {
+    global.fetch = async () =>
+      makeJsonResponse({
+        choices: [{ message: { content: 'done', reasoning: null, tool_calls: null } }],
+        usage: { cost: 0, total_tokens: 1 },
+      });
+
+    const defaultSessionIds = [];
+    const agent = new Agent({ apiKey: 'sk-test' });
+    agent.onBeforeRequest((payload) => defaultSessionIds.push(payload.session_id));
+    await agent.run('first');
+    await agent.run('second');
+    assert.equal(defaultSessionIds.length, 2);
+    assert.ok(defaultSessionIds[0]);
+    assert.equal(defaultSessionIds[1], defaultSessionIds[0]);
+
+    let customSessionId;
+    const customAgent = new Agent({ apiKey: 'sk-test', sessionId: 'my-stable-session' });
+    customAgent.onBeforeRequest((payload) => {
+      customSessionId = payload.session_id;
+    });
+    await customAgent.run('first');
+    assert.equal(customSessionId, 'my-stable-session');
+  });
 });
 
 describe('run() — AbortSignal', () => {
@@ -1360,7 +1429,7 @@ describe('Agent payload dialect shaping', () => {
     global.fetch = originalFetch;
   });
 
-  it('openai dialect: reasoning_effort, no reasoning/provider/cache_control', async () => {
+  it('openai dialect: reasoning_effort, no reasoning/provider/cache_control/session_id', async () => {
     const agent = new Agent({
       apiKey: 'sk-x',
       baseUrl: 'https://api.openai.com/v1',
@@ -1375,6 +1444,7 @@ describe('Agent payload dialect shaping', () => {
     assert.equal(captured.reasoning_effort, 'low');
     assert.equal(captured.reasoning, undefined);
     assert.equal(captured.provider, undefined);
+    assert.equal(captured.session_id, undefined);
     assert.ok(!JSON.stringify(captured).includes('cache_control'));
   });
 
