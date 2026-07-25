@@ -73,9 +73,7 @@ test('duration_ms is stripped from the tool message before it reaches the provid
   assert.ok(second, 'a second request carrying tool history was sent');
   const wireTool = second.messages.find((m) => m.role === 'tool');
   assert.ok(wireTool, 'tool message present in the outgoing payload');
-  assert.deepEqual(wireTool.content, [
-    { type: 'text', text: 'ok', cache_control: { type: 'ephemeral' } },
-  ]);
+  assert.deepEqual(wireTool.content, [{ type: 'text', text: 'ok', cache_control: { type: 'ephemeral' } }]);
   assert.ok(!('duration_ms' in wireTool), 'duration_ms must not be sent to the provider');
 
   // History itself still carries it — the strip is payload-only, not destructive.
