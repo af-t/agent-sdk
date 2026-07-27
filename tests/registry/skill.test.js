@@ -98,7 +98,7 @@ describe('SkillRegistry (default singleton)', () => {
   });
 });
 
-describe('SkillRegistry — plugin discovery', () => {
+describe('SkillRegistry: plugin discovery', () => {
   let registry;
   let pluginsDir;
 
@@ -180,7 +180,7 @@ describe('SkillRegistry — plugin discovery', () => {
   });
 });
 
-describe('SkillRegistry — missing plugins root', () => {
+describe('SkillRegistry: missing plugins root', () => {
   let registry;
 
   before(async () => {

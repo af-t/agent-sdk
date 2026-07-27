@@ -7,14 +7,13 @@ import ignore from 'ignore';
 import logger from './logger.js';
 import { ConfigError } from './errors.js';
 
-// Constants
 export const CONSTANTS = Object.freeze({
   MAX_FILE_SIZE_SEARCH: 500 * 1024, // 500KB
   RETRY_BASE_DELAY_MS: 5000, // ms
   RETRY_BACKOFF_FACTOR: 1.3,
   MCP_TIMEOUT: 30000, // ms
   FETCH_TIMEOUT_MS: 15000, // ms
-  FETCH_MAX_SIZE: 10 * 1024 * 1024, // 10MB — response body limit for WebFetch
+  FETCH_MAX_SIZE: 10 * 1024 * 1024, // 10MB: response body limit for WebFetch
   MAX_COMPLETION_TOKENS_SUBAGENT: 32000,
   MAX_TOOL_OUTPUT: 50_000,
   DEFAULT_APP_NAME: 'agent-sdk',
@@ -78,7 +77,6 @@ export function getDirname(importMeta) {
   return importMeta.dirname || path.dirname(fileURLToPath(importMeta.url));
 }
 
-// Cached gitignore filter
 let _ignoreFilterCache = null;
 let _ignoreFilterCacheKey = null;
 let _ignoreFilterMtime = 0;
@@ -198,7 +196,6 @@ export function ensureSafePath(filePath, allowedRoots = new Set(), options = {})
   if (restricted) {
     const safeAllowedRoots = allowedRoots || new Set();
 
-    // Helper to safely verify containment
     const isContained = (canonicalTarget, canonicalRoot) => {
       const isWindows = process.platform === 'win32';
       let t = canonicalTarget.normalize('NFC');
@@ -299,11 +296,10 @@ export function ensureSafePath(filePath, allowedRoots = new Set(), options = {})
     }
   }
 
-  // Return the secure, resolved path
   return path.join(existingAncestor, nonExistentSuffix);
 }
 
-// Sensitive env var substrings (case-insensitive) — stripped from child process environments
+// Sensitive env var substrings (case-insensitive): stripped from child process environments
 const SENSITIVE_ENV_PATTERNS = [
   'api_key',
   'apikey',
@@ -334,7 +330,7 @@ export function stripSecrets(env) {
 
 // Env vars that hijack the dynamic linker or a language runtime
 const UNSAFE_ENV_KEYS = new Set([
-  // dynamic linker / loader (Linux + macOS) — LD_PRELOAD host passthrough handled by SAFE_ENV_KEYS
+  // dynamic linker / loader (Linux + macOS): LD_PRELOAD host passthrough handled by SAFE_ENV_KEYS
   'LD_PRELOAD',
   'LD_LIBRARY_PATH',
   'LD_AUDIT',
@@ -423,7 +419,7 @@ export async function withRetry(func, count = config.MAX_RETRIES, callback) {
         throw err;
       }
       // Do not retry client errors (4xx except 429 and 408), or 501 (server
-      // has explicitly declared the capability unimplemented — retrying won't help)
+      // has explicitly declared the capability unimplemented, retrying won't help)
       if (
         err?.status === 501 ||
         (err?.status && err.status >= 400 && err.status < 500 && err.status !== 429 && err.status !== 408)
@@ -463,8 +459,6 @@ export async function withRetry(func, count = config.MAX_RETRIES, callback) {
   throw lastError;
 }
 
-// Decide API dialect from the base URL host.
-// openrouter.ai (and subdomains) -> 'openrouter'; anything else -> 'openai'.
 export function resolveDialect(baseUrl) {
   let host;
   try {

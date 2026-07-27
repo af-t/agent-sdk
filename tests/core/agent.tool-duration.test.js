@@ -11,8 +11,8 @@ const NO_INJECTORS = {
 };
 
 // Drives exactly one tool call (turn 1) then a terminal assistant message
-// (turn 2). `onPayload` observes each outgoing payload — the #buildPayload
-// output handed to the transport — so tests can assert the wire shape.
+// (turn 2). `onPayload` observes each outgoing payload: the #buildPayload
+// output handed to the transport: so tests can assert the wire shape.
 function makeSend(onPayload) {
   let n = 0;
   return async (payload) => {
@@ -76,7 +76,7 @@ test('duration_ms is stripped from the tool message before it reaches the provid
   assert.deepEqual(wireTool.content, [{ type: 'text', text: 'ok', cache_control: { type: 'ephemeral' } }]);
   assert.ok(!('duration_ms' in wireTool), 'duration_ms must not be sent to the provider');
 
-  // History itself still carries it — the strip is payload-only, not destructive.
+  // History itself still carries it: the strip is payload-only, not destructive.
   const histTool = agent.messages.find((m) => m.role === 'tool');
   assert.equal(typeof histTool.duration_ms, 'number', 'history is untouched by the strip');
 });

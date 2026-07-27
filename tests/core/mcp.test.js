@@ -62,7 +62,7 @@ describe('McpNativeClient', () => {
   });
 });
 
-describe('McpNativeClient — mock server connections', () => {
+describe('McpNativeClient: mock server connections', () => {
   let McpNativeClient;
 
   before(async () => {
@@ -189,7 +189,7 @@ describe('McpNativeClient — mock server connections', () => {
       const client = new McpNativeClient({
         command: process.execPath,
         args: [mockScript],
-        timeout: 500, // Very short timeout — server takes 3s to respond
+        timeout: 500, // Very short timeout: server takes 3s to respond
       });
 
       try {
@@ -265,7 +265,7 @@ describe('McpClientWrapper', () => {
   });
 });
 
-describe('McpClientWrapper — functional', () => {
+describe('McpClientWrapper: functional', () => {
   let McpClientWrapper;
   let nodeAvailable = true;
   const toolsScript = path.join(fixturesDir, 'mock-mcp-tools.js');

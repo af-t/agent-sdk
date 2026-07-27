@@ -4,7 +4,7 @@ import Agent from '../../src/core/agent.js';
 
 process.env.OPENROUTER_API_KEY = 'sk-test-key';
 
-describe('Agent Upgrade — modern parameters and reasoning', () => {
+describe('Agent Upgrade: modern parameters and reasoning', () => {
   let originalFetch;
 
   beforeEach(() => {

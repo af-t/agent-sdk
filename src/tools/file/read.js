@@ -35,7 +35,6 @@ export const input_schema = {
   required: ['path'],
 };
 
-// read and paginate a text file
 async function readText(safePath, filePath, { start_line = 1, end_line = Infinity, max_lines = 1500 }, ctx = {}) {
   const stat = await fs.stat(safePath);
   if (stat.size > MAX_READ_SIZE) {
@@ -98,7 +97,6 @@ export const execute = async ({ path: filePath, start_line = 1, end_line = Infin
 
   const stat = await fs.stat(safePath);
 
-  // read sample bytes for detection
   const sampleSize = Math.min(stat.size, 4096);
   const ext = path.extname(safePath).toLowerCase();
   let sample = Buffer.alloc(0);
@@ -131,7 +129,7 @@ export const execute = async ({ path: filePath, start_line = 1, end_line = Infin
   if (category === 'image') {
     const baseName = path.basename(safePath);
     if (stat.size > MAX_IMAGE_BYTES) {
-      return `[image] ${baseName} — ${mime}, ${humanSize(stat.size)} (too large to inline; over ${humanSize(MAX_IMAGE_BYTES)})`;
+      return `[image] ${baseName}: ${mime}, ${humanSize(stat.size)} (too large to inline; over ${humanSize(MAX_IMAGE_BYTES)})`;
     }
     const buf = await fs.readFile(safePath);
     const dim = imageDimensions(buf, mime);
@@ -139,7 +137,7 @@ export const execute = async ({ path: filePath, start_line = 1, end_line = Infin
     return [
       {
         type: 'text',
-        text: `[image] ${baseName} — ${dim ? dim.width + 'x' + dim.height + ' ' : ''}${mime}, ${humanSize(stat.size)}`,
+        text: `[image] ${baseName}: ${dim ? dim.width + 'x' + dim.height + ' ' : ''}${mime}, ${humanSize(stat.size)}`,
       },
       { type: 'image_url', image_url: { url: dataUri } },
     ];
@@ -148,12 +146,12 @@ export const execute = async ({ path: filePath, start_line = 1, end_line = Infin
   if (category === 'pdf') {
     const baseName = path.basename(safePath);
     if (stat.size > MAX_PDF_BYTES) {
-      return `[pdf] ${baseName} — ${humanSize(stat.size)} (too large to inline; over ${humanSize(MAX_PDF_BYTES)})`;
+      return `[pdf] ${baseName}: ${humanSize(stat.size)} (too large to inline; over ${humanSize(MAX_PDF_BYTES)})`;
     }
     const buf = await fs.readFile(safePath);
     const dataUri = 'data:application/pdf;base64,' + buf.toString('base64');
     return [
-      { type: 'text', text: `[pdf] ${baseName} — ${humanSize(stat.size)}` },
+      { type: 'text', text: `[pdf] ${baseName}: ${humanSize(stat.size)}` },
       { type: 'file', file: { filename: baseName, file_data: dataUri } },
     ];
   }
@@ -161,12 +159,12 @@ export const execute = async ({ path: filePath, start_line = 1, end_line = Infin
   if (category === 'video') {
     const baseName = path.basename(safePath);
     if (stat.size > MAX_VIDEO_BYTES) {
-      return `[video] ${baseName} — ${mime}, ${humanSize(stat.size)} (too large to inline; over ${humanSize(MAX_VIDEO_BYTES)})`;
+      return `[video] ${baseName}: ${mime}, ${humanSize(stat.size)} (too large to inline; over ${humanSize(MAX_VIDEO_BYTES)})`;
     }
     const buf = await fs.readFile(safePath);
     const dataUri = 'data:' + mime + ';base64,' + buf.toString('base64');
     return [
-      { type: 'text', text: `[video] ${baseName} — ${mime}, ${humanSize(stat.size)}` },
+      { type: 'text', text: `[video] ${baseName}: ${mime}, ${humanSize(stat.size)}` },
       { type: 'video_url', video_url: { url: dataUri } },
     ];
   }
@@ -174,12 +172,12 @@ export const execute = async ({ path: filePath, start_line = 1, end_line = Infin
   if (category === 'audio') {
     const baseName = path.basename(safePath);
     if (stat.size > MAX_AUDIO_BYTES) {
-      return `[audio] ${baseName} — ${mime}, ${humanSize(stat.size)} (too large to inline; over ${humanSize(MAX_AUDIO_BYTES)})`;
+      return `[audio] ${baseName}: ${mime}, ${humanSize(stat.size)} (too large to inline; over ${humanSize(MAX_AUDIO_BYTES)})`;
     }
     const buf = await fs.readFile(safePath);
     const base64Data = buf.toString('base64');
     return [
-      { type: 'text', text: `[audio] ${baseName} — ${mime}, ${humanSize(stat.size)}` },
+      { type: 'text', text: `[audio] ${baseName}: ${mime}, ${humanSize(stat.size)}` },
       {
         type: 'input_audio',
         input_audio: {
@@ -190,8 +188,7 @@ export const execute = async ({ path: filePath, start_line = 1, end_line = Infin
     ];
   }
 
-  // binary fallback
   const baseName = path.basename(safePath);
   const previewLen = Math.min(sample.length, 64);
-  return `[binary] ${baseName} — ${magicByteType(sample)}, ${humanSize(stat.size)}\nhex (first ${previewLen} bytes): ${hexPreview(sample, 64)}`;
+  return `[binary] ${baseName}: ${magicByteType(sample)}, ${humanSize(stat.size)}\nhex (first ${previewLen} bytes): ${hexPreview(sample, 64)}`;
 };

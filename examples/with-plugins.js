@@ -27,7 +27,7 @@ await skillRegistry._ensureDiscovered();
 console.log('--- Skills discovered from plugins ---');
 for (const [name, skill] of skillRegistry.skills) {
   if (skill.scope !== 'plugin') continue;
-  console.log(`- ${name} (plugin: ${skill.plugin}) — ${skill.description}`);
+  console.log(`- ${name} (plugin: ${skill.plugin}): ${skill.description}`);
 }
 
 console.log('\n--- Plugin instructions (injected as a first-turn system-reminder) ---');

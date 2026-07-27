@@ -211,7 +211,7 @@ describe('imageDimensions', () => {
   });
 
   it('returns null for JPEG with segments but no SOF marker', () => {
-    // SOI + one non-SOF APP0 segment (marker 0xe0, length 0x0004) — no SOF follows
+    // SOI + one non-SOF APP0 segment (marker 0xe0, length 0x0004): no SOF follows
     const buf = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00]);
     assert.strictEqual(imageDimensions(buf, 'image/jpeg'), null);
   });

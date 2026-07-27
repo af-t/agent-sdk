@@ -29,7 +29,7 @@ describe('Bash tool module', () => {
   });
 });
 
-describe('Bash tool — command injection fuzzing', () => {
+describe('Bash tool: command injection fuzzing', () => {
   let mod;
 
   before(async () => {
@@ -46,7 +46,7 @@ describe('Bash tool — command injection fuzzing', () => {
   });
 
   it('handles command substitution $(whoami) without crashing', async () => {
-    // $(whoami) should not crash — either blocked or runs safely
+    // $(whoami) should not crash: either blocked or runs safely
     // In the current code, this is not explicitly blocked but runs via spawn
     // which is sandboxed (env stripped). The command should execute safely.
     try {
@@ -105,7 +105,7 @@ describe('Bash tool — command injection fuzzing', () => {
   });
 
   it('rejects empty command gracefully', async () => {
-    // Empty command after trimming — bash -c "" will exit 0
+    // Empty command after trimming: bash -c "" will exit 0
     // But the tool should handle it
     try {
       const result = await mod.execute({ command: '   ', timeout: 1000 });
@@ -140,18 +140,18 @@ describe('Bash tool — command injection fuzzing', () => {
   });
 
   it('handles command with null bytes', async () => {
-    // Null bytes in command strings — should be handled gracefully
+    // Null bytes in command strings: should be handled gracefully
     try {
       const result = await mod.execute({ command: 'echo hello\0world', timeout: 5000 });
       assert.ok(typeof result === 'string');
     } catch (err) {
-      // May be blocked or may error — just should not crash
+      // May be blocked or may error: just should not crash
       assert.ok(err.message.length > 0);
     }
   });
 
   it('handles environment variable expansion tricks', async () => {
-    // ${PATH:0:1} etc. — shell expansion tricks
+    // ${PATH:0:1} etc.: shell expansion tricks
     try {
       const result = await mod.execute({ command: 'echo ${PATH:0:1}${HOME:0:1}', timeout: 5000 });
       assert.ok(typeof result === 'string');
@@ -179,7 +179,7 @@ describe('Bash tool — command injection fuzzing', () => {
     } catch (err) {
       // If it errors (e.g. file not found, permission denied), that's also fine.
       assert.ok(err.message.length > 0);
-      // Error should be meaningful — not just an empty string
+      // Error should be meaningful: not just an empty string
       assert.ok(
         err.message.includes('exit') ||
           err.message.includes('ENOENT') ||
@@ -190,7 +190,7 @@ describe('Bash tool — command injection fuzzing', () => {
   });
 
   it('blocks background execution & whoami', async () => {
-    // 'echo ok & whoami' — neither '&' alone nor 'whoami' are in BLOCKED_COMMANDS.
+    // 'echo ok & whoami': neither '&' alone nor 'whoami' are in BLOCKED_COMMANDS.
     // This runs successfully: 'echo ok' in background, 'whoami' in foreground.
     try {
       const result = await mod.execute({ command: 'echo ok & whoami', timeout: 5000 });
@@ -209,7 +209,7 @@ describe('Bash tool — command injection fuzzing', () => {
     // in BLOCKED_COMMANDS) but bash itself should reject the leading semicolon.
     try {
       await mod.execute({ command: '; cat /etc/passwd', timeout: 5000 });
-      // If bash somehow accepts it, it runs — no crash is fine
+      // If bash somehow accepts it, it runs: no crash is fine
     } catch (err) {
       // Bash syntax error expected: "syntax error near unexpected token `;'"
       assert.ok(err.message.length > 0);
@@ -276,7 +276,7 @@ describe('Bash tool — command injection fuzzing', () => {
   });
 
   it('handles backtick nesting: `echo \\`whoami\\``', async () => {
-    // Nested backtick command substitution — not blocked, should run.
+    // Nested backtick command substitution: not blocked, should run.
     try {
       const result = await mod.execute({ command: 'echo `echo \\`whoami\\``', timeout: 5000 });
       assert.ok(typeof result === 'string');
@@ -288,7 +288,7 @@ describe('Bash tool — command injection fuzzing', () => {
   });
 
   it('handles dollar-parenthesis nesting: $(echo $(whoami))', async () => {
-    // Nested $() command substitution — not blocked, should run.
+    // Nested $() command substitution: not blocked, should run.
     try {
       const result = await mod.execute({ command: 'echo $(echo $(whoami))', timeout: 5000 });
       assert.ok(typeof result === 'string');
@@ -300,7 +300,7 @@ describe('Bash tool — command injection fuzzing', () => {
   });
 
   it('handles deeply nested command substitution', async () => {
-    // Deep nesting of $() — tests parser resilience, not blocked.
+    // Deep nesting of $(): tests parser resilience, not blocked.
     try {
       const result = await mod.execute({
         command: 'echo $(echo $(echo $(echo $(echo hello))))',
@@ -316,7 +316,7 @@ describe('Bash tool — command injection fuzzing', () => {
   });
 });
 
-describe('Bash tool — env sanitization', () => {
+describe('Bash tool: env sanitization', () => {
   let mod;
 
   before(async () => {
@@ -423,7 +423,7 @@ describe('Bash tool — env sanitization', () => {
   });
 
   it('uses safe defaults from process.env when custom env lacks them', async () => {
-    // Custom env without HOME — HOME should come from process.env via whitelist
+    // Custom env without HOME: HOME should come from process.env via whitelist
     const customEnv = {
       MY_CUSTOM_VAR: 'custom-value',
     };
@@ -452,13 +452,13 @@ describe('Bash tool — env sanitization', () => {
     try {
       await mod.execute({ command: `chmod 755 ${target}`, timeout: 5000 });
     } catch {
-      // May fail due to permissions — what matters is the code path reaching hasSuspiciousPattern
+      // May fail due to permissions: what matters is the code path reaching hasSuspiciousPattern
     }
     // Test passes as long as no unexpected error is thrown (warning is logged internally)
   });
 });
 
-describe('Bash tool — abort signal handling', () => {
+describe('Bash tool: abort signal handling', () => {
   let mod;
 
   before(async () => {
@@ -494,7 +494,7 @@ describe('Bash tool — abort signal handling', () => {
   });
 });
 
-describe('Bash tool — background hint message', () => {
+describe('Bash tool: background hint message', () => {
   let bash;
 
   before(async () => {
@@ -510,7 +510,7 @@ describe('Bash tool — background hint message', () => {
   });
 });
 
-describe('Bash tool — advanced execution paths', () => {
+describe('Bash tool: advanced execution paths', () => {
   let mod;
 
   before(async () => {
@@ -544,7 +544,7 @@ describe('Bash tool — advanced execution paths', () => {
       const result = await mod.execute({ command: 'echo hello\0world', timeout: 5000 });
       assert.ok(typeof result === 'string');
     } catch (err) {
-      // bash may reject null bytes — that's acceptable
+      // bash may reject null bytes: that's acceptable
       assert.ok(err.message.length > 0);
     }
   });

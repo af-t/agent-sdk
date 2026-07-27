@@ -25,15 +25,15 @@ Minimal SDK for building AI agents connected to the [OpenRouter API](https://ope
 
 ## Key Features
 
-- **OpenRouter Integration** — Access 300+ LLM models through a single API with provider routing (order/only).
-- **Automatic Tool Execution Loop** — The agent automatically calls tools, receives results, and continues the conversation until a final answer is produced.
-- **MCP (Model Context Protocol) Support** — Connect your agent to external tools via stdio-based MCP servers.
-- **Skill Discovery System** — Discover and load skills from SKILL.md files across builtin (`src/skills/`) and plugin directories.
-- **Built-in Tools** — File operations (Read, Write, Edit, Find, List), shell command execution (Bash with optional **node-pty** support), web search (Tavily), web fetch (using **cheerio**), and subagent delegation.
-- **Safety & Validation** — Tool inputs are validated against their schema (type checks, required fields, enums). Path traversal protection on Read, Write, Edit, List, and Find tools; **.gitignore** filtering on List (and on Find when ripgrep is available) — Read, Write, and Edit do _not_ consult .gitignore, so ignored files inside the project root (such as `.env`) remain accessible to the agent. Dangerous shell command detection.
-- **Retry with Exponential Backoff** — Auto-retry with jitter to handle rate limits and transient errors.
-- **Abort Signal Support** — Cancel agent execution at any point.
-- **Ephemeral Caching** — Automatic `cache_control` on the system prompt and the final user or string tool-result message in each request.
+- **OpenRouter Integration**: Access 300+ LLM models through a single API with provider routing (order/only).
+- **Automatic Tool Execution Loop**: The agent automatically calls tools, receives results, and continues the conversation until a final answer is produced.
+- **MCP (Model Context Protocol) Support**: Connect your agent to external tools via stdio-based MCP servers.
+- **Skill Discovery System**: Discover and load skills from SKILL.md files across builtin (`src/skills/`) and plugin directories.
+- **Built-in Tools**: File operations (Read, Write, Edit, Find, List), shell command execution (Bash with optional **node-pty** support), web search (Tavily), web fetch (using **cheerio**), and subagent delegation.
+- **Safety & Validation**: Tool inputs are validated against their schema (type checks, required fields, enums). Path traversal protection on Read, Write, Edit, List, and Find tools; **.gitignore** filtering on List (and on Find when ripgrep is available): Read, Write, and Edit do _not_ consult .gitignore, so ignored files inside the project root (such as `.env`) remain accessible to the agent. Dangerous shell command detection.
+- **Retry with Exponential Backoff**: Auto-retry with jitter to handle rate limits and transient errors.
+- **Abort Signal Support**: Cancel agent execution at any point.
+- **Ephemeral Caching**: Automatic `cache_control` on the system prompt and the final user or string tool-result message in each request.
 
 ## Execution Flow
 
@@ -82,7 +82,7 @@ Simplified diagram:
                     <-- loop back
 ```
 
-While a loop is running, additional `run()` or `steer()` calls do not start a second loop — their prompts are queued and merged into the conversation after the current turn's tool results. See [Steering a Running Agent](#steering-a-running-agent).
+While a loop is running, additional `run()` or `steer()` calls do not start a second loop: their prompts are queued and merged into the conversation after the current turn's tool results. See [Steering a Running Agent](#steering-a-running-agent).
 
 ## Installation
 
@@ -94,7 +94,7 @@ cd openrouter
 npm install
 ```
 
-> **Node.js ≥22 required** — the SDK uses `process.loadEnvFile()` (native in Node 22+). Earlier versions will fail to load `.env`.
+> **Node.js ≥22 required**: the SDK uses `process.loadEnvFile()` (native in Node 22+). Earlier versions will fail to load `.env`.
 
 ## Configuration
 
@@ -123,7 +123,7 @@ cp .env.example .env
 ### API dialect
 
 The dialect is auto-detected from the `baseUrl` host. An `openrouter.ai` host (or
-subdomain) uses the OpenRouter dialect — OpenRouter-only headers (`HTTP-Referer`,
+subdomain) uses the OpenRouter dialect: OpenRouter-only headers (`HTTP-Referer`,
 `X-OpenRouter-Title`), the `provider` routing block, the unified `reasoning`
 object, `cache_control` prompt-cache markers, and a stable `session_id` per Agent.
 Pass `sessionId` to supply that ID yourself; it helps OpenRouter keep sequential
@@ -132,7 +132,7 @@ OpenAI chat-completions dialect: those headers and fields are dropped, and
 `reasoning` is sent as a top-level `reasoning_effort`. Non-standard sampling
 controls (`min_p`, `top_k`, `repetition_penalty`) are still sent as extensions, so
 OpenAI-compatible servers like vLLM and llama.cpp keep working. There is no
-override flag — set `baseUrl` and the dialect follows.
+override flag: set `baseUrl` and the dialect follows.
 
 ## Basic Usage
 
@@ -192,12 +192,12 @@ agent.reset();
 
 ### Steering a Running Agent
 
-`run()` is re-entrancy-safe. Calling it again while a loop is in progress — or calling `steer()` — enqueues the prompt instead of starting a second loop. Queued prompts are appended to the conversation after the current turn's tool results, so you can redirect a long-running agent without waiting for it to return:
+`run()` is re-entrancy-safe. Calling it again while a loop is in progress, or calling `steer()`, enqueues the prompt instead of starting a second loop. Queued prompts are appended to the conversation after the current turn's tool results, so you can redirect a long-running agent without waiting for it to return:
 
 ```javascript
 const runPromise = agent.run('Refactor the whole codebase...');
 
-// Later, from elsewhere in your app — no need to await runPromise first:
+// Later, from elsewhere in your app: no need to await runPromise first:
 agent.steer('Actually, focus on src/core/ only.');
 
 if (agent.isRunning) {
@@ -308,9 +308,9 @@ const daemon = createDaemon({
 daemon.start();
 ```
 
-Options: `port` (required; integer `0`-`65535`; `0` = ephemeral, read back via `source.address()`), `host` (default `127.0.0.1`), `routes` (array of `{ path, type, auth?, method? }`; `auth` is `none`/`token`/`hmac`, `method` defaults to `POST`), `authToken` (enables `auth:'token'`), `hmacSecret` (enables `auth:'hmac'`), `signatureHeader` (default `x-signature-256`), `signaturePrefix` (default `sha256=`), `healthPath` (default `/health`, `GET` -> `200`, no auth, no event; `null` disables — a `GET` route at this path is rejected at construction since the health check would shadow it), `responseTimeoutMs` (default `30000`; finite, > 0), `bodyLimitBytes` (default `1_000_000`; finite, > 0).
+Options: `port` (required; integer `0`-`65535`; `0` = ephemeral, read back via `source.address()`), `host` (default `127.0.0.1`), `routes` (array of `{ path, type, auth?, method? }`; `auth` is `none`/`token`/`hmac`, `method` defaults to `POST`), `authToken` (enables `auth:'token'`), `hmacSecret` (enables `auth:'hmac'`), `signatureHeader` (default `x-signature-256`), `signaturePrefix` (default `sha256=`), `healthPath` (default `/health`, `GET` -> `200`, no auth, no event; `null` disables: a `GET` route at this path is rejected at construction since the health check would shadow it), `responseTimeoutMs` (default `30000`; finite, > 0), `bodyLimitBytes` (default `1_000_000`; finite, > 0).
 
-Each matched request emits `{ type, method, path, query, headers, body, rawBody, ip, requestId, respond }`. Call `event.respond(value)` to reply: a string -> `200 text/plain`; an object -> a `{ status, headers, body }` spec (wrap a JSON payload as `respond({ body: {...} })`). Because the daemon awaits the handler, awaiting `ctx.agent.run(...)` before calling `respond` returns the agent's result to the HTTP caller; returning a bare `run` action is fire-and-forget and will `504` unless you also call `respond`. Auth (token + HMAC) uses constant-time comparison; bind stays on `127.0.0.1` by default — terminate TLS upstream before exposing it.
+Each matched request emits `{ type, method, path, query, headers, body, rawBody, ip, requestId, respond }`. Call `event.respond(value)` to reply: a string -> `200 text/plain`; an object -> a `{ status, headers, body }` spec (wrap a JSON payload as `respond({ body: {...} })`). Because the daemon awaits the handler, awaiting `ctx.agent.run(...)` before calling `respond` returns the agent's result to the HTTP caller; returning a bare `run` action is fire-and-forget and will `504` unless you also call `respond`. Auth (token + HMAC) uses constant-time comparison; bind stays on `127.0.0.1` by default: terminate TLS upstream before exposing it.
 
 ## Background Jobs
 
@@ -319,13 +319,13 @@ Bash commands and Delegate subagents can run detached from the current turn. The
 ```javascript
 // Detach a shell command
 const jobInfo = await agent.run('Run the test suite in the background.');
-// The Bash tool was called with background:true — agent got a job ID and log path back.
+// The Bash tool was called with background:true: agent got a job ID and log path back.
 
 // Delegate a subagent in fire-and-forget mode
 // (Delegate tool called with background:true inside the agent's tool loop)
 ```
 
-The `Wakeup` tool complements background jobs — it pauses the run loop until a duration elapses or a specific time is reached, optionally short-circuiting when any watched background job exits:
+The `Wakeup` tool complements background jobs: it pauses the run loop until a duration elapses or a specific time is reached, optionally short-circuiting when any watched background job exits:
 
 ```
 Wakeup({ delay_ms: 30000 })              // wait 30 s
@@ -451,11 +451,11 @@ await agent.tools.connectMcpServer({
 
 `Read` classifies a file by its magic bytes (and the `.ipynb` extension) and adapts its output:
 
-- **Text** — paginated, line-numbered output (unchanged behavior).
-- **Notebooks (`.ipynb`)** — the JSON is flattened into a readable transcript of cells, with code cell outputs (stdout, results, error tracebacks) inlined.
-- **Images (PNG/JPEG/GIF/WebP)** — returned as an `image_url` content part (a base64 data URI) so vision-capable models actually see the image, preceded by a text part with the file name, dimensions, and size.
-- **PDFs** — returned as a `file` content part; models with native document support (such as Claude) read them directly, and OpenRouter can OCR for the rest.
-- **Other binary files** — a metadata summary (detected type, size) plus a hex preview of the first bytes.
+- **Text**: paginated, line-numbered output (unchanged behavior).
+- **Notebooks (`.ipynb`)**: the JSON is flattened into a readable transcript of cells, with code cell outputs (stdout, results, error tracebacks) inlined.
+- **Images (PNG/JPEG/GIF/WebP)**: returned as an `image_url` content part (a base64 data URI) so vision-capable models actually see the image, preceded by a text part with the file name, dimensions, and size.
+- **PDFs**: returned as a `file` content part; models with native document support (such as Claude) read them directly, and OpenRouter can OCR for the rest.
+- **Other binary files**: a metadata summary (detected type, size) plus a hex preview of the first bytes.
 
 Images above 5 MB and PDFs above 10 MB skip the inline content part and return a metadata summary instead, to keep the context window manageable.
 
@@ -463,7 +463,7 @@ Images above 5 MB and PDFs above 10 MB skip the inline content part and return a
 
 ## MCP Server
 
-This SDK supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) — a standard protocol for connecting LLMs with external tools.
+This SDK supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io): a standard protocol for connecting LLMs with external tools.
 
 **How it works:**
 
@@ -494,8 +494,8 @@ See `src/core/mcp.js` for the full implementation.
 
 The SDK has a discovery system for skills based on `SKILL.md` files. Skills are searched in:
 
-1. **Builtin** — `src/skills/` (inside the package; the only internal source)
-2. **Plugins** — `<pluginsDir>/*/skills/**/SKILL.md`, where `pluginsDir` defaults to `.agent-sdk/plugins` (override via `storagePaths.pluginsDir`). Each plugin may also ship an `AGENTS.md`, surfaced through the `pluginInstructions` injector.
+1. **Builtin**: `src/skills/` (inside the package; the only internal source)
+2. **Plugins**: `<pluginsDir>/*/skills/**/SKILL.md`, where `pluginsDir` defaults to `.agent-sdk/plugins` (override via `storagePaths.pluginsDir`). Each plugin may also ship an `AGENTS.md`, surfaced through the `pluginInstructions` injector.
 
 Each SKILL.md contains simple `--- key: value ---` frontmatter (name, description, etc., parsed without a YAML library) and a markdown body.
 
@@ -505,9 +505,9 @@ Beyond the system prompt and message history, the agent exposes a **third tier**
 
 The injection layer is organised as three tiers:
 
-1. **System prompt** — stable instructions resolved once at construction (`systemPrompt` option or `RULE.md`).
-2. **First-turn injectors** — run once on the first `run()` after `reset()` or construction. Used for one-shot context like loaded files, skill catalogues, memory index.
-3. **Per-turn injectors** — run on every request. Used for live signals like the current timestamp.
+1. **System prompt**: stable instructions resolved once at construction (`systemPrompt` option or `RULE.md`).
+2. **First-turn injectors**: run once on the first `run()` after `reset()` or construction. Used for one-shot context like loaded files, skill catalogues, memory index.
+3. **Per-turn injectors**: run on every request. Used for live signals like the current timestamp.
 
 The combined output of both scopes is joined with `\n\n`, wrapped in a single `<system-reminder>...</system-reminder>` block, and inserted as a new text part immediately before the trailing content part of the last user message. The trailing part keeps its `cache_control: ephemeral` marker, so reminders do not break prompt caching.
 
@@ -547,7 +547,7 @@ agent.registerInjector({
 agent.unregisterInjector('host');
 ```
 
-An injector function receives `{ messages, usage, turn }` and returns a `string` (sync or via `Promise`). Return `''` to skip the injector for that turn — the wrapper omits empty fragments entirely.
+An injector function receives `{ messages, usage, turn }` and returns a `string` (sync or via `Promise`). Return `''` to skip the injector for that turn: the wrapper omits empty fragments entirely.
 
 ### Mutating the Outgoing Request
 
@@ -563,7 +563,7 @@ The hook returns a disposer. Hooks run in registration order and may be async.
 
 ## Persistent Memory
 
-The SDK ships a file-based memory protocol that lets the agent persist knowledge across sessions. There are **no dedicated memory tools** — the LLM reads, writes, and edits memory files using the standard `Read`, `Write`, and `Edit` tools, guided by the `using-memory` skill and the first-turn memory injectors.
+The SDK ships a file-based memory protocol that lets the agent persist knowledge across sessions. There are **no dedicated memory tools**: the LLM reads, writes, and edits memory files using the standard `Read`, `Write`, and `Edit` tools, guided by the `using-memory` skill and the first-turn memory injectors.
 
 ### Configurable Storage Paths
 
@@ -578,9 +578,9 @@ const agent = await createAgent({
 });
 ```
 
-- `memoryDir` — directory for persistent memory files (`MEMORY.md` + individual memory files). Default: `.agent-sdk/memory` in the project root (derived from `appName`).
-- `tmpDir` — directory for temporary files. When set, the todo file is created as `todos-XXXXX.json` inside this directory with a random 5-character suffix per agent instance. Default: `.agent-sdk/todos.json` in the project root (derived from `appName`).
-- `pluginsDir` — directory scanned for plugins (each contributing an optional `skills/` folder and `AGENTS.md`). Default: `.agent-sdk/plugins` in the project root (derived from `appName`).
+- `memoryDir`: directory for persistent memory files (`MEMORY.md` + individual memory files). Default: `.agent-sdk/memory` in the project root (derived from `appName`).
+- `tmpDir`: directory for temporary files. When set, the todo file is created as `todos-XXXXX.json` inside this directory with a random 5-character suffix per agent instance. Default: `.agent-sdk/todos.json` in the project root (derived from `appName`).
+- `pluginsDir`: directory scanned for plugins (each contributing an optional `skills/` folder and `AGENTS.md`). Default: `.agent-sdk/plugins` in the project root (derived from `appName`).
 
 The `.agent-sdk` namespace comes from the `appName` constructor option (default `agent-sdk`, env `AGENT_SDK_APP_NAME`). Set `appName` to rename every default storage directory at once (`.<appName>/memory`, `.<appName>/todos.json`, `.<appName>/plugins`, and the `<appName>-<pid>` background-log dir in the OS temp dir).
 
@@ -588,7 +588,7 @@ Paths support `~` expansion. Both accept paths inside or outside the project roo
 
 ### Cleanup
 
-Call `agent.cleanup()` to delete all files in `tmpDir` (non-recursive; the directory itself is preserved). This is consumer-managed — the SDK does not register any process exit handlers.
+Call `agent.cleanup()` to delete all files in `tmpDir` (non-recursive; the directory itself is preserved). This is consumer-managed: the SDK does not register any process exit handlers.
 
 Recommended pattern:
 
@@ -616,7 +616,7 @@ try {
 
 ```
 <cwd>/.agent-sdk/memory/
-├── MEMORY.md                       # Index — one line per memory
+├── MEMORY.md                       # Index: one line per memory
 ├── feedback-prefers-pnpm.md        # Individual memory file
 ├── project-deadline-q3.md
 └── ...
@@ -641,11 +641,11 @@ metadata:
 The user explicitly asked to use pnpm for installs in this repo. Honour it for any onboarding or scripted setup instructions.
 ```
 
-- `name` — kebab-case slug matching the filename (without `.md`).
-- `description` — one-line summary; used by the LLM to scan for relevance.
-- `metadata.type` — one of the registered memory types (see below).
+- `name`: kebab-case slug matching the filename (without `.md`).
+- `description`: one-line summary; used by the LLM to scan for relevance.
+- `metadata.type`: one of the registered memory types (see below).
 
-`MEMORY.md` is a flat index listing each memory as `- [[slug]] — short description`. The agent updates it whenever it adds, renames, or deletes a memory.
+`MEMORY.md` is a flat index listing each memory as `- [[slug]]: short description`. The agent updates it whenever it adds, renames, or deletes a memory.
 
 ### Memory Types
 
@@ -653,10 +653,10 @@ Four types ship by default and describe what each category is for:
 
 | Type        | Purpose                                                                            |
 | ----------- | ---------------------------------------------------------------------------------- |
-| `user`      | Information about the user — role, goals, preferences.                             |
+| `user`      | Information about the user: role, goals, preferences.                             |
 | `feedback`  | Guidance the user gave about how to approach work.                                 |
 | `project`   | Ongoing work context, decisions, deadlines that aren't derivable from code or git. |
-| `reference` | Pointers to external systems — dashboards, tracker projects, channels.             |
+| `reference` | Pointers to external systems: dashboards, tracker projects, channels.             |
 
 Extend or override via `memoryTypes`:
 
@@ -709,10 +709,10 @@ The embedding model can be configured using:
 ```
 openrouter/
 ├── src/
-│   ├── index.js           # Entry point — createAgent() factory function
+│   ├── index.js           # Entry point: createAgent() factory function
 │   ├── config.js          # Configuration from environment variables
 │   ├── core/
-│   │   ├── agent.js       # Agent class — LLM interaction + tool loop
+│   │   ├── agent.js       # Agent class: LLM interaction + tool loop
 │   │   ├── utils.js       # withRetry, loadTools, ensureSafePath, helpers
 │   │   ├── logger.js      # Colored console logger (debug/info/warn/error)
 │   │   ├── errors.js      # Custom error classes (ApiError, ToolError, ConfigError)
@@ -721,8 +721,8 @@ openrouter/
 │   │   ├── file-state.js  # File content cache (line-number stability)
 │   │   └── notebook.js    # .ipynb flattener for the Read tool
 │   ├── registry/
-│   │   ├── tool.js        # ToolRegistry — register, execute, hooks, MCP
-│   │   └── skill.js       # SkillRegistry — discover & load SKILL.md
+│   │   ├── tool.js        # ToolRegistry: register, execute, hooks, MCP
+│   │   └── skill.js       # SkillRegistry: discover & load SKILL.md
 │   └── tools/
 │       ├── file/          # Read, Write, Edit, Find, List
 │       ├── general/       # Todo, RecallMemory
@@ -777,7 +777,7 @@ Calling `run()` while a loop is already active does not start a second loop: the
 
 ### `agent.steer(prompt)`
 
-Queue a prompt for an already-running loop without waiting for it to finish — see [Steering a Running Agent](#steering-a-running-agent). Synchronous and non-blocking; returns `true` when the prompt is queued, or `false` when the agent is idle (no loop to steer) or the prompt is empty.
+Queue a prompt for an already-running loop without waiting for it to finish: see [Steering a Running Agent](#steering-a-running-agent). Synchronous and non-blocking; returns `true` when the prompt is queued, or `false` when the agent is idle (no loop to steer) or the prompt is empty.
 
 ### Agent Properties
 
@@ -822,12 +822,12 @@ Queue a prompt for an already-running loop without waiting for it to finish — 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines on:
 
 - Getting started with development
-- Code style (ES modules, async/await, `//` comments — no JSDoc)
+- Code style (ES modules, async/await, `//` comments: no JSDoc)
 - Submitting changes (feature branch, pull request)
 - Reporting issues
 
 ## License
 
-This project is licensed under the **MIT License** — see [LICENSE](LICENSE) for the full text.
+This project is licensed under the **MIT License**: see [LICENSE](LICENSE) for the full text.
 
 Copyright (c) 2026 Angga Firman.

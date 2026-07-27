@@ -53,7 +53,7 @@ function makeIdleTimer(ms, controller) {
 // Error for a request that failed because the caller aborted the run.
 // `.aborted = true` makes withRetry fail fast instead of retrying. `cause`
 // preserves the error that was in flight when the abort was observed (e.g. a
-// real ApiError) so it isn't silently discarded — inspect err.cause for it.
+// real ApiError) so it isn't silently discarded: inspect err.cause for it.
 function callerAbortError(cause) {
   return callerAbortedError('Agent run aborted', cause);
 }
@@ -161,7 +161,7 @@ class Agent {
     this.restricted = restricted !== false;
     if (this.restricted === false) {
       logger.warn(
-        'Agent constructed with restricted=false — security checks disabled (project-root boundary, Bash blocked-command list, env-var filtering). Use only in trusted contexts.',
+        'Agent constructed with restricted=false: security checks disabled (project-root boundary, Bash blocked-command list, env-var filtering). Use only in trusted contexts.',
       );
     }
 
@@ -379,10 +379,10 @@ class Agent {
     }
 
     this._memoryTypes = {
-      user: 'Information about the user — role, goals, knowledge, preferences.',
+      user: 'Information about the user: role, goals, knowledge, preferences.',
       feedback: 'Guidance the user gave about how to approach work. Lead with the rule, include why and how to apply.',
       project: "Ongoing work context, decisions, deadlines that aren't derivable from code/git.",
-      reference: 'Pointers to external systems — dashboards, tracker projects, channels.',
+      reference: 'Pointers to external systems: dashboards, tracker projects, channels.',
       ...(memoryTypes || {}),
     };
 
@@ -434,7 +434,7 @@ class Agent {
     }
   }
 
-  // Read-only API key — used by Delegate tool for sub-agents
+  // Read-only API key: used by Delegate tool for sub-agents
   get apiKey() {
     return this.#apiKey;
   }
@@ -443,7 +443,6 @@ class Agent {
     return this.#baseUrl;
   }
 
-  // Whether a run loop is currently active.
   get isRunning() {
     return this.#running;
   }
@@ -625,7 +624,7 @@ class Agent {
       return;
     }
 
-    // Notify external listeners (only when idle — during a run these are
+    // Notify external listeners (only when idle: during a run these are
     // deferred until the run completes).
     for (const fn of this.#bgExitListeners) {
       try {
@@ -760,8 +759,6 @@ class Agent {
   async #request(payload, signal) {
     const controller = new AbortController();
     const idle = makeIdleTimer(REQUEST_TIMEOUT, controller);
-    // Compose the caller's signal with the idle-timeout controller so a
-    // caller abort cancels the in-flight fetch immediately.
     const fetchSignal = composeFetchSignal(signal, controller.signal);
     try {
       const res = await fetch(`${this.#baseUrl}/chat/completions`, {
@@ -771,7 +768,7 @@ class Agent {
         signal: fetchSignal,
       });
 
-      // connection established — reset idle clock for body read
+      // connection established: reset idle clock for body read
       idle.reset();
 
       let responseBody = await res.text();
@@ -821,7 +818,7 @@ class Agent {
 
   // Resolve a terminal (no-tool_calls) turn via stop hooks. May re-send the same
   // payload (raw retry) and re-evaluate, request a nudge, or allow the stop. It
-  // never commits an assistant message — the caller decides based on the result.
+  // never commits an assistant message: the caller decides based on the result.
   // Returns { continue: true, prompt } for a nudge, otherwise
   // { content, reasoning, tool_calls, finish_reason } to adopt.
   async #resolveStop({ payload, isStreaming, signal, turn, content, reasoning, reasoning_details, finish_reason }) {
@@ -860,7 +857,7 @@ class Agent {
       }
 
       if (action !== 'retry') {
-        // 'stop' or unknown — allow termination with the current message.
+        // 'stop' or unknown: allow termination with the current message.
         this.#stopAttempts = 0;
         return { content, reasoning, reasoning_details, tool_calls, finish_reason };
       }
@@ -891,7 +888,7 @@ class Agent {
         this.#stopAttempts = 0;
         return { content, reasoning, reasoning_details, tool_calls, finish_reason };
       }
-      // still empty — loop and re-evaluate hooks with the incremented attempt
+      // still empty: loop and re-evaluate hooks with the incremented attempt
     }
   }
 
@@ -1060,7 +1057,7 @@ class Agent {
       rethrowAsAbortIfCaller(err, signal);
     }
 
-    // connection established — reset idle clock before stream begins
+    // connection established: reset idle clock before stream begins
     idle.reset();
 
     if (!res.ok) {
@@ -1139,7 +1136,7 @@ class Agent {
           }
           break;
         }
-        idle.reset(); // data arrived — reset idle clock
+        idle.reset(); // data arrived: reset idle clock
         buffer += decoder.decode(value, { stream: true });
 
         let newlineIdx;
@@ -1214,7 +1211,7 @@ class Agent {
       input = rawArgs && rawArgs.trim() ? JSON.parse(rawArgs.trim()) : {};
     } catch (parseErr) {
       logger.warn(`Agent: failed to parse tool arguments for "${name}": ${parseErr.message}`);
-      throw new Error(`invalid JSON arguments — ${parseErr.message}`, { cause: parseErr });
+      throw new Error(`invalid JSON arguments: ${parseErr.message}`, { cause: parseErr });
     }
 
     await this.#broadcast({ tool_start: { tool_call_id, name, input } });
@@ -1235,7 +1232,7 @@ class Agent {
               textParts.push(part.text);
             } else if (part.type !== undefined) {
               if (this.#multimodalUnsupported) {
-                // model cannot handle rich content — note it in text instead
+                // model cannot handle rich content: note it in text instead
               } else {
                 richParts.push(part);
               }
@@ -1255,7 +1252,7 @@ class Agent {
         ) {
           output =
             (textParts.join('\n') || '') +
-            '\n[Multimodal content not displayed — this model does not support it. Do not attempt to describe or guess the content.]';
+            '\n[Multimodal content not displayed. This model does not support it. Do not attempt to describe or guess the content.]';
         } else {
           output = result.map((p) => (typeof p === 'string' ? p : JSON.stringify(p))).join('\n');
         }
@@ -1264,7 +1261,7 @@ class Agent {
           output = result.text;
         } else if (this.#multimodalUnsupported) {
           output =
-            '[Multimodal content not displayed — this model does not support it. Do not attempt to describe or guess the content.]';
+            '[Multimodal content not displayed. This model does not support it. Do not attempt to describe or guess the content.]';
         } else {
           richParts.push(result);
           output = `[File loaded successfully as multimodal content]`;
@@ -1418,7 +1415,6 @@ class Agent {
     return { id };
   }
 
-  // Stop one background job by id
   _killBackgroundJob(id) {
     const job = this.backgroundJobs?.get(id);
     if (!job) return { ok: false, status: 'not_found' };
@@ -1643,7 +1639,7 @@ class Agent {
         }
 
         // Build payload + onBeforeRequest hooks ONCE per turn.
-        // withRetry retries the network call only — injectors and hooks do not re-fire.
+        // withRetry retries the network call only: injectors and hooks do not re-fire.
         const payload = await this.#buildPayload();
         if (this.#multimodalUnsupported) degradePayload(payload);
         this.#recorder?.request(loopCount, payload);
@@ -1674,18 +1670,18 @@ class Agent {
               if (msg.role === 'tool' && this.#pendingRichCallIds.has(msg.tool_call_id)) {
                 msg.content =
                   (msg.content ? msg.content + '\n' : '') +
-                  '[Multimodal content could not be displayed — this model does not support it. Do not describe or guess this content.]';
+                  '[Multimodal content could not be displayed. This model does not support it. Do not describe or guess this content.]';
               }
             }
             this.#pendingRichCallIds.clear();
             const richNotice =
-              '[Multimodal content could not be displayed — this model does not support it. Do not describe or guess the content.]';
+              '[Multimodal content could not be displayed. This model does not support it. Do not describe or guess the content.]';
             if (this.#richUserMsgIdx >= 0) {
               this.messages[this.#richUserMsgIdx] = { role: 'user', content: richNotice };
               this.#richUserMsgIdx = -1;
             }
             degradePayload(payload);
-            // degradePayload collapses the rich user message to its text intro — replace with honest notice
+            // degradePayload collapses the rich user message to its text intro: replace with honest notice
             for (const msg of payload.messages) {
               if (msg.role === 'user' && msg.content === 'Multimodal content from the previous tool results:') {
                 msg.content = richNotice;
@@ -1717,7 +1713,7 @@ class Agent {
         let finish_reason = response.choices?.[0]?.finish_reason;
 
         // Stop hooks / empty-turn recovery run only on a terminal (no-tool_calls)
-        // turn, BEFORE the assistant message is committed — so an empty turn never
+        // turn, BEFORE the assistant message is committed: so an empty turn never
         // lands in history as a trailing assistant message (keeps the conversation
         // continuation-safe and avoids a 400 on the next run).
         if (!tool_calls || tool_calls.length === 0) {
@@ -1889,7 +1885,7 @@ function makeEmptyTurnRecoveryHook({ retries, nudge }) {
   const prompt = `<system-reminder>\n${nudge}\n</system-reminder>`;
   return function emptyTurnRecovery({ content, attempt, lastError }) {
     const empty = content == null || String(content).trim() === '';
-    if (!empty) return undefined; // non-empty terminal turn — allow normal stop
+    if (!empty) return undefined; // non-empty terminal turn: allow normal stop
     if (lastError) {
       return attempt > retries ? { action: 'stop' } : { action: 'continue', prompt };
     }
@@ -1955,14 +1951,14 @@ function contextFilesInjector(filePaths, trustedPathsFn) {
       try {
         resolved = ensureSafePath(filePath, trustedPaths);
       } catch {
-        // Path traversal or outside root — skip silently.
+        // Path traversal or outside root: skip silently.
         continue;
       }
       let content;
       try {
         content = await readFile(resolved, 'utf8');
       } catch {
-        // File missing — skip silently.
+        // File missing: skip silently.
         continue;
       }
       if (filePaths.length > 1) {
@@ -2013,7 +2009,7 @@ function memoryHintInjector(memoryDirFn, memoryTypesFn) {
       'You **MUST** load the `using-memory` skill (via the Skill tool with action="load",',
       'argument="using-memory") BEFORE the first memory write or update in this conversation,',
       'unless you have already loaded it. The skill defines file format, naming conventions,',
-      'and the MEMORY.md index protocol — you are required to follow it exactly.',
+      'and the MEMORY.md index protocol, and you are required to follow it exactly.',
     ].join('\n');
   };
 }
@@ -2031,7 +2027,7 @@ async function skillListInjector() {
   for (const [name, skill] of skills) {
     const desc = (skill.description || '').trim();
     const truncated = desc.length > 120 ? desc.slice(0, 117) + '...' : desc;
-    lines.push(`- ${name} — ${truncated}`);
+    lines.push(`- ${name}: ${truncated}`);
   }
   if (lines.length === 0) return '';
   return (

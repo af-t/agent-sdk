@@ -39,7 +39,7 @@ async function readSidecar(sidecarPath) {
     const parsed = JSON.parse(await fs.readFile(sidecarPath, 'utf8'));
     if (parsed && typeof parsed === 'object' && parsed.entries) return parsed.entries;
   } catch (err) {
-    // missing or corrupt — treat as empty
+    // missing or corrupt: treat as empty
     logger.debug(`memory-recall: failed to read/parse sidecar at ${sidecarPath}: ${err.message}`);
   }
   return {};
@@ -97,7 +97,7 @@ async function rankWithEmbeddings({
     if (Array.isArray(c.vector)) nextEntries[c.name] = { hash: c.hash, vector: c.vector };
   }
   // Only rewrite the sidecar when something actually changed (new/edited file
-  // embedded, or a deleted file pruned) — a pure cache-hit recall touches nothing.
+  // embedded, or a deleted file pruned): a pure cache-hit recall touches nothing.
   const changed = toEmbed.length > 0 || Object.keys(nextEntries).length !== Object.keys(cached).length;
   if (sidecarPath && changed) await writeSidecar(sidecarPath, nextEntries);
 

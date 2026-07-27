@@ -398,7 +398,7 @@ describe('ddgSearch() + formatDdgResults()', () => {
   });
 });
 
-describe('execute() — fallback when no TAVILY_API_KEY', () => {
+describe('execute(): fallback when no TAVILY_API_KEY', () => {
   let execute;
   let originalFetch;
   let savedKey;
@@ -465,7 +465,7 @@ describe('execute() — fallback when no TAVILY_API_KEY', () => {
   });
 });
 
-describe('execute() — Tavily API path', () => {
+describe('execute(): Tavily API path', () => {
   let execute;
   let originalFetch;
   let savedKey;

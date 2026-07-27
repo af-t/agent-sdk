@@ -81,8 +81,8 @@ describe('WebFetch tool module', () => {
     });
   });
 
-  describe('SSRF — DNS rebinding bypass attempts', () => {
-    // DNS rebinding services resolve to 127.0.0.1 — after the SSRF hardening,
+  describe('SSRF: DNS rebinding bypass attempts', () => {
+    // DNS rebinding services resolve to 127.0.0.1: after the SSRF hardening,
     // these are NOW blocked by DNS resolution + re-check.
 
     it('should reject nip.io DNS rebinding (1.0.0.127.nip.io → 127.0.0.1)', async () => {
@@ -116,7 +116,7 @@ describe('WebFetch tool module', () => {
     });
   });
 
-  describe('SSRF — redirect handling', () => {
+  describe('SSRF: redirect handling', () => {
     it('should detect redirect-to-internal via checkSSRF on redirect URL', async () => {
       const { checkSSRF } = mod;
       // A redirect to localhost should be caught
@@ -194,7 +194,7 @@ describe('WebFetch tool module', () => {
     });
   });
 
-  describe('SSRF — non-standard protocols', () => {
+  describe('SSRF: non-standard protocols', () => {
     it('should reject gopher:// protocol', async () => {
       await assert.rejects(mod.execute({ url: 'gopher://evil.com/1' }), /Access denied: protocol/);
     });
@@ -220,7 +220,7 @@ describe('WebFetch tool module', () => {
     });
   });
 
-  describe('SSRF — IPv4-mapped IPv6 bypass attempts', () => {
+  describe('SSRF: IPv4-mapped IPv6 bypass attempts', () => {
     it('blocks loopback via dotted IPv4-mapped IPv6 literal', async () => {
       await assert.rejects(() => mod.execute({ url: 'http://[::ffff:127.0.0.1]/' }), /Access denied/);
     });
@@ -301,7 +301,7 @@ describe('WebFetch tool module', () => {
     });
   });
 
-  describe('SSRF — public IPv4 and IPv6 literal paths', () => {
+  describe('SSRF: public IPv4 and IPv6 literal paths', () => {
     it('allows a public IPv4 address without DNS resolution', async () => {
       const { checkSSRF } = mod;
       // 8.8.8.8 is a public IP, not in any blocked range

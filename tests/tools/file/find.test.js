@@ -74,7 +74,7 @@ describe('find.js execute', () => {
   });
 });
 
-describe('find.js — injection resistance', () => {
+describe('find.js: injection resistance', () => {
   let fixturesDir;
 
   before(async () => {
@@ -225,7 +225,7 @@ describe('find.js — injection resistance', () => {
   });
 });
 
-describe('find.js — abort signal handling', () => {
+describe('find.js: abort signal handling', () => {
   const FIXTURES_ABORT = path.resolve('tests/fixtures/find-abort-dir');
 
   before(async () => {
@@ -271,12 +271,12 @@ describe('find.js — abort signal handling', () => {
   });
 });
 
-describe('find.js — nativeSearch fallback & edge cases', () => {
+describe('find.js: nativeSearch fallback & edge cases', () => {
   const FIXTURES_NATIVE = path.resolve('tests/fixtures/find-native-dir');
 
   before(async () => {
     // Clean up any leftover directory from a previous interrupted run
-    // Use execSync for robust cleanup — fs.rm can't delete dirs with 000 permissions
+    // Use execSync for robust cleanup: fs.rm can't delete dirs with 000 permissions
     try {
       execSync(`rm -rf ${FIXTURES_NATIVE}`);
     } catch {
@@ -332,7 +332,7 @@ describe('find.js — nativeSearch fallback & edge cases', () => {
     try {
       await fs.chmod(restrictedDir, 0o000);
     } catch {
-      // May not work on all platforms — skip restriction
+      // May not work on all platforms: skip restriction
     }
 
     const result = await mod.execute({ path: FIXTURES_NATIVE, pattern: 'notes', mode: 'content' });

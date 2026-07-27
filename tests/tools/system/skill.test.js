@@ -37,7 +37,7 @@ describe('Skill tool module', () => {
   });
 });
 
-describe('Skill tool — execute()', () => {
+describe('Skill tool: execute()', () => {
   let mod;
   let registry;
   const pluginsDir = path.join(os.tmpdir(), 'test-plugins-' + Date.now());

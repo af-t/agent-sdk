@@ -66,7 +66,6 @@ function spawnCommand(args, signal) {
   });
 }
 
-// Check if command exists in PATH
 function commandAvailable(cmd) {
   return new Promise((resolve) => {
     const child = spawn('which', [cmd], { stdio: 'ignore' });
@@ -143,7 +142,7 @@ async function nativeSearch({ absPath, pattern, mode, cwd, signal }) {
             }
           });
         } catch {
-          // read/stat failed — skip file
+          // read/stat failed: skip file
         }
       }
 

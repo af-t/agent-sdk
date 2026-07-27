@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { mergeReasoningDelta, finalizeReasoningDetails, sanitizeAssistantReasoning } from '../../src/core/reasoning.js';
 
-describe('reasoning — streaming accumulation', () => {
+describe('reasoning: streaming accumulation', () => {
   it('concatenates consecutive text chunks sharing an index', () => {
     let acc = [];
     acc = mergeReasoningDelta(acc, [{ type: 'reasoning.text', text: 'Think', index: 0 }]);
@@ -59,7 +59,7 @@ describe('reasoning — streaming accumulation', () => {
   });
 });
 
-describe('reasoning — payload sanitizer', () => {
+describe('reasoning: payload sanitizer', () => {
   const details = [{ type: 'reasoning.text', text: 'why', signature: 'sig', index: 0 }];
 
   it('drops the reasoning string when details exist on openrouter', () => {

@@ -48,7 +48,7 @@ export const execute = async ({ path: dirPath = '.', depth = 1 }, ctx = {}) => {
           const stats = await fs.stat(fullPath);
           suffix = ` (${formatSize(stats.size)})`;
         } catch {
-          suffix = ''; // stat failed — skip size display silently
+          suffix = ''; // stat failed: skip size display silently
         }
       }
 

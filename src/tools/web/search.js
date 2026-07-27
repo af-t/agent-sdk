@@ -26,7 +26,7 @@ export const description =
 export const input_schema = {
   type: 'object',
   properties: {
-    query: { type: 'string', description: 'Search query — be specific for best results' },
+    query: { type: 'string', description: 'Search query: be specific for best results' },
     depth: {
       type: 'string',
       enum: ['basic', 'advanced'],

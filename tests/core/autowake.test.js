@@ -99,7 +99,7 @@ test('Bug A: rapid concurrent exits coalesce into a single autoWake run', async 
     return origRun(...args);
   };
 
-  // Fire two exits rapidly — both should be coalesced into a single wake-up.
+  // Fire two exits rapidly: both should be coalesced into a single wake-up.
   agent._fireBackgroundExit({
     id: 'rapid-1',
     kind: 'bash',
@@ -426,7 +426,7 @@ test('queued bg exit drains at run start, merged with the prompt (single reminde
   const reminders = agent.messages.filter(
     (m) => m.role === 'user' && JSON.stringify(m.content).includes('Background job(s) exited'),
   );
-  // Exactly one reminder — drained once at run start, not again after the tool group.
+  // Exactly one reminder: drained once at run start, not again after the tool group.
   assert.equal(reminders.length, 1, 'exactly one bg-exit reminder');
   // It is merged into the prompt message so the model sees it on turn 1.
   assert.match(JSON.stringify(reminders[0].content), /gimana/);

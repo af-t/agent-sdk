@@ -46,7 +46,7 @@ function findReminderPart(payload) {
   return { text: parts.map((p) => p.text).join('\n\n') };
 }
 
-describe('Agent — injector registry', () => {
+describe('Agent: injector registry', () => {
   let Agent;
   let ConfigError;
 
@@ -102,7 +102,7 @@ describe('Agent — injector registry', () => {
   });
 });
 
-describe('Agent — first-turn vs per-turn semantics', () => {
+describe('Agent: first-turn vs per-turn semantics', () => {
   let Agent;
   let originalFetch;
 
@@ -180,7 +180,7 @@ describe('Agent — first-turn vs per-turn semantics', () => {
   });
 });
 
-describe('Agent — builtin date injector', () => {
+describe('Agent: builtin date injector', () => {
   let Agent;
   let originalFetch;
 
@@ -222,7 +222,7 @@ describe('Agent — builtin date injector', () => {
   });
 });
 
-describe('Agent — empty injectors yield no reminder block', () => {
+describe('Agent: empty injectors yield no reminder block', () => {
   let Agent;
   let originalFetch;
 
@@ -253,7 +253,7 @@ describe('Agent — empty injectors yield no reminder block', () => {
   });
 });
 
-describe('Agent — cache_control preservation with injection', () => {
+describe('Agent: cache_control preservation with injection', () => {
   let Agent;
   let originalFetch;
 
@@ -320,7 +320,7 @@ describe('Agent — cache_control preservation with injection', () => {
     assert.match(origUser.content[1].text, /PER_BODY/);
     assert.equal(origUser.content[2].text, 'hello');
 
-    // Payload sees BOTH blocks (separate parts) — both from history now.
+    // Payload sees BOTH blocks (separate parts): both from history now.
     const userMsg = fetchStub.captured[0].messages.find((m) => m.role === 'user');
     const reminderTexts = userMsg.content
       .filter((p) => typeof p.text === 'string' && p.text.startsWith('<system-reminder>'))
@@ -331,7 +331,7 @@ describe('Agent — cache_control preservation with injection', () => {
   });
 });
 
-describe('Agent — onBeforeRequest hook', () => {
+describe('Agent: onBeforeRequest hook', () => {
   let Agent;
   let originalFetch;
 
@@ -457,7 +457,7 @@ describe('Agent — onBeforeRequest hook', () => {
   });
 });
 
-describe('Agent — async injectors', () => {
+describe('Agent: async injectors', () => {
   let Agent;
   let originalFetch;
 
@@ -492,7 +492,7 @@ describe('Agent — async injectors', () => {
   });
 });
 
-describe('Agent — contextFiles first-turn injector', () => {
+describe('Agent: contextFiles first-turn injector', () => {
   let Agent;
   let originalFetch;
   const fixtureDir = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'fixtures', 'context-files');
@@ -615,7 +615,7 @@ describe('Agent — contextFiles first-turn injector', () => {
   });
 });
 
-describe('Agent — skillList first-turn injector', () => {
+describe('Agent: skillList first-turn injector', () => {
   let Agent;
   let originalFetch;
 
@@ -693,15 +693,15 @@ describe('Agent — skillList first-turn injector', () => {
     // Find the skill list section
     const lines = part.text.split('\n');
     for (const line of lines) {
-      if (line.startsWith('- ') && line.includes(' — ')) {
-        const desc = line.split(' — ')[1];
+      if (line.startsWith('- ') && line.includes(': ')) {
+        const desc = line.split(': ')[1];
         assert.ok(desc.length <= 120, `description for '${line}' is too long: ${desc.length} chars`);
       }
     }
   });
 });
 
-describe('Agent — pluginInstructions first-turn injector', () => {
+describe('Agent: pluginInstructions first-turn injector', () => {
   let Agent;
   let skillRegistry;
   let originalFetch;

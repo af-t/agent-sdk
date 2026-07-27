@@ -3,7 +3,7 @@
 // A terminal turn (the model returns no tool calls) is routed through stop
 // hooks before the run ends. The built-in empty-turn recovery (on by default)
 // re-sends the same request, then nudges, when a turn comes back with only
-// reasoning and no content — useful behind proxies that mislabel a truncated
+// reasoning and no content: useful behind proxies that mislabel a truncated
 // generation as a clean stop. You can also register your own onStop hook.
 
 import createAgent from '../src/index.js';

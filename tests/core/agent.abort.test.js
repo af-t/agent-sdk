@@ -5,7 +5,7 @@ function makeJsonResponse(body) {
   return { ok: true, status: 200, text: async () => JSON.stringify(body) };
 }
 
-describe('Agent — abort propagation', () => {
+describe('Agent: abort propagation', () => {
   let Agent;
   let originalFetch;
 
@@ -178,7 +178,7 @@ describe('Agent — abort propagation', () => {
   });
 
   it('rejects instead of resolving when abort lands before a terminal response is committed', async () => {
-    // fetch deliberately ignores init.signal — exercises the post-response check
+    // fetch deliberately ignores init.signal: exercises the post-response check
     const ctrl = new AbortController();
     global.fetch = async () => {
       await new Promise((r) => setTimeout(r, 100));

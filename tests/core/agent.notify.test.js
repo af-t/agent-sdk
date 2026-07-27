@@ -12,7 +12,7 @@ function makeSseResponse(lines) {
   return { ok: true, status: 200, body: stream };
 }
 
-describe('Agent — tool_start / tool_end notify events', () => {
+describe('Agent: tool_start / tool_end notify events', () => {
   let Agent;
   let originalFetch;
 

@@ -279,7 +279,7 @@ describe('Agent', () => {
   });
 });
 
-describe('run() — non-streaming (no notify)', () => {
+describe('run(): non-streaming (no notify)', () => {
   let Agent;
   let originalFetch;
 
@@ -319,7 +319,7 @@ describe('run() — non-streaming (no notify)', () => {
   });
 });
 
-describe('run() — streaming (with notify)', () => {
+describe('run(): streaming (with notify)', () => {
   let Agent;
   let originalFetch;
 
@@ -384,7 +384,7 @@ describe('run() — streaming (with notify)', () => {
     assert.strictEqual(tcCall.tool_calls[0].function.arguments, '{"msg":"hi"}');
   });
 
-  it('stops parsing after [DONE] — no extra notify calls', async () => {
+  it('stops parsing after [DONE]: no extra notify calls', async () => {
     global.fetch = async () =>
       makeSseResponse([
         'data: {"choices":[{"delta":{"content":"hi"}}],"usage":null}',
@@ -412,7 +412,7 @@ describe('run() — streaming (with notify)', () => {
   });
 });
 
-describe('run() — maxTurns enforcement', () => {
+describe('run(): maxTurns enforcement', () => {
   let Agent;
   let originalFetch;
 
@@ -458,7 +458,7 @@ describe('run() — maxTurns enforcement', () => {
   });
 });
 
-describe('run() — cache_control placement', () => {
+describe('run(): cache_control placement', () => {
   let Agent;
   let originalFetch;
 
@@ -570,7 +570,7 @@ describe('run() — cache_control placement', () => {
   });
 });
 
-describe('run() — AbortSignal', () => {
+describe('run(): AbortSignal', () => {
   let Agent;
 
   before(async () => {
@@ -586,7 +586,7 @@ describe('run() — AbortSignal', () => {
   });
 });
 
-describe('run() — message accumulation and reset', () => {
+describe('run(): message accumulation and reset', () => {
   let Agent;
   let originalFetch;
 
@@ -640,7 +640,7 @@ describe('run() — message accumulation and reset', () => {
   });
 });
 
-describe('Agent — storagePaths option', () => {
+describe('Agent: storagePaths option', () => {
   let Agent;
 
   before(async () => {
@@ -748,7 +748,7 @@ describe('Agent — storagePaths option', () => {
   });
 });
 
-describe('Agent — cleanup()', () => {
+describe('Agent: cleanup()', () => {
   let Agent;
 
   before(async () => {
@@ -807,7 +807,7 @@ describe('Agent — cleanup()', () => {
   });
 });
 
-describe('run() — tool_call id normalization', () => {
+describe('run(): tool_call id normalization', () => {
   let Agent;
   let originalFetch;
 
@@ -906,7 +906,7 @@ describe('run() — tool_call id normalization', () => {
   });
 });
 
-describe('run() — steering / pending requests', () => {
+describe('run(): steering / pending requests', () => {
   let Agent;
   let originalFetch;
 
@@ -1010,7 +1010,7 @@ describe('run() — steering / pending requests', () => {
   });
 });
 
-describe('run() — steering applied in-loop', () => {
+describe('run(): steering applied in-loop', () => {
   let Agent;
   let originalFetch;
 

@@ -62,7 +62,7 @@ export class SkillRegistry {
     try {
       entries = await fs.readdir(root, { withFileTypes: true });
     } catch {
-      // plugins root missing — skip
+      // plugins root missing: skip
       return;
     }
 
@@ -85,7 +85,7 @@ export class SkillRegistry {
         this.pluginInstructions.push({ plugin: name, content: content.trim() });
       }
     } catch {
-      // no AGENTS.md — skip
+      // no AGENTS.md: skip
     }
   }
 
@@ -93,7 +93,7 @@ export class SkillRegistry {
     try {
       await fs.access(dir);
     } catch {
-      // directory doesn't exist — skip
+      // directory doesn't exist: skip
       return;
     }
 
@@ -189,7 +189,6 @@ export class SkillRegistry {
   }
 }
 
-// Singleton instance
 const registry = new SkillRegistry();
 let _discoveryPromise = null;
 

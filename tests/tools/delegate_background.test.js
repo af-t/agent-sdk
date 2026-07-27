@@ -40,7 +40,7 @@ test('Delegate-spawned subagent shares parent storagePaths.tmpDir', async () => 
 test('Delegate background:true returns immediately with job id', async () => {
   const parent = await createAgent({ apiKey: 'x' });
 
-  // Mock Agent.prototype.run — covers both parent and any subagent instances.
+  // Mock Agent.prototype.run: covers both parent and any subagent instances.
   let resolveSubagent;
   const subagentDone = new Promise((r) => {
     resolveSubagent = r;

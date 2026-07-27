@@ -12,7 +12,7 @@ function makeSseResponse(lines) {
   return { ok: true, status: 200, body: stream };
 }
 
-describe('Agent — streaming usage', () => {
+describe('Agent: streaming usage', () => {
   let Agent;
   let originalFetch;
 

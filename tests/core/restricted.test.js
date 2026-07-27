@@ -100,7 +100,7 @@ test('McpClientWrapper inherits process.env when restricted=false', async () => 
     // The internal env builder is private; assert via the resolved env getter if present,
     // otherwise rely on a wrapper-level method. If the only way to observe is to
     // spawn, just assert that the `restricted` flag is stored on the instance so the
-    // spawn path will read it. (See Step 4 — make sure `restricted` is reachable.)
+    // spawn path will read it. (See Step 4: make sure `restricted` is reachable.)
     assert.equal(w1.restricted, true, 'restricted=true wrapper stores flag');
     assert.equal(w2.restricted, false, 'restricted=false wrapper stores flag');
   } finally {

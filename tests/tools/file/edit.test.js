@@ -18,7 +18,7 @@ async function reset() {
   await fs.writeFile(TEST_FILE, INITIAL, 'utf8');
 }
 
-describe('Edit — replace action', () => {
+describe('Edit: replace action', () => {
   let execute;
   before(async () => {
     await fs.mkdir(FIXTURES, { recursive: true });
@@ -110,7 +110,7 @@ describe('Edit — replace action', () => {
   });
 });
 
-describe('Edit — insert action', () => {
+describe('Edit: insert action', () => {
   let execute;
   before(async () => {
     await fs.mkdir(FIXTURES, { recursive: true });
@@ -200,7 +200,7 @@ describe('Edit — insert action', () => {
   });
 });
 
-describe('Edit — delete action', () => {
+describe('Edit: delete action', () => {
   let execute;
   before(async () => {
     await fs.mkdir(FIXTURES, { recursive: true });
@@ -253,7 +253,7 @@ describe('Edit — delete action', () => {
   });
 });
 
-describe('Edit — multi-action and edge cases', () => {
+describe('Edit: multi-action and edge cases', () => {
   let execute;
   before(async () => {
     await fs.mkdir(FIXTURES, { recursive: true });
@@ -355,7 +355,7 @@ describe('Edit — multi-action and edge cases', () => {
     assert.equal(lines.length, 6);
   });
 
-  it('multi-edit: old_text replace then line-based replace — zero delta keeps line numbers intact', async () => {
+  it('multi-edit: old_text replace then line-based replace: zero delta keeps line numbers intact', async () => {
     // old_text replace on "foo bar" → "FOO BAR": same line count, delta=0.
     // Subsequent line-based replace at original line 4 must not be shifted.
     await execute({
@@ -385,7 +385,7 @@ describe('Edit — multi-action and edge cases', () => {
   });
 });
 
-describe('Edit — shell metacharacter path resistance', () => {
+describe('Edit: shell metacharacter path resistance', () => {
   let execute;
   before(async () => {
     await fs.mkdir(FIXTURES, { recursive: true });
@@ -406,7 +406,7 @@ describe('Edit — shell metacharacter path resistance', () => {
     return filePath;
   }
 
-  it('handles $(id) in path — does not execute id', async () => {
+  it('handles $(id) in path: does not execute id', async () => {
     const filePath = await makeShellFile('edit-shell-dollar-sub-$(id).txt');
     try {
       const result = await execute({
@@ -421,7 +421,7 @@ describe('Edit — shell metacharacter path resistance', () => {
     }
   });
 
-  it('handles backticks in path — does not execute command', async () => {
+  it('handles backticks in path: does not execute command', async () => {
     const filePath = await makeShellFile('edit-shell-backtick-`whoami`.txt');
     try {
       const result = await execute({
@@ -435,7 +435,7 @@ describe('Edit — shell metacharacter path resistance', () => {
     }
   });
 
-  it('handles semicolon in path — does not chain commands', async () => {
+  it('handles semicolon in path: does not chain commands', async () => {
     const filePath = await makeShellFile('edit-shell-semicolon-;rm-test.txt');
     try {
       const result = await execute({
@@ -465,7 +465,7 @@ describe('Edit — shell metacharacter path resistance', () => {
   });
 });
 
-describe('Edit — fileState read-before-edit guard', () => {
+describe('Edit: fileState read-before-edit guard', () => {
   let execute;
   let hashContent;
   let tmpDir;
@@ -579,7 +579,7 @@ describe('Edit — fileState read-before-edit guard', () => {
   it('exempts old_text edits from the range check (content-anchored)', async () => {
     const raw = await fs.readFile(tmpFile, 'utf8');
     const state = new Map();
-    // only line 1 read, but old_text targets line 2 — still allowed
+    // only line 1 read, but old_text targets line 2: still allowed
     state.set(tmpFile, { hash: hashContent(raw), lastReadTurn: 1, rangesRead: [[1, 1]], totalLines: 5 });
     const ctx = makeCtx(state);
     const result = await execute(
@@ -603,7 +603,7 @@ describe('Edit — fileState read-before-edit guard', () => {
   it('preserves a partial read range after a successful edit (regression for 6056d27)', async () => {
     const raw = await fs.readFile(tmpFile, 'utf8');
     const state = new Map();
-    // a genuinely partial range — it must NOT become [[1, totalLines]] after the edit
+    // a genuinely partial range: it must NOT become [[1, totalLines]] after the edit
     state.set(tmpFile, { hash: hashContent(raw), lastReadTurn: 1, rangesRead: [[2, 3]], totalLines: 5 });
     const ctx = makeCtx(state);
     await execute({ path: tmpFile, edits: [{ action: 'replace', old_text: 'foo bar', new_text: 'FOO' }] }, ctx);
@@ -612,7 +612,7 @@ describe('Edit — fileState read-before-edit guard', () => {
   });
 });
 
-describe('Edit — CRLF line endings', () => {
+describe('Edit: CRLF line endings', () => {
   let execute;
   let crlfFile;
 
@@ -660,7 +660,7 @@ describe('Edit — CRLF line endings', () => {
   });
 });
 
-describe('Edit — preserves untouched content', () => {
+describe('Edit: preserves untouched content', () => {
   let execute;
   let wsFile;
 
@@ -698,7 +698,7 @@ describe('Edit — preserves untouched content', () => {
   });
 });
 
-describe('Edit — error message quality', () => {
+describe('Edit: error message quality', () => {
   let execute;
   before(async () => {
     await fs.mkdir(FIXTURES, { recursive: true });
@@ -752,7 +752,7 @@ describe('Edit — error message quality', () => {
   });
 });
 
-describe('Edit — mixed content-anchored and line-based edits', () => {
+describe('Edit: mixed content-anchored and line-based edits', () => {
   let execute;
   before(async () => {
     await fs.mkdir(FIXTURES, { recursive: true });
@@ -763,8 +763,9 @@ describe('Edit — mixed content-anchored and line-based edits', () => {
   beforeEach(reset);
 
   it('line-based edit above an earlier old_text edit that added lines is not shifted', async () => {
-    // REVIEW.md finding 2: +1-line old_text edit at line 4, then start_line 2.
-    // The buggy global offset shifted the target down to line 3.
+    // Regression: an old_text edit that adds a line (here, +1 line at line 4) must not
+    // shift a later start_line edit above it. A buggy global offset previously shifted
+    // the start_line=2 target down to line 3.
     await execute({
       path: TEST_FILE,
       edits: [
@@ -864,7 +865,7 @@ describe('Edit — mixed content-anchored and line-based edits', () => {
   it('line-based edit on the line immediately after an old_text delete-with-trailing-newline is not falsely invalidated', async () => {
     // The over-nulling bug: old_text 'Line two: foo bar\n' has a trailing
     // newline, so its own split('\n').length (2) over-counts the whole-line
-    // span it actually touches (1 line — line 2). The buggy code nulled out
+    // span it actually touches (1 line: line 2). The buggy code nulled out
     // line 3 too, even though line 3's content never changed.
     await execute({
       path: TEST_FILE,

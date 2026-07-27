@@ -34,7 +34,7 @@ function llmStubWithArgs(rawArgs) {
   };
 }
 
-describe('Agent — empty tool arguments (zero-parameter tools)', () => {
+describe('Agent: empty tool arguments (zero-parameter tools)', () => {
   let Agent;
   let originalFetch;
 

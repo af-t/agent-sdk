@@ -18,7 +18,7 @@ const multimodalToolMsg = {
   ],
 };
 
-describe('Agent — multimodal degradation', () => {
+describe('Agent: multimodal degradation', () => {
   let Agent;
   let realFetch;
 
@@ -84,7 +84,7 @@ describe('Agent — multimodal degradation', () => {
 
   it('subsequent run() sends already-degraded payload on first fetch', async () => {
     // reuse an agent that has already degraded once (from previous test state is NOT reused
-    // since it's a fresh agent — we replicate the scenario by running through degradation first)
+    // since it's a fresh agent: we replicate the scenario by running through degradation first)
     const agent = new Agent({ apiKey: 'sk-test' });
 
     agent.messages = [
@@ -104,7 +104,7 @@ describe('Agent — multimodal degradation', () => {
       if (phase === 'degrade') {
         const tc = body.messages.find((m) => m.role === 'tool');
         if (tc && Array.isArray(tc.content) && tc.content.some((p) => p.type === 'image_url')) {
-          // first real call — reject to trigger degradation flag
+          // first real call: reject to trigger degradation flag
           return mockRes(400, { error: { message: 'unsupported content' } });
         }
         // retry after degradation
@@ -137,7 +137,7 @@ describe('Agent — multimodal degradation', () => {
 
     assert.strictEqual(secondRunBodies.length, 1, 'expected exactly one fetch on second run');
     const toolMsg = secondRunBodies[0].messages.find((m) => m.role === 'tool');
-    // tool message should already be degraded (string) — no image_url
+    // tool message should already be degraded (string): no image_url
     assert.strictEqual(typeof toolMsg.content, 'string', 'second run: tool content should be pre-degraded string');
     assert.ok(!toolMsg.content.includes('image_url'), 'second run: no image_url in degraded content');
   });

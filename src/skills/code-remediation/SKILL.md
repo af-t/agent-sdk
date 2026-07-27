@@ -46,13 +46,13 @@ You (Orchestrator)
   ├──→ Delegate #1 (Implementor)
   │     ├── Read all relevant files
   │     ├── Apply all changes for the phase
-  │     ├── Mark TODO.md [x] for each item
+  │     ├── Mark the plan file [x] for each item
   │     └── Return summary
   │
   ├──→ Delegate #2 (Reviewer)
   │     ├── Read all modified files
   │     ├── Check: correctness, security, edge cases, regressions
-  │     ├── Check: imports, consistency, TODO.md marks
+  │     ├── Check: imports, consistency, plan file marks
   │     └── Report findings (✅ OK / ⚠️ FINDING / 🚨 CRITICAL)
   │
   └──→ You (Fixer)
@@ -80,29 +80,29 @@ You (Orchestrator)
 ### Path Traversal Prevention
 
 ```js
-// BAD — no validation
+// BAD: no validation
 const fullPath = path.resolve(filePath);
 
-// GOOD — use ensureSafePath()
+// GOOD: use ensureSafePath()
 import { ensureSafePath } from '../../core/utils.js';
 const fullPath = ensureSafePath(filePath);
 ```
 
 **`ensureSafePath()` harus menangani:**
 
-1. ❌ Null bytes (`\0`) — CVE-2021-3805 bypass
-2. ❌ URL-encoded traversal (`%2e%2e`, `%2f`, `%5c`) — double encoding
-3. ❌ Protocol handlers (`file://`, etc.) — SSRF via file path
-4. ❌ Directory traversal (`../../etc/passwd`) — keluar dari project root
-5. ❌ Symlink TOCTOU — file yang di-resolve bisa redirect ke luar root
+1. ❌ Null bytes (`\0`): CVE-2021-3805 bypass
+2. ❌ URL-encoded traversal (`%2e%2e`, `%2f`, `%5c`): double encoding
+3. ❌ Protocol handlers (`file://`, etc.): SSRF via file path
+4. ❌ Directory traversal (`../../etc/passwd`): keluar dari project root
+5. ❌ Symlink TOCTOU: file yang di-resolve bisa redirect ke luar root
 
 ### Environment Variable Leakage
 
 ```js
-// BAD — passes ALL env vars including API keys
+// BAD: passes ALL env vars including API keys
 env: { ...process.env }
 
-// GOOD — strip secrets before passing to child processes
+// GOOD: strip secrets before passing to child processes
 import { stripSecrets } from '../../core/utils.js';
 env: { ...stripSecrets(process.env), ...(this.config.env || {}) }
 ```
@@ -118,10 +118,10 @@ env: { ...stripSecrets(process.env), ...(this.config.env || {}) }
 ### API Key Encapsulation
 
 ```js
-// BAD — public property, leaks via JSON.stringify
+// BAD: public property, leaks via JSON.stringify
 this.apiKey = apiKey;
 
-// GOOD — private field + read-only getter
+// GOOD: private field + read-only getter
 class Agent {
   #apiKey;
 
@@ -138,10 +138,10 @@ class Agent {
 ### Secret Redaction in Logs
 
 ```js
-// BAD — secrets visible in console
+// BAD: secrets visible in console
 console.error(`${msg}`, ...args);
 
-// GOOD — redact before logging
+// GOOD: redact before logging
 const patterns = [
   /(sk-(?:or|ant)-[a-zA-Z0-9_-]+)/g, // OpenRouter keys
   /(tvly-[a-zA-Z0-9_-]+)/g, // Tavily keys
@@ -201,10 +201,10 @@ const SUSPICIOUS = [/\b(eval|exec|source)\s+.*(\/etc\/|\.ssh|\.env)/, /\bsudo\b/
 ### Temp File Security
 
 ```js
-// BAD — predictable filename
+// BAD: predictable filename
 path.join(os.tmpdir(), `temp${Date.now() + Math.random()}`);
 
-// GOOD — unpredictable UUID
+// GOOD: unpredictable UUID
 import crypto from 'node:crypto';
 path.join(os.tmpdir(), `.appname-${crypto.randomUUID()}`);
 ```
@@ -216,14 +216,14 @@ path.join(os.tmpdir(), `.appname-${crypto.randomUUID()}`);
 ### Standard: Tools Throw, Agent Catches
 
 ```js
-// In every tool — THROW on error, don't return string
+// In every tool: THROW on error, don't return string
 try {
   // ... tool logic ...
 } catch (error) {
   throw new Error(`Operation failed: ${error.message}`);
 }
 
-// In agent loop — CATCH the throw
+// In agent loop: CATCH the throw
 try {
   const result = await this.tools.execute(name, input, context);
 } catch (toolErr) {
@@ -240,7 +240,7 @@ try {
 
 ```js
 async function withRetry(func, count) {
-  const NON_RETRYABLE = [401, 403, 400, 404]; // Client errors — don't retry
+  const NON_RETRYABLE = [401, 403, 400, 404]; // Client errors: don't retry
   const MAX_DELAY = 60_000; // Cap exponential backoff
 
   for (let i = 0; i < count; i++) {
@@ -260,13 +260,13 @@ async function withRetry(func, count) {
 ### Empty Catch Blocks
 
 ```js
-// BAD — silent failure, impossible to debug
+// BAD: silent failure, impossible to debug
 catch {}
 
-// GOOD — log with context
+// GOOD: log with context
 catch (err) { logger.debug('Operation failed:', err.message); }
 // or at minimum: add a comment explaining why it's safe to skip
-catch { /* path doesn't exist — skip silently */ }
+catch { /* path doesn't exist: skip silently */ }
 ```
 
 ### Timeout Pattern
@@ -329,26 +329,26 @@ When reviewing changes, check these dimensions:
 ### Starting a Remediation Phase
 
 ```
-1. Read TODO.md — understand the phase scope
+1. Read the plan file: understand the phase scope
 2. Group items by complexity:
    - Simple (1 file, 1 change) → do yourself
    - Complex (multiple files, coordinated changes) → delegate
 3. For complex items:
    a. Delegate #1: "Implement all items in this group"
-      - Give file paths, specific changes, and mark TODO.md
+      - Give file paths, specific changes, and mark the plan file
    b. Delegate #2: "Review all changes in these files"
       - Check correctness, security, edge cases, regressions
    c. Fix findings yourself (don't re-delegate for minor fixes)
-4. Mark TODO.md [x] as each item completes
+4. Mark the plan file [x] as each item completes
 ```
 
 ### Reporting Findings
 
 Categorize findings as:
 
-- **✅ OK** — No issues, implementation is correct
-- **⚠️ FINDING** — Minor issue or improvement suggestion
-- **🚨 CRITICAL** — Bug or security hole that must be fixed before proceeding
+- **✅ OK**: No issues, implementation is correct
+- **⚠️ FINDING**: Minor issue or improvement suggestion
+- **🚨 CRITICAL**: Bug or security hole that must be fixed before proceeding
 
 ### When to NOT Delegate
 
@@ -361,16 +361,16 @@ Categorize findings as:
 
 ## Best Practices
 
-1. **Read before you write** — Always read the current file state before making changes
-2. **One change at a time** — Apply changes incrementally, not all at once
-3. **Mark as you go** — Update TODO.md [x] immediately after each item
-4. **Delegate complex, do simple** — Use sub-agents for multi-file changes, do trivial fixes yourself
-5. **Review before accepting** — Always verify delegated work with a reviewer
-6. **Fix criticals immediately** — Never leave 🚨 CRITICAL findings unresolved
-7. **Size limits are security** — Add max read/write sizes to prevent resource exhaustion
-8. **Default deny for paths** — Block everything outside project root by default
-9. **Least privilege for env** — Only pass necessary env vars to child processes
-10. **Deep freeze config** — Make configuration immutable to prevent runtime mutation
+1. **Read before you write**: Always read the current file state before making changes
+2. **One change at a time**: Apply changes incrementally, not all at once
+3. **Mark as you go**: Update the plan file [x] immediately after each item
+4. **Delegate complex, do simple**: Use sub-agents for multi-file changes, do trivial fixes yourself
+5. **Review before accepting**: Always verify delegated work with a reviewer
+6. **Fix criticals immediately**: Never leave 🚨 CRITICAL findings unresolved
+7. **Size limits are security**: Add max read/write sizes to prevent resource exhaustion
+8. **Default deny for paths**: Block everything outside project root by default
+9. **Least privilege for env**: Only pass necessary env vars to child processes
+10. **Deep freeze config**: Make configuration immutable to prevent runtime mutation
 
 ## Resources
 
@@ -387,7 +387,7 @@ Bash script for automated security auditing
 
 ```bash
 # source the script
-source scripts/remediation_helper.js
+source scripts/remediation_helper.sh
 
 # or execute immediately
 bash scripts/remediation_helper.sh

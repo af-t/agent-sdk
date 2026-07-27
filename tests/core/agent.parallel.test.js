@@ -35,7 +35,7 @@ function llmStubReturning(toolCallSpecs, finalContent) {
   };
 }
 
-describe('Agent — parallel tool scheduler', () => {
+describe('Agent: parallel tool scheduler', () => {
   let Agent;
   let originalFetch;
 
@@ -75,7 +75,7 @@ describe('Agent — parallel tool scheduler', () => {
     });
 
     await agent.run('go');
-    // Deterministic concurrency check — both tools are in-flight together, independent of machine speed.
+    // Deterministic concurrency check: both tools are in-flight together, independent of machine speed.
     assert.equal(maxActive, 2, `expected both tools to run concurrently, max concurrent was ${maxActive}`);
   });
 

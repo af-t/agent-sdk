@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================
-# remediation_helper.sh — Helper functions for code remediation
+# remediation_helper.sh: Helper functions for code remediation
 #
 # Usage:
 #   source remediation_helper.sh

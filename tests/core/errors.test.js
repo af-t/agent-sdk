@@ -47,7 +47,7 @@ describe('ConfigError', () => {
 });
 
 describe('throw and catch behavior', () => {
-  it('ApiError can be thrown and caught — instanceof checks pass in catch block', () => {
+  it('ApiError can be thrown and caught: instanceof checks pass in catch block', () => {
     let caught;
     try {
       throw new ApiError('Unauthorized', 401, { detail: 'bad key' });
@@ -60,7 +60,7 @@ describe('throw and catch behavior', () => {
     assert.deepEqual(caught.body, { detail: 'bad key' });
   });
 
-  it('ToolError can be thrown and caught — toolName accessible in catch block', () => {
+  it('ToolError can be thrown and caught: toolName accessible in catch block', () => {
     let caught;
     try {
       throw new ToolError('execution failed', 'Bash');
@@ -72,7 +72,7 @@ describe('throw and catch behavior', () => {
     assert.strictEqual(caught.toolName, 'Bash');
   });
 
-  it('ConfigError can be thrown and caught — message accessible in catch block', () => {
+  it('ConfigError can be thrown and caught: message accessible in catch block', () => {
     let caught;
     try {
       throw new ConfigError('missing key');

@@ -108,7 +108,7 @@ describe('Todo Tool', () => {
 
     await mod.execute({ action: 'complete', id: completedId, todo_file: testFile });
 
-    // Check pending filter — should only show Pending Task
+    // Check pending filter: should only show Pending Task
     const pendingResult = await mod.execute({
       action: 'list',
       filter: 'pending',
@@ -297,7 +297,7 @@ describe('Todo Tool', () => {
     const idMatch = listResult.match(/ID: (\w+)/);
     const firstId = idMatch[1];
 
-    // Update only the text — priority must remain HIGH
+    // Update only the text: priority must remain HIGH
     const result = await mod.execute({
       action: 'update',
       id: firstId,

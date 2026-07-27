@@ -170,10 +170,10 @@ export const name = 'Edit';
 export const description =
   'Surgically update a file with one or more sequential actions (replace, insert, delete). ' +
   'Actions are applied top-to-bottom; the file is only written if every action succeeds. ' +
-  'Prefer old_text over line numbers — old_text is content-anchored and immune to shifting. ' +
+  'Prefer old_text over line numbers: old_text is content-anchored and immune to shifting. ' +
   'When using line-based edits in a multi-edit call, line numbers are automatically adjusted ' +
   'for insertions and deletions made by earlier actions in the same call. ' +
-  'A line whose content was rewritten by an earlier action in the same call can no longer be addressed by line number — ' +
+  'A line whose content was rewritten by an earlier action in the same call can no longer be addressed by line number: ' +
   'use old_text for it, or split into separate Edit calls. ' +
   'Line-based edits must be specified in top-to-bottom order (ascending start_line). Side effect: mutates the target file. Do not issue parallel Edit/Write calls against the same path.';
 
@@ -184,7 +184,7 @@ export const input_schema = {
     edits: {
       type: 'array',
       description:
-        'Edit actions applied sequentially top-to-bottom. Prefer old_text for robustness — it is content-anchored and unaffected by prior edits in the same call. File is unchanged if any action fails.',
+        'Edit actions applied sequentially top-to-bottom. Prefer old_text for robustness: it is content-anchored and unaffected by prior edits in the same call. File is unchanged if any action fails.',
       items: {
         type: 'object',
         properties: {
@@ -192,7 +192,7 @@ export const input_schema = {
           old_text: {
             type: 'string',
             description:
-              '(replace/delete) Exact text to find — must appear exactly once. Preferred over line numbers: content-anchored and unaffected by line shifting from other edits.',
+              '(replace/delete) Exact text to find, must appear exactly once. Preferred over line numbers: content-anchored and unaffected by line shifting from other edits.',
           },
           new_text: { type: 'string', description: '(replace) Replacement text' },
           start_line: {
@@ -293,7 +293,7 @@ export const execute = async ({ path: filePath, edits }, ctx = {}) => {
     const totalLines = content.split('\n').length;
     const prev = fileState.get(safePath);
     // Preserve the ranges the agent has actually read. Do NOT claim the entire
-    // file is in-context just because it was edited — the agent may have only
+    // file is in-context just because it was edited: the agent may have only
     // seen specific line ranges before making the edit.
     const prevRanges = prev ? prev.rangesRead : [];
     fileState.set(safePath, {

@@ -42,7 +42,7 @@ describe('Delegate tool module', () => {
   });
 });
 
-describe('Delegate tool — execute()', () => {
+describe('Delegate tool: execute()', () => {
   let mod;
   let Agent;
 
@@ -92,7 +92,7 @@ describe('Delegate tool — execute()', () => {
     mock.method(Agent.prototype, 'run', async () => 'done');
 
     const parent = new Agent({ apiKey: 'sk-test-key' });
-    // Pin the parent to no explicit limit so the subagent fallback is what gets tested —
+    // Pin the parent to no explicit limit so the subagent fallback is what gets tested:
     // otherwise the developer's .env (OPENROUTER_MAX_COMPLETION_TOKENS) leaks in via config
     // and the parent's value is inherited instead of the MAX_COMPLETION_TOKENS_SUBAGENT default.
     parent.maxCompletionTokens = undefined;

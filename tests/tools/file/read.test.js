@@ -77,7 +77,7 @@ describe('read.js execute', () => {
   });
 });
 
-describe('read.js — CRLF line endings', () => {
+describe('read.js: CRLF line endings', () => {
   let mod;
   let crlfFile;
 
@@ -106,7 +106,7 @@ describe('read.js — CRLF line endings', () => {
   });
 });
 
-describe('read.js — notebook branch', () => {
+describe('read.js: notebook branch', () => {
   const NOTEBOOK_FILE = path.join(FIXTURES, 'test-notebook.ipynb');
 
   before(async () => {
@@ -136,7 +136,7 @@ describe('read.js — notebook branch', () => {
   });
 });
 
-describe('read.js — image branch', () => {
+describe('read.js: image branch', () => {
   let tmpDir;
   let pngFile;
   let oversizedPngFile;
@@ -206,7 +206,7 @@ describe('read.js — image branch', () => {
   });
 });
 
-describe('read.js — pdf branch', () => {
+describe('read.js: pdf branch', () => {
   let tmpDir;
   let pdfFile;
 
@@ -238,7 +238,7 @@ describe('read.js — pdf branch', () => {
   });
 });
 
-describe('read.js — binary branch', () => {
+describe('read.js: binary branch', () => {
   let tmpDir;
   let binaryFile;
 
@@ -266,7 +266,7 @@ describe('read.js — binary branch', () => {
   });
 });
 
-describe('read.js — fileState caching', () => {
+describe('read.js: fileState caching', () => {
   let mod;
   let tmpDir;
   let tmpFile;
@@ -392,7 +392,7 @@ describe('read.js — fileState caching', () => {
   });
 });
 
-describe('read.js — video and audio branch', () => {
+describe('read.js: video and audio branch', () => {
   let tmpDir;
   let mp4File;
   let oversizedMp4File;
@@ -468,7 +468,7 @@ describe('read.js — video and audio branch', () => {
   });
 });
 
-describe('read.js — oversized text file', () => {
+describe('read.js: oversized text file', () => {
   it('throws when text file exceeds 10MB', async () => {
     const os = await import('node:os');
     const tmpDir = await fs.mkdtemp(path.join(os.default.tmpdir(), 'read-oversize-'));

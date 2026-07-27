@@ -1,5 +1,3 @@
-// file type detection utilities
-
 const videoExtensions = {
   '.mp4': 'video/mp4',
   '.webm': 'video/webm',
@@ -47,7 +45,6 @@ export function detectFileType(sampleBuffer, ext) {
   return { category: 'text', mime: 'text/plain' };
 }
 
-// detect well-known mime from magic bytes
 function magicMime(buf) {
   if (
     buf.length >= 8 &&
@@ -115,7 +112,6 @@ function isBinary(buf) {
   return controlCount / buf.length > 0.3;
 }
 
-// parse image dimensions from a full file buffer
 export function imageDimensions(buffer, mime) {
   try {
     if (mime === 'image/png') {
@@ -169,7 +165,6 @@ function parseWebPDimensions(buf) {
   return { width: w, height: h };
 }
 
-// format first n bytes as lowercase hex with spaces
 export function hexPreview(buffer, n = 64) {
   const slice = buffer.slice(0, n);
   const parts = [];
@@ -179,14 +174,12 @@ export function hexPreview(buffer, n = 64) {
   return parts.join(' ');
 }
 
-// human-readable file size
 export function humanSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// guess mime for binary files from magic bytes
 export function magicByteType(sampleBuffer) {
   if (
     sampleBuffer.length >= 4 &&

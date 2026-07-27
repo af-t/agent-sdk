@@ -3,7 +3,6 @@ import { ApiError } from './errors.js';
 
 const EMBED_TIMEOUT = 120_000;
 
-// Cosine similarity over two dense float arrays.
 export function cosineSimilarity(a, b) {
   if (!a || !b || a.length !== b.length) return 0;
   let dot = 0;
@@ -18,9 +17,7 @@ export function cosineSimilarity(a, b) {
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-// POST texts to the OpenRouter-compatible /embeddings endpoint.
-// Reuses withRetry (4xx fails fast, 5xx/429 retried). Returns vectors in
-// input order plus the raw usage object.
+// Reuses withRetry: 4xx fails fast, 5xx/429 retried.
 export async function embedTexts(texts, { apiKey, baseUrl, model, signal } = {}) {
   if (!Array.isArray(texts) || texts.length === 0) {
     return { vectors: [], usage: null };
@@ -53,7 +50,7 @@ export async function embedTexts(texts, { apiKey, baseUrl, model, signal } = {})
       }
       return body;
     } catch (err) {
-      // Caller aborted — flag it so withRetry fails fast instead of retrying.
+      // Caller aborted: flag it so withRetry fails fast instead of retrying.
       if (signal?.aborted) throw callerAbortedError('Embeddings request aborted', err);
       throw err;
     } finally {

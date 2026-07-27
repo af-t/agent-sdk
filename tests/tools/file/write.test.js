@@ -71,7 +71,7 @@ describe('write.js execute', () => {
     const mod = await import('../../../src/tools/file/write.js');
     // Use 3-byte UTF-8 characters (e.g., many CJK chars are 3 bytes)
     // Create content that's just under 10MB with multi-byte chars
-    const char = '\u4e16'; // 世 — 3 bytes in UTF-8
+    const char = '\u4e16'; // 世: 3 bytes in UTF-8
     const charBytes = Buffer.byteLength(char, 'utf8');
     assert.equal(charBytes, 3, 'Expected 3-byte UTF-8 character');
 
@@ -132,7 +132,7 @@ describe('write.js execute', () => {
   });
 });
 
-describe('write.js — overwrite guard and fileState', () => {
+describe('write.js: overwrite guard and fileState', () => {
   let mod;
   let hashContent;
   let tmpDir;

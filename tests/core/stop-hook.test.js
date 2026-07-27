@@ -59,7 +59,7 @@ function hasText(messages, needle) {
 
 const assistants = (agent) => agent.messages.filter((m) => m.role === 'assistant');
 
-describe('Agent — stop hooks & empty-turn recovery', () => {
+describe('Agent: stop hooks & empty-turn recovery', () => {
   it('raw-retries an empty terminal turn and adopts a recovered content turn', async () => {
     const agent = new Agent({ apiKey: 'sk-test' });
     const stub = queue([() => empty(), () => text('recovered')]);
@@ -209,7 +209,7 @@ describe('Agent — stop hooks & empty-turn recovery', () => {
   });
 });
 
-describe('Agent — finish_reason capture (streaming SSE)', () => {
+describe('Agent: finish_reason capture (streaming SSE)', () => {
   let originalFetch;
   before(() => {
     originalFetch = global.fetch;

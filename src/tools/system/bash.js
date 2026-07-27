@@ -5,7 +5,7 @@ import path from 'node:path';
 import logger from '../../core/logger.js';
 import { stripUnsafeEnv } from '../../core/utils.js';
 
-// Lazy-loaded PTY module — may be unavailable on platforms without native build support
+// Lazy-loaded PTY module: may be unavailable on platforms without native build support
 let _ptyModule = null;
 
 async function getPty() {
@@ -291,7 +291,7 @@ function runWithSpawn(command, cwd, env, timeout, signal, agent) {
           handleExit(code, getExitStatus(code, null));
         });
         resolve(
-          `Command exceeded timeout (${timeout}ms) — transitioned to background.\n` +
+          `Command exceeded timeout (${timeout}ms), transitioned to background.\n` +
             `Job ID: ${id}\nLog: ${logPath}\n` +
             `Output so far (first 4KB):\n${output.slice(0, 4096)}`,
         );
@@ -381,7 +381,7 @@ function runWithPty(command, cwd, env, timeout, signal, agent) {
           handleExit(exitCode, getExitStatus(exitCode, sig));
         });
         resolve(
-          `Command exceeded timeout (${timeout}ms) — transitioned to background.\n` +
+          `Command exceeded timeout (${timeout}ms), transitioned to background.\n` +
             `Job ID: ${id}\nLog: ${logPath}\n` +
             `Output so far (first 4KB):\n${output.slice(0, 4096)}`,
         );
@@ -512,7 +512,7 @@ function runWithPtyBackground(command, cwd, env, signal, agent) {
 
 export const name = 'Bash';
 export const description =
-  'Execute a shell command. Use this for system operations that do not have a specialized tool, such as running tests, performing builds, or using complex CLI utilities. Side effect: executes arbitrary shell commands. The agent may issue multiple tool calls in one turn that run concurrently — do not request parallel calls that mutate the same files or processes.';
+  'Execute a shell command. Use this for system operations that do not have a specialized tool, such as running tests, performing builds, or using complex CLI utilities. Side effect: executes arbitrary shell commands. The agent may issue multiple tool calls in one turn that run concurrently: do not request parallel calls that mutate the same files or processes.';
 export const input_schema = {
   type: 'object',
   properties: {

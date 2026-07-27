@@ -33,7 +33,7 @@ function findReminderText(payload) {
   return parts.map((p) => p.text).join('\n\n');
 }
 
-describe('Agent — memoryHint injector', () => {
+describe('Agent: memoryHint injector', () => {
   let Agent;
   let originalFetch;
 
@@ -133,7 +133,7 @@ describe('Agent — memoryHint injector', () => {
   });
 });
 
-describe('Agent — memoryIndex injector', () => {
+describe('Agent: memoryIndex injector', () => {
   let Agent;
   let originalFetch;
   let tempDir;
@@ -206,14 +206,14 @@ describe('Agent — memoryIndex injector', () => {
     const fetchStub = captureFetch();
     global.fetch = fetchStub;
 
-    // path is outside cwd — now trusted via trustedPaths, but file does not exist → empty result
+    // path is outside cwd: now trusted via trustedPaths, but file does not exist → empty result
     const agent = new Agent({
       apiKey: 'sk-test',
       injectors: { date: false, contextFiles: false, memoryHint: false, skillList: false },
       storagePaths: { memoryDir: '/etc/openrouter-memory' },
     });
 
-    // Should not throw — injector swallows the rejection.
+    // Should not throw: injector swallows the rejection.
     await agent.run('hi');
 
     const text = findReminderText(fetchStub.captured[0]);
@@ -221,7 +221,7 @@ describe('Agent — memoryIndex injector', () => {
   });
 });
 
-describe('Agent — using-memory skill discovery', () => {
+describe('Agent: using-memory skill discovery', () => {
   it('using-memory is discoverable via SkillRegistry', async () => {
     const registryMod = await import('../../src/registry/skill.js');
     const registry = registryMod.default;

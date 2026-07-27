@@ -158,7 +158,6 @@ export const execute = async (
           filteredTodos = todos.filter((t) => t.completed);
         }
 
-        // Sort
         filteredTodos.sort((a, b) => {
           if (sort_by === 'priority') {
             const priorityOrder = { high: 3, medium: 2, low: 1 };
@@ -169,7 +168,7 @@ export const execute = async (
             if (!b.due_date) return -1;
             return new Date(a.due_date) - new Date(b.due_date);
           } else {
-            // created_at (default) — newest first
+            // created_at (default): newest first
             return new Date(b.created_at) - new Date(a.created_at);
           }
         });
@@ -188,7 +187,6 @@ export const execute = async (
           output += `   ID: ${todo.id} | ${todo.category.toUpperCase()} | Created: ${new Date(todo.created_at).toLocaleDateString('en-US')}${dueInfo}\n`;
         });
 
-        // Summary
         const total = todos.length;
         const completedCount = todos.filter((t) => t.completed).length;
         const pendingCount = total - completedCount;

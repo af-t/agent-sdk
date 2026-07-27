@@ -23,7 +23,6 @@ const BLOCKED_IP_RANGES = [
 // Max redirects before giving up
 const MAX_REDIRECTS = 5;
 
-// Unwrap IPv4-mapped IPv6 addresses
 function unmapIPv4(ip) {
   const m = ip
     .toLowerCase()
@@ -48,19 +47,16 @@ function isBinaryContent(text) {
   return nonPrintable / text.length > 0.7;
 }
 
-// Prepend Content-Type annotation
 function withContentType(contentType, body) {
   const label = `Content-Type: ${contentType}`;
   return `${label}\n\n${body}`;
 }
 
-// Check if IP is in blocked range
 function isBlockedIp(ip) {
   const target = unmapIPv4(ip);
   return BLOCKED_IP_RANGES.some((range) => range.test(target));
 }
 
-// Read body with a hard byte cap
 async function readBodyCapped(res, maxBytes) {
   // Fallback for stubs/responses without a web stream body
   if (!res.body || typeof res.body.getReader !== 'function') {
@@ -82,7 +78,7 @@ async function readBodyCapped(res, maxBytes) {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-// SSRF check — blocks private IPs, localhost, DNS rebinding, non-HTTP(S).
+// SSRF check: blocks private IPs, localhost, DNS rebinding, non-HTTP(S).
 // Returns the validated addresses to pin (or null for a literal-IP host).
 async function checkSSRF(urlStr) {
   try {
@@ -114,7 +110,7 @@ async function checkSSRF(urlStr) {
       if (isBlockedIp(hostname)) {
         throw new Error('Access denied: private/reserved IP range is not allowed (SSRF protection)');
       }
-      // Literal IP — the socket connects straight to it, no lookup to pin
+      // Literal IP: the socket connects straight to it, no lookup to pin
       return null;
     }
 
@@ -140,7 +136,7 @@ async function checkSSRF(urlStr) {
       }
     } catch (err) {
       if (err.message.startsWith('Access denied')) throw err;
-      // ENOTFOUND for IPv4 is acceptable — try IPv6 next
+      // ENOTFOUND for IPv4 is acceptable: try IPv6 next
     }
 
     try {
@@ -278,12 +274,10 @@ export const execute = async ({ url, use_raw, useRaw = false, limit = 20000 }, c
         await checkSSRF(redirectUrl);
         // Release the redirect response body before recursing
         await res.body?.cancel().catch(() => {});
-        // Recursively call execute for the redirect URL
         return execute({ url: redirectUrl, use_raw: finalUseRaw, limit }, { ...ctx, _redirectDepth: redirectDepth });
       }
     }
 
-    // Reject oversized responses
     const contentLength = res.headers.get('content-length');
     if (contentLength && parseInt(contentLength) > CONSTANTS.FETCH_MAX_SIZE) {
       throw new Error(
@@ -301,7 +295,6 @@ export const execute = async ({ url, use_raw, useRaw = false, limit = 20000 }, c
     }
   }
 
-  // Reject binary content (non-printable chars > 70%)
   if (isBinaryContent(raw)) {
     throw new Error(`Binary content detected (content-type: ${contentType}). WebFetch cannot process binary files.`);
   }
@@ -315,7 +308,7 @@ export const execute = async ({ url, use_raw, useRaw = false, limit = 20000 }, c
   }
 
   if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
-    // Unknown type — return as plain text
+    // Unknown type: return as plain text
     return withContentType(contentType, truncateOutput(raw, limit));
   }
 
@@ -324,7 +317,6 @@ export const execute = async ({ url, use_raw, useRaw = false, limit = 20000 }, c
     return withContentType(contentType, truncateOutput(raw, limit));
   }
 
-  // Smart Scraper
   const $ = cheerio.load(raw);
   $(
     'script, style, nav, footer, header, noscript, aside, iframe, form, svg, canvas, [aria-hidden="true"], [hidden], .hidden',

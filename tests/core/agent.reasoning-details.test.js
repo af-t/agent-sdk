@@ -4,7 +4,7 @@ import Agent from '../../src/core/agent.js';
 
 process.env.OPENROUTER_API_KEY = 'sk-test-key';
 
-describe('Agent — reasoning_details capture', () => {
+describe('Agent: reasoning_details capture', () => {
   let originalFetch;
   beforeEach(() => {
     originalFetch = global.fetch;
@@ -64,7 +64,7 @@ describe('Agent — reasoning_details capture', () => {
   });
 });
 
-describe('Agent — reasoning_details round-trip', () => {
+describe('Agent: reasoning_details round-trip', () => {
   let originalFetch;
   beforeEach(() => {
     originalFetch = global.fetch;

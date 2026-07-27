@@ -61,13 +61,13 @@ describe('ensureSafePath', () => {
   });
 
   it('rejects %5c backslash encoding', () => {
-    // %5c is backslash — should be caught
+    // %5c is backslash: should be caught
     assert.throws(() => ensureSafePath('..%5c..%5cetc%5cpasswd'), { message: /URL-encoded traversal/ });
   });
 
   it('rejects extremely long path (> 4096 chars)', () => {
     const longPath = 'a/'.repeat(2048) + 'file.txt';
-    // Path length > 4096 chars — still rejected because path.resolve may
+    // Path length > 4096 chars: still rejected because path.resolve may
     // produce path outside root or the path itself may be safe; we mainly
     // test that no crash occurs and the function handles it gracefully.
     try {
@@ -102,7 +102,7 @@ describe('ensureSafePath', () => {
           throw err;
         }
       }
-      // Symlink creation failed (e.g., restricted filesystem) — skip gracefully
+      // Symlink creation failed (e.g., restricted filesystem): skip gracefully
     } finally {
       if (symlinkCreated) {
         try {
@@ -156,7 +156,7 @@ describe('ensureSafePath', () => {
     assert.throws(() => ensureSafePath('/etc/passwd', new Set([unrelated])), { message: /outside project root/ });
   });
 
-  it('ignores relative entries in allowedRoots — only absolute paths are trusted', () => {
+  it('ignores relative entries in allowedRoots: only absolute paths are trusted', () => {
     assert.throws(() => ensureSafePath('/etc/passwd', new Set(['relative/dir'])), { message: /outside project root/ });
   });
 
@@ -367,7 +367,7 @@ describe('withRetry', () => {
     const realSetTimeout = globalThis.setTimeout;
     globalThis.setTimeout = (fn, delay, ...args) => {
       if (delay === 5000) {
-        // This is the callback safety timeout — fast-forward it too
+        // This is the callback safety timeout: fast-forward it too
         return realSetTimeout(fn, 1, ...args);
       }
       return realSetTimeout(fn, 1, ...args);
@@ -413,7 +413,7 @@ describe('withRetry', () => {
         () =>
           withRetry(async () => {
             attempts++;
-            // This promise never resolves on its own — simulating timeout
+            // This promise never resolves on its own: simulating timeout
             throw new Error('timeout');
           }, 3),
         { message: 'timeout' },
