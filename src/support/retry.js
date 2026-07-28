@@ -65,6 +65,8 @@ export async function retry(operation, options = {}) {
     onExhausted,
     logger,
   } = options;
+  if (signal?.aborted) throw createAbortError('Retry aborted');
+
   let delayMs = baseDelayMs;
   let lastError;
 

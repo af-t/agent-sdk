@@ -10,12 +10,12 @@
 
 # ── Path Traversal Audit ──────────────────────────────────────
 
-# Find files using raw path.resolve() without ensureSafePath()
+# Find files using raw path.resolve() without resolveSafePath()
 check_path_traversal() {
   local dir="${1:-src}"
   echo "=== 🔍 Path Traversal Check ==="
   grep -rn "path\.resolve(" "$dir" --include='*.js' \
-    | grep -v "ensureSafePath" \
+    | grep -v "resolveSafePath" \
     | grep -v "node_modules" \
     | grep -v "dirname\.js" \
     | grep -v "\.test\." \
@@ -23,16 +23,16 @@ check_path_traversal() {
   echo ""
 }
 
-# Find files missing ensureSafePath import
+# Find files missing resolveSafePath import
 check_missing_import() {
   local dir="${1:-src}"
-  echo "=== 🔍 Missing ensureSafePath Import ==="
+  echo "=== 🔍 Missing resolveSafePath Import ==="
   grep -rln "path\.resolve(" "$dir" --include='*.js' \
     | grep -v "node_modules" \
     | grep -v "dirname\.js" \
     | grep -v "\.test\." \
     | while read -r f; do
-        if ! grep -q "ensureSafePath" "$f"; then
+        if ! grep -q "resolveSafePath" "$f"; then
           echo "⚠️  $f"
         fi
       done
@@ -60,14 +60,14 @@ find_secrets_in_logs() {
   echo ""
 }
 
-# Find env vars passed to child processes without stripSecrets
+# Find env vars passed to child processes without sanitizeChildEnvironment
 check_env_leakage() {
   local dir="${1:-src}"
   echo "=== 🔍 Env Leakage Check ==="
   grep -rn "process\.env" "$dir" --include='*.js' \
     | grep -v "node_modules" \
     | grep -v "\.test\." \
-    | grep -v "stripSecrets" \
+    | grep -v "sanitizeChildEnvironment" \
     | grep -E "(spawn|exec|fork|pty\.spawn)" \
     || echo "✅ No unguarded process.env in spawn calls"
   echo ""

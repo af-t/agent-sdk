@@ -20,7 +20,7 @@ export function cosineSimilarity(a, b) {
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-// Reuses retry: 4xx fails fast, 5xx/429 retried.
+// Client errors fail fast; server errors and 429 responses are retried.
 export async function embedTexts(texts, { apiKey, baseUrl, model, signal } = {}) {
   if (!Array.isArray(texts) || texts.length === 0) {
     return { vectors: [], usage: null };

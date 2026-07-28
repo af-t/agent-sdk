@@ -18,7 +18,7 @@ Memory is injected into the LLM's context on every turn via the **injector syste
 | Approach | Trade-off |
 |----------|-----------|
 | File-based (current) | Durable across sessions, inspectable by user, version-controlled with git |
-| Dedicated memory tools | Would bypass file-system safeguards like `ensureSafePath` |
+| Dedicated memory tools | Would bypass file-system safeguards like `resolveSafePath` |
 | LLM-managed (Write/Read/Edit) | Same tools as everything else: no special machinery |
 
 ### How Memory Gets Into Context
@@ -37,7 +37,7 @@ LLM sees index on the very first turn → reads relevant files on demand
 ### Key Constraints
 
 - **You** create, read, update, and delete memory files using standard tools: the agent never auto-writes memories.
-- **`ensureSafePath`** applies to all memory file operations (paths are validated against the project root).
+- **`resolveSafePath`** applies to all memory file operations (paths are validated against the project root).
 - **Subagents** (spawned via Delegate) receive the same builtin injectors with defaults but **do not** inherit custom injectors, custom `memoryDir`, or `memoryTypes` from the parent agent.
 - The `memoryIndex` injector reads `<memoryDir>/MEMORY.md`: if the file is missing or empty, it returns an empty string (no error).
 
@@ -213,7 +213,7 @@ Then update MEMORY.md:
 6. **Clean up stale memories**: Outdated info is worse than no info. Review and delete obsolete files periodically.
 7. **Use consistent kebab-case slugs**: `user-preferred-editor`, not `userPreferredEditor` or `User Preferred Editor`.
 8. **Subagents don't inherit custom memory config**: If a subagent needs access to memory, it must use the default directory or you must pass the info explicitly in the delegate prompt.
-9. **File paths are validated by `ensureSafePath`**: For memory files within the project root, use relative paths. For files in a configured external `memoryDir`, use absolute paths: they are trusted via `trustedPaths` and accessible through Read/Write/Edit tools without any special handling.
+9. **File paths are validated by `resolveSafePath`**: For memory files within the project root, use relative paths. For files in a configured external `memoryDir`, use absolute paths: they are trusted via `trustedPaths` and accessible through Read/Write/Edit tools without any special handling.
 10. **The index is first-turn only**: MEMORY.md is only injected on the very first turn of a conversation. If you update memories mid-conversation, the LLM won't see the updated index until the next conversation start.
 
 ## How It Works (Technical Details)

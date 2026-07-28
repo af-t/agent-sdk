@@ -1647,7 +1647,7 @@ class Agent {
         }
 
         // Build payload + onBeforeRequest hooks ONCE per turn.
-        // retry retries the network call only: injectors and hooks do not re-fire.
+        // Only the network call is retried; injectors and hooks do not run again.
         const payload = await this.#buildPayload();
         if (this.#multimodalUnsupported) degradePayload(payload);
         this.#recorder?.request(loopCount, payload);

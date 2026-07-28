@@ -114,7 +114,7 @@ async function nativeSearch({ absPath, pattern, mode, cwd, signal }) {
       } else if (mode === 'content' && entry.isFile()) {
         try {
           const stat = await fs.stat(fullPath);
-          if (stat.size > LIMITS.maxFileSizeSearch) continue;
+          if (stat.size > LIMITS.maxSearchFileSize) continue;
 
           // Check first 512 bytes for null bytes before reading entire file
           const handle = await fs.open(fullPath, 'r');
@@ -182,7 +182,7 @@ function shellRgSearch(absPath, pattern, cwd, signal) {
       '--no-heading',
       '-i',
       '--max-filesize',
-      String(LIMITS.maxFileSizeSearch),
+      String(LIMITS.maxSearchFileSize),
       '--max-columns',
       '100',
       '--',

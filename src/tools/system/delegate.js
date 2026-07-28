@@ -62,7 +62,7 @@ export const execute = async ({ description, prompt, persona, id, background = f
       provider: agent.provider,
       tools: agent.tools,
       systemPrompt: persona,
-      maxCompletionTokens: agent.maxCompletionTokens || LIMITS.maxCompletionTokensSubagent,
+      maxCompletionTokens: agent.maxCompletionTokens || LIMITS.maxSubagentCompletionTokens,
       maxTurns: 1000,
       isSubagent: true,
       restricted: agent.restricted,

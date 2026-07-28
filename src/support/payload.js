@@ -2,13 +2,13 @@ import path from 'node:path';
 import { ConfigError } from './errors.js';
 
 export const LIMITS = Object.freeze({
-  maxFileSizeSearch: 500 * 1024,
+  maxSearchFileSize: 500 * 1024,
   retryBaseDelayMs: 5000,
   retryBackoffFactor: 1.3,
   mcpTimeoutMs: 30_000,
   fetchTimeoutMs: 15_000,
   fetchMaxSize: 10 * 1024 * 1024,
-  maxCompletionTokensSubagent: 32_000,
+  maxSubagentCompletionTokens: 32_000,
   maxToolOutput: 50_000,
   defaultAppName: 'agent-sdk',
 });

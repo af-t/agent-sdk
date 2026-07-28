@@ -2,7 +2,7 @@
 
 ## Path Traversal
 
-- [ ] All `path.resolve()` replaced with `ensureSafePath()`
+- [ ] All `path.resolve()` replaced with `resolveSafePath()`
 - [ ] Null byte check (`\0`)
 - [ ] URL-encoded traversal check (`%2e%2e`, `%2f`, `%5c`)
 - [ ] Protocol handler rejection (`file://`)
@@ -13,7 +13,7 @@
 
 - [ ] API keys using `#privateField` (not `this.publicField`)
 - [ ] Getter for read-only access instead of direct property
-- [ ] Child process env vars sanitized with `stripSecrets()`
+- [ ] Child process environment variables sanitized with `sanitizeChildEnvironment()`
 - [ ] Logger redacts known secret patterns
 - [ ] `console.log` → `logger.info` (gets auto-redaction)
 

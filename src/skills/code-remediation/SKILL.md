@@ -83,18 +83,18 @@ You (Orchestrator)
 // BAD: no validation
 const fullPath = path.resolve(filePath);
 
-// GOOD: use ensureSafePath()
-import { ensureSafePath } from '../../core/utils.js';
-const fullPath = ensureSafePath(filePath);
+// GOOD: resolve paths through the path-safety module
+import { resolveSafePath } from '../../support/path-safety.js';
+const fullPath = resolveSafePath(filePath);
 ```
 
-**`ensureSafePath()` harus menangani:**
+**`resolveSafePath()` must handle:**
 
 1. ❌ Null bytes (`\0`): CVE-2021-3805 bypass
 2. ❌ URL-encoded traversal (`%2e%2e`, `%2f`, `%5c`): double encoding
 3. ❌ Protocol handlers (`file://`, etc.): SSRF via file path
-4. ❌ Directory traversal (`../../etc/passwd`): keluar dari project root
-5. ❌ Symlink TOCTOU: file yang di-resolve bisa redirect ke luar root
+4. ❌ Directory traversal (`../../etc/passwd`): escape from the project root
+5. ❌ Symlink TOCTOU: a resolved file can redirect outside the root
 
 ### Environment Variable Leakage
 
@@ -102,12 +102,12 @@ const fullPath = ensureSafePath(filePath);
 // BAD: passes ALL env vars including API keys
 env: { ...process.env }
 
-// GOOD: strip secrets before passing to child processes
-import { stripSecrets } from '../../core/utils.js';
-env: { ...stripSecrets(process.env), ...(this.config.env || {}) }
+// GOOD: remove inherited secrets and sanitize caller-supplied variables
+import { removeSecrets, sanitizeChildEnvironment } from '../../support/environment.js';
+env: { ...removeSecrets(process.env), ...sanitizeChildEnvironment(this.config.env || {}) }
 ```
 
-**`stripSecrets()` harus men-strip env vars yang mengandung:**
+**`removeSecrets()` must remove environment variables containing:**
 
 - `api_key`, `apikey`, `api-key`
 - `secret`, `token`, `password`
@@ -239,22 +239,15 @@ try {
 ### Circuit Breaker for Retries
 
 ```js
-async function withRetry(func, count) {
-  const NON_RETRYABLE = [401, 403, 400, 404]; // Client errors: don't retry
-  const MAX_DELAY = 60_000; // Cap exponential backoff
+import { LIMITS } from '../../support/payload.js';
+import { retry } from '../../support/retry.js';
 
-  for (let i = 0; i < count; i++) {
-    try {
-      return await func();
-    } catch (err) {
-      if (err?.status && NON_RETRYABLE.includes(err.status)) throw err;
-      const jitter = delay * (0.8 + Math.random() * 0.4);
-      await sleep(Math.min(jitter, MAX_DELAY));
-      delay = Math.min(delay * BACKOFF_FACTOR, MAX_DELAY);
-    }
-  }
-  throw lastError;
-}
+await retry(operation, {
+  attempts: config.maxRetries,
+  baseDelayMs: LIMITS.retryBaseDelayMs,
+  maxDelayMs: 60_000,
+  signal,
+});
 ```
 
 ### Empty Catch Blocks
@@ -297,8 +290,8 @@ When reviewing changes, check these dimensions:
 
 ### 2. Security
 
-- Are all file paths validated with `ensureSafePath()`?
-- Are child process env vars sanitized with `stripSecrets()`?
+- Are all file paths validated with `resolveSafePath()`?
+- Are child process environment variables sanitized with `sanitizeChildEnvironment()`?
 - Are API keys private fields (not serializable)?
 - Are secrets redacted from logs?
 - Is SSRF prevented in fetch operations?
@@ -412,7 +405,7 @@ run_all_checks src/
 The script scans for:
 
 - Unguarded `path.resolve()` calls
-- Missing `ensureSafePath` imports
+- Missing `resolveSafePath` imports
 - `process.env` leaked to child processes
 - Public `apiKey` assignments
 - Empty catch blocks

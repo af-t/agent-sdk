@@ -713,13 +713,18 @@ openrouter/
 │   ├── config.js          # Configuration from environment variables
 │   ├── core/
 │   │   ├── agent.js       # Agent class: LLM interaction + tool loop
-│   │   ├── utils.js       # withRetry, loadTools, ensureSafePath, helpers
 │   │   ├── logger.js      # Colored console logger (debug/info/warn/error)
 │   │   ├── errors.js      # Custom error classes (ApiError, ToolError, ConfigError)
 │   │   ├── mcp.js         # MCP client (native stdio-based JSON-RPC)
 │   │   ├── file-type.js   # Magic-byte detection for the Read tool
 │   │   ├── file-state.js  # File content cache (line-number stability)
 │   │   └── notebook.js    # .ipynb flattener for the Read tool
+│   ├── support/
+│   │   ├── path-safety.js # Canonical path containment and ignore filters
+│   │   ├── environment.js # Secret and child-environment filtering
+│   │   ├── payload.js     # Payload limits and output helpers
+│   │   ├── retry.js       # Retrying and abort behavior
+│   │   └── http.js        # API dialects and request headers
 │   ├── registry/
 │   │   ├── tool.js        # ToolRegistry: register, execute, hooks, MCP
 │   │   └── skill.js       # SkillRegistry: discover & load SKILL.md

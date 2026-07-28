@@ -5,6 +5,25 @@ import { createAbortError, retry } from '../../src/support/retry.js';
 const FAST_RETRY = { attempts: 5, baseDelayMs: 0, maxDelayMs: 1 };
 
 describe('retry', () => {
+  it('does not invoke an operation when its signal is already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    let calls = 0;
+
+    await assert.rejects(
+      () =>
+        retry(
+          async () => {
+            calls += 1;
+            throw new Error('operation should not run');
+          },
+          { ...FAST_RETRY, signal: controller.signal },
+        ),
+      (error) => error.aborted === true,
+    );
+    assert.equal(calls, 0);
+  });
+
   it('returns the first successful result', async () => {
     assert.equal(await retry(async () => 'success', FAST_RETRY), 'success');
   });
