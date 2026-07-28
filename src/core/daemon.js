@@ -1,4 +1,4 @@
-import { ConfigError } from './errors.js';
+import { ConfigError } from '../support/errors.js';
 import { logger } from './logger.js';
 
 const SOFT_CAP = 1000;

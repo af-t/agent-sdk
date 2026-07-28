@@ -53,7 +53,7 @@ describe('Agent: injector registry', () => {
   before(async () => {
     const mod = await import('../../src/core/agent.js');
     Agent = mod.default;
-    const errMod = await import('../../src/core/errors.js');
+    const errMod = await import('../../src/support/errors.js');
     ConfigError = errMod.ConfigError;
   });
 

@@ -12,9 +12,9 @@ import {
 } from './utils.js';
 import { mergeReasoningDelta, finalizeReasoningDetails, sanitizeAssistantReasoning } from './reasoning.js';
 import { ToolRegistry } from '../registry/tool.js';
-import { ApiError, ConfigError } from './errors.js';
+import { ApiError, ConfigError } from '../support/errors.js';
 import { createSessionRecorder } from './session-recorder.js';
-import config from '../config.js';
+import { loadEnvironmentConfig } from '../config/environment.js';
 import skillRegistry from '../registry/skill.js';
 import { resolveLogger } from '../support/logger.js';
 import crypto from 'node:crypto';
@@ -118,6 +118,7 @@ class Agent {
   ];
 
   constructor(options = {}) {
+    const config = loadEnvironmentConfig();
     const {
       apiKey,
       baseUrl,
@@ -159,17 +160,17 @@ class Agent {
       logger,
     } = options;
 
-    this.logger = logger ?? resolveLogger(undefined, { debug: config.DEBUG });
+    this.logger = logger ?? resolveLogger(undefined, { debug: config.debug });
     this.restricted = restricted !== false;
     if (this.restricted === false) {
       this.logger.warn({ component: 'agent', restricted: false }, 'Agent constructed with security checks disabled');
     }
 
-    if (!apiKey && !config.API_KEY) {
+    if (!apiKey && !config.apiKey) {
       throw new ConfigError('OPENROUTER_API_KEY is required. Set it in .env or pass it as an option.');
     }
-    this.#apiKey = apiKey || config.API_KEY;
-    this.#baseUrl = baseUrl || config.BASE_URL || 'https://openrouter.ai/api/v1';
+    this.#apiKey = apiKey || config.apiKey;
+    this.#baseUrl = baseUrl || config.baseUrl || 'https://openrouter.ai/api/v1';
     this.dialect = resolveDialect(this.#baseUrl);
     this.#sessionId = sessionId ?? crypto.randomUUID();
 
@@ -188,30 +189,27 @@ class Agent {
         recoveryNudge = emptyTurnRecovery.nudge;
       }
     } else if (emptyTurnRecovery === undefined) {
-      if (config.EMPTY_TURN_RECOVERY !== undefined) recoveryEnabled = config.EMPTY_TURN_RECOVERY;
-      if (config.EMPTY_TURN_RETRIES !== undefined) {
-        const parsedRetries = parseInt(config.EMPTY_TURN_RETRIES);
-        if (!Number.isNaN(parsedRetries)) recoveryRetries = parsedRetries;
-      }
+      if (config.emptyTurnRecovery !== undefined) recoveryEnabled = config.emptyTurnRecovery;
+      if (config.emptyTurnRetries !== undefined) recoveryRetries = config.emptyTurnRetries;
     }
     if (Number.isNaN(recoveryRetries) || recoveryRetries < 0) recoveryRetries = DEFAULT_EMPTY_TURN_RETRIES;
     this.#recoveryHook = recoveryEnabled
       ? makeEmptyTurnRecoveryHook({ retries: recoveryRetries, nudge: recoveryNudge })
       : null;
     this.model = model;
-    this.embeddingModel = embeddingModel ?? config.EMBEDDING_MODEL ?? 'openai/text-embedding-3-small';
+    this.embeddingModel = embeddingModel ?? config.embeddingModel ?? 'openai/text-embedding-3-small';
     this.isSubagent = !!isSubagent;
 
-    const resolvedOrder = order || provider?.order || config.ORDER;
-    const resolvedOnly = only || provider?.only || config.ONLY;
-    const resolvedIgnore = provider?.ignore || provider?.avoid || config.PROVIDER_IGNORE || config.PROVIDER_AVOID;
-    const resolvedSort = provider?.sort || config.PROVIDER_SORT;
+    const resolvedOrder = order || provider?.order || config.provider.order;
+    const resolvedOnly = only || provider?.only || config.provider.only;
+    const resolvedIgnore = provider?.ignore || provider?.avoid || config.provider.avoid;
+    const resolvedSort = provider?.sort || config.provider.sort;
     const resolvedAllowFallbacks =
-      provider?.allowFallbacks !== undefined ? provider.allowFallbacks : config.PROVIDER_ALLOW_FALLBACKS;
+      provider?.allowFallbacks !== undefined ? provider.allowFallbacks : config.provider.allowFallbacks;
     const resolvedRequireParameters =
-      provider?.requireParameters !== undefined ? provider.requireParameters : config.PROVIDER_REQUIRE_PARAMETERS;
+      provider?.requireParameters !== undefined ? provider.requireParameters : config.provider.requireParameters;
     const resolvedDataCollection =
-      provider?.dataCollection !== undefined ? provider.dataCollection : config.PROVIDER_DATA_COLLECTION;
+      provider?.dataCollection !== undefined ? provider.dataCollection : config.provider.dataCollection;
 
     this.provider = {
       order: resolvedOrder,
@@ -230,42 +228,41 @@ class Agent {
     this.temperature =
       temperature !== undefined
         ? temperature
-        : config.TEMPERATURE !== undefined
-          ? parseFloat(config.TEMPERATURE)
+        : config.temperature !== undefined
+          ? config.temperature
           : undefined;
-    this.topP = topP !== undefined ? topP : config.TOP_P !== undefined ? parseFloat(config.TOP_P) : undefined;
-    this.minP = minP !== undefined ? minP : config.MIN_P !== undefined ? parseFloat(config.MIN_P) : undefined;
-    this.topK = topK !== undefined ? topK : config.TOP_K !== undefined ? parseInt(config.TOP_K) : undefined;
+    this.topP = topP !== undefined ? topP : config.topP;
+    this.minP = minP !== undefined ? minP : config.minP;
+    this.topK = topK !== undefined ? topK : config.topK;
     this.frequencyPenalty =
       frequencyPenalty !== undefined
         ? frequencyPenalty
-        : config.FREQUENCY_PENALTY !== undefined
-          ? parseFloat(config.FREQUENCY_PENALTY)
+        : config.frequencyPenalty !== undefined
+          ? config.frequencyPenalty
           : undefined;
     this.presencePenalty =
       presencePenalty !== undefined
         ? presencePenalty
-        : config.PRESENCE_PENALTY !== undefined
-          ? parseFloat(config.PRESENCE_PENALTY)
+        : config.presencePenalty !== undefined
+          ? config.presencePenalty
           : undefined;
     this.repetitionPenalty =
       repetitionPenalty !== undefined
         ? repetitionPenalty
-        : config.REPETITION_PENALTY !== undefined
-          ? parseFloat(config.REPETITION_PENALTY)
+        : config.repetitionPenalty !== undefined
+          ? config.repetitionPenalty
           : undefined;
-    this.seed = seed !== undefined ? seed : config.SEED !== undefined ? parseInt(config.SEED) : undefined;
+    this.seed = seed !== undefined ? seed : config.seed;
 
     const resolvedMaxCompletionTokens =
-      maxCompletionTokens !== undefined ? maxCompletionTokens : config.MAX_COMPLETION_TOKENS;
-    this.maxCompletionTokens =
-      resolvedMaxCompletionTokens !== undefined ? parseInt(resolvedMaxCompletionTokens) : undefined;
+      maxCompletionTokens !== undefined ? maxCompletionTokens : config.maxCompletionTokens;
+    this.maxCompletionTokens = resolvedMaxCompletionTokens;
 
     this.responseFormat = responseFormat;
     this.stop = stop;
 
-    // Resolve effort parameter with proper fallback order (explicit reasoning.effort > explicit effort > config.REASONING_EFFORT > 'high')
-    let resolvedEffort = config.REASONING_EFFORT;
+    // Resolve effort parameter with proper fallback order (explicit reasoning.effort > explicit effort > config reasoning effort > 'high')
+    let resolvedEffort = config.reasoning.effort;
     if (effort !== undefined) {
       resolvedEffort = effort;
     }
@@ -276,27 +273,27 @@ class Agent {
     this.reasoning = undefined;
     if (reasoning && typeof reasoning === 'object') {
       this.reasoning = {
-        effort: resolvedEffort !== undefined ? resolvedEffort : config.REASONING_EFFORT,
+        effort: resolvedEffort !== undefined ? resolvedEffort : config.reasoning.effort,
         maxTokens:
           reasoning.maxTokens !== undefined
             ? reasoning.maxTokens
-            : config.REASONING_MAX_TOKENS !== undefined
-              ? parseInt(config.REASONING_MAX_TOKENS)
+            : config.reasoning.maxTokens !== undefined
+              ? config.reasoning.maxTokens
               : undefined,
-        exclude: reasoning.exclude !== undefined ? reasoning.exclude : config.REASONING_EXCLUDE,
-        enabled: reasoning.enabled !== undefined ? reasoning.enabled : config.REASONING_ENABLED,
+        exclude: reasoning.exclude !== undefined ? reasoning.exclude : config.reasoning.exclude,
+        enabled: reasoning.enabled !== undefined ? reasoning.enabled : config.reasoning.enabled,
       };
     } else if (
       resolvedEffort !== undefined ||
-      config.REASONING_MAX_TOKENS !== undefined ||
-      config.REASONING_EXCLUDE !== undefined ||
-      config.REASONING_ENABLED !== undefined
+      config.reasoning.maxTokens !== undefined ||
+      config.reasoning.exclude !== undefined ||
+      config.reasoning.enabled !== undefined
     ) {
       this.reasoning = {
         effort: resolvedEffort,
-        maxTokens: config.REASONING_MAX_TOKENS !== undefined ? parseInt(config.REASONING_MAX_TOKENS) : undefined,
-        exclude: config.REASONING_EXCLUDE,
-        enabled: config.REASONING_ENABLED,
+        maxTokens: config.reasoning.maxTokens,
+        exclude: config.reasoning.exclude,
+        enabled: config.reasoning.enabled,
       };
     }
 
@@ -312,14 +309,13 @@ class Agent {
     // Set to 0 for unlimited (used by subagents via Delegate).
     if (maxTurns !== undefined) {
       this.maxTurns = maxTurns;
-    } else if (config.MAX_TURNS !== undefined && config.MAX_TURNS !== '') {
-      const parsed = parseInt(config.MAX_TURNS);
-      this.maxTurns = Number.isNaN(parsed) ? DEFAULT_MAX_TURNS : parsed;
+    } else if (config.maxTurns !== undefined) {
+      this.maxTurns = config.maxTurns;
     } else {
       this.maxTurns = DEFAULT_MAX_TURNS;
     }
     this.maxToolOutputChars = maxToolOutputChars ?? CONSTANTS.MAX_TOOL_OUTPUT;
-    this.autoWake = autoWake !== undefined ? !!autoWake : config.AUTO_WAKE === 'true' || config.AUTO_WAKE === '1';
+    this.autoWake = autoWake !== undefined ? !!autoWake : (config.autoWake ?? false);
     // Callback and options forwarded to run() during auto-wake invocations,
     // allowing callers to attach streaming/WebSocket/metadata tracking.
     this.autoWakeNotify = autoWakeNotify ?? null;
@@ -355,7 +351,7 @@ class Agent {
       });
     }
 
-    this.appName = sanitizeAppName(appName ?? config.APP_NAME ?? CONSTANTS.DEFAULT_APP_NAME);
+    this.appName = sanitizeAppName(appName ?? config.appName ?? CONSTANTS.DEFAULT_APP_NAME);
     const resolvedMemoryDir = resolveStoragePath(storagePaths?.memoryDir) || path.resolve(`.${this.appName}/memory`);
     const resolvedTmpDir = resolveStoragePath(storagePaths?.tmpDir) || null;
     const resolvedPluginsDir = resolveStoragePath(storagePaths?.pluginsDir) || path.resolve(`.${this.appName}/plugins`);
@@ -418,7 +414,7 @@ class Agent {
 
   // Shorthand/compatibility getter and setter for reasoning effort
   get effort() {
-    return this.reasoning?.effort ?? config.REASONING_EFFORT ?? 'high';
+    return this.reasoning?.effort ?? loadEnvironmentConfig().reasoning.effort ?? 'high';
   }
 
   set effort(val) {
@@ -777,7 +773,10 @@ class Agent {
         responseBody = JSON.parse(responseBody);
       } catch {
         if (!res.ok) {
-          throw new ApiError(`OpenRouter API error (${res.status})`, res.status, responseBody.slice(0, 500));
+          throw new ApiError(`OpenRouter API error (${res.status})`, {
+            status: res.status,
+            body: responseBody.slice(0, 500),
+          });
         }
         throw new Error(`Failed to parse OpenRouter response as JSON: ${responseBody.slice(0, 500)}`);
       }
@@ -785,8 +784,7 @@ class Agent {
       if (!res.ok) {
         throw new ApiError(
           responseBody?.error?.message || `OpenRouter API error (${res.status})`,
-          res.status,
-          responseBody,
+          { status: res.status, body: responseBody },
         );
       }
 
@@ -1072,7 +1070,10 @@ class Agent {
       } catch {
         body = {};
       }
-      const apiErr = new ApiError(body?.error?.message || `OpenRouter API error (${res.status})`, res.status, body);
+      const apiErr = new ApiError(body?.error?.message || `OpenRouter API error (${res.status})`, {
+        status: res.status,
+        body,
+      });
       rethrowAsAbortIfCaller(apiErr, signal);
     }
 

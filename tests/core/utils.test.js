@@ -12,7 +12,7 @@ import {
   buildRequestHeaders,
   sanitizeAppName,
 } from '../../src/core/utils.js';
-import { ConfigError } from '../../src/core/errors.js';
+import { ConfigError } from '../../src/support/errors.js';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';

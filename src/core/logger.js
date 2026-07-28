@@ -1,4 +1,4 @@
-import config from '../config.js';
+import { loadEnvironmentConfig } from '../config/environment.js';
 
 const PREFIXES = {
   error: '\x1b[1;31m* [ERROR]\x1b[0m',
@@ -42,7 +42,7 @@ export const logger = {
     console.warn(`${PREFIXES.warn} ${redact(msg)}`, ...args.map(redact));
   },
   debug: (msg, ...args) => {
-    if (config.DEBUG) {
+    if (loadEnvironmentConfig().debug) {
       console.log(`${PREFIXES.debug} ${redact(msg)}`, ...args.map(redact));
     }
   },

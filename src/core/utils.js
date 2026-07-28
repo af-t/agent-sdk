@@ -1,11 +1,11 @@
-import config from '../config.js';
+import { loadEnvironmentConfig } from '../config/environment.js';
 import fs from 'node:fs/promises';
 import { realpathSync, lstatSync, readlinkSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import ignore from 'ignore';
 import logger from './logger.js';
-import { ConfigError } from './errors.js';
+import { AbortError, ConfigError } from '../support/errors.js';
 
 export const CONSTANTS = Object.freeze({
   MAX_FILE_SIZE_SEARCH: 500 * 1024, // 500KB
@@ -398,13 +398,13 @@ export function formatSize(bytes) {
 // `cause` preserves the in-flight error (if any) so it isn't silently
 // discarded when the caller aborts around the same time it occurs.
 export function callerAbortedError(message, cause) {
-  const err = new Error(message);
+  const err = new AbortError(message, { cause });
   err.aborted = true;
   if (cause !== undefined) err.cause = cause;
   return err;
 }
 
-export async function withRetry(func, count = config.MAX_RETRIES, callback) {
+export async function withRetry(func, count = loadEnvironmentConfig().maxRetries, callback) {
   let delay = CONSTANTS.RETRY_BASE_DELAY_MS;
   let lastError;
   const MAX_DELAY = 60_000; // 1 minute cap

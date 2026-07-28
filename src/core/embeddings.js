@@ -1,5 +1,5 @@
 import { withRetry, resolveDialect, buildRequestHeaders, callerAbortedError } from './utils.js';
-import { ApiError } from './errors.js';
+import { ApiError } from '../support/errors.js';
 
 const EMBED_TIMEOUT = 120_000;
 
@@ -43,10 +43,10 @@ export async function embedTexts(texts, { apiKey, baseUrl, model, signal } = {})
       try {
         body = JSON.parse(text);
       } catch {
-        throw new ApiError(`Embeddings API returned non-JSON (${res.status})`, res.status, text.slice(0, 500));
+        throw new ApiError(`Embeddings API returned non-JSON (${res.status})`, { status: res.status, body: text.slice(0, 500) });
       }
       if (!res.ok) {
-        throw new ApiError(body?.error?.message || `Embeddings API error (${res.status})`, res.status, body);
+        throw new ApiError(body?.error?.message || `Embeddings API error (${res.status})`, { status: res.status, body });
       }
       return body;
     } catch (err) {

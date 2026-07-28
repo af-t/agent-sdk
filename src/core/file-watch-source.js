@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ConfigError } from './errors.js';
+import { ConfigError } from '../support/errors.js';
 import { logger } from './logger.js';
 
 export function createFileWatchSource(options = {}) {

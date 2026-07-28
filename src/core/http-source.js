@@ -1,6 +1,6 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
-import { ConfigError } from './errors.js';
+import { ConfigError } from '../support/errors.js';
 import { logger } from './logger.js';
 
 const VALID_AUTH = new Set(['none', 'token', 'hmac']);

@@ -1,7 +1,7 @@
 import { McpClientWrapper } from '../core/mcp.js';
 import logger from '../core/logger.js';
 import { truncateOutput, CONSTANTS } from '../core/utils.js';
-import { ToolError } from '../core/errors.js';
+import { ToolError } from '../support/errors.js';
 
 export class ToolRegistry {
   #tools = new Map();
@@ -95,7 +95,7 @@ export class ToolRegistry {
 
   async execute(name, input, context) {
     const tool = this.#tools.get(name);
-    if (!tool) throw new ToolError(`Tool ${name} not found`, name);
+    if (!tool) throw new ToolError(`Tool ${name} not found`, { toolName: name });
 
     // Ensure ctx.signal is always defined so tool code can rely on it
     const ctx = { ...context, signal: context?.signal ?? new AbortController().signal };
@@ -119,7 +119,7 @@ export class ToolRegistry {
       const { required = [], properties = {} } = tool.input_schema;
       for (const key of required) {
         if (input[key] === undefined || input[key] === null) {
-          throw new ToolError(`Tool '${name}' requires parameter '${key}'`, name);
+          throw new ToolError(`Tool '${name}' requires parameter '${key}'`, { toolName: name });
         }
       }
       // Type check for provided parameters
@@ -127,24 +127,24 @@ export class ToolRegistry {
         const propSchema = properties[key];
         if (propSchema && value !== undefined && value !== null) {
           if (propSchema.type === 'number' && typeof value !== 'number') {
-            throw new ToolError(`Tool '${name}': parameter '${key}' must be a number, got ${typeof value}`, name);
+            throw new ToolError(`Tool '${name}': parameter '${key}' must be a number, got ${typeof value}`, { toolName: name });
           }
           if (propSchema.type === 'string' && typeof value !== 'string') {
-            throw new ToolError(`Tool '${name}': parameter '${key}' must be a string, got ${typeof value}`, name);
+            throw new ToolError(`Tool '${name}': parameter '${key}' must be a string, got ${typeof value}`, { toolName: name });
           }
           if (propSchema.type === 'boolean' && typeof value !== 'boolean') {
-            throw new ToolError(`Tool '${name}': parameter '${key}' must be a boolean, got ${typeof value}`, name);
+            throw new ToolError(`Tool '${name}': parameter '${key}' must be a boolean, got ${typeof value}`, { toolName: name });
           }
           if (propSchema.type === 'array' && !Array.isArray(value)) {
-            throw new ToolError(`Tool '${name}': parameter '${key}' must be an array, got ${typeof value}`, name);
+            throw new ToolError(`Tool '${name}': parameter '${key}' must be an array, got ${typeof value}`, { toolName: name });
           }
           if (propSchema.type === 'object' && (typeof value !== 'object' || Array.isArray(value))) {
-            throw new ToolError(`Tool '${name}': parameter '${key}' must be an object, got ${typeof value}`, name);
+            throw new ToolError(`Tool '${name}': parameter '${key}' must be an object, got ${typeof value}`, { toolName: name });
           }
           if (propSchema.enum && !propSchema.enum.includes(value)) {
             throw new ToolError(
               `Tool '${name}': parameter '${key}' must be one of [${propSchema.enum.join(', ')}], got '${value}'`,
-              name,
+              { toolName: name },
             );
           }
         }
@@ -159,7 +159,7 @@ export class ToolRegistry {
       result = await tool.execute(cleanInput, ctx);
     } catch (err) {
       if (err instanceof ToolError) throw err;
-      throw new ToolError(err.message || String(err), name);
+      throw new ToolError(err.message || String(err), { toolName: name, cause: err });
     }
 
     // Run after-execute hooks (can throw to signal problems)

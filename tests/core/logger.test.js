@@ -3,13 +3,10 @@ import assert from 'node:assert/strict';
 
 describe('logger', () => {
   let logger;
-  let config;
 
   before(async () => {
     const loggerMod = await import('../../src/core/logger.js');
     logger = loggerMod.default;
-    const configMod = await import('../../src/config.js');
-    config = configMod.default;
   });
 
   it('exports an object with error, warn, debug, info methods', () => {
@@ -84,7 +81,7 @@ describe('logger', () => {
     logger.debug('debug-flag-check');
     console.log = orig;
 
-    if (config.DEBUG) {
+    if (process.env.DEBUG === 'true' || process.env.DEBUG === '1') {
       assert.ok(chunks.some((c) => c.includes('debug-flag-check')));
     } else {
       assert.strictEqual(chunks.length, 0);

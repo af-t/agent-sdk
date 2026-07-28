@@ -1,11 +1,19 @@
 import Agent from './core/agent.js';
-import config from './config.js';
+import process from 'node:process';
+import { loadEnvironmentConfig } from './config/environment.js';
 import { ToolRegistry } from './registry/tool.js';
 import { resolveLogger } from './support/logger.js';
 import { builtinTools } from './tools/index.js';
 
+try {
+  process.loadEnvFile();
+} catch {
+  // Ignore if .env doesn't exist.
+}
+
 export async function createAgent(options = {}) {
-  const logger = resolveLogger(options.logger, { debug: config.DEBUG });
+  const config = loadEnvironmentConfig();
+  const logger = resolveLogger(options.logger, { debug: config.debug });
   const restricted = options.restricted !== false;
   // Honor a caller-supplied registry; otherwise auto-discover builtins
   let tools = options.tools;
@@ -19,7 +27,7 @@ export async function createAgent(options = {}) {
   // Explicit options win over env config
   return new Agent({
     ...options,
-    model: options.model || config.MODEL,
+    model: options.model || config.model,
     restricted,
     tools,
     logger,
