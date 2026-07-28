@@ -31,7 +31,7 @@ function runChild(root, failure, probeTeardownOrder = false) {
 test('createTestTempDir creates a unique directory below os.tmpdir', (t) => {
   const dir = createTestTempDir(t, 'test-temp-dir-');
 
-  assert.equal(path.dirname(dir), os.tmpdir());
+  assert.equal(path.dirname(dir), fs.realpathSync(os.tmpdir()));
   assert.ok(path.basename(dir).startsWith('test-temp-dir-'));
   assert.ok(fs.statSync(dir).isDirectory());
 });
@@ -57,6 +57,18 @@ test('createTestTempDir removes child resources after failing tests', (t) => {
 
   assert.equal(result.status, 1, result.stderr);
   const childDir = fs.readFileSync(resultPath, 'utf8');
+  assert.equal(fs.existsSync(childDir), false);
+});
+
+test('createTestTempDir canonicalizes a symlinked TMPDIR in a child process', (t) => {
+  const root = createTestTempDir(t, 'test-temp-symlink-parent-');
+  const linkedRoot = path.join(root, 'tmp-link');
+  fs.symlinkSync(root, linkedRoot, 'dir');
+  const { result, resultPath } = runChild(linkedRoot, false);
+
+  assert.equal(result.status, 0, result.stderr);
+  const childDir = fs.readFileSync(resultPath, 'utf8');
+  assert.equal(path.dirname(childDir), fs.realpathSync(linkedRoot));
   assert.equal(fs.existsSync(childDir), false);
 });
 

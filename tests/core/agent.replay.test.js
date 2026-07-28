@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { ToolRegistry } from '../../src/registry/tool.js';
 import { Recording } from '../../src/core/recording.js';
+import { createTestTempDir } from '../support/temp.js';
 
 const NO_INJECTORS = {
   date: false,
@@ -18,8 +18,10 @@ function nonStreamResponse(body) {
   return { ok: true, status: 200, text: async () => JSON.stringify(body) };
 }
 
-test('a full-level run records request/response and applies redact', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentfull-'));
+test('a full-level run records request/response and applies redact', async (t) => {
+  const resource = { agent: undefined };
+  t.after(() => resource.agent?.cleanup());
+  const dir = createTestTempDir(t, 'agentfull-');
   const Agent = (await import('../../src/core/agent.js')).default;
   const orig = global.fetch;
   let n = 0;
@@ -46,7 +48,7 @@ test('a full-level run records request/response and applies redact', async () =>
   };
 
   try {
-    const agent = new Agent({
+    resource.agent = new Agent({
       apiKey: 'sk-test',
       injectors: NO_INJECTORS,
       record: {
@@ -55,6 +57,7 @@ test('a full-level run records request/response and applies redact', async () =>
         redact: (rec) => (rec.type === 'request' ? { ...rec, payload: '[REDACTED]' } : rec),
       },
     });
+    const { agent } = resource;
     agent.use({
       name: 'Echo',
       description: 'echo',
@@ -79,7 +82,6 @@ test('a full-level run records request/response and applies redact', async () =>
     assert.equal(resp.raw.choices[0].message.tool_calls[0].id, 'c1', 'response raw must preserve tool call ids');
   } finally {
     global.fetch = orig;
-    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -120,8 +122,8 @@ test('agent threads tool_call_id into the tool ctx', async () => {
   assert.equal(seenId, 'callX', 'ctx.tool_call_id must equal the assistant tool call id');
 });
 
-function writeFullFixture(lines) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'replay-'));
+function writeFullFixture(t, lines) {
+  const dir = createTestTempDir(t, 'replay-');
   const file = path.join(dir, 'session-fixture.jsonl');
   fs.writeFileSync(file, lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
   return { dir, file };
@@ -157,17 +159,18 @@ function fullFixtureLines() {
   ];
 }
 
-test('Agent.replay throws on a non-full recording', async () => {
+test('Agent.replay throws on a non-full recording', async (t) => {
   const Agent = (await import('../../src/core/agent.js')).default;
-  const { dir, file } = writeFullFixture([{ t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' }]);
+  const { file } = writeFullFixture(t, [{ t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' }]);
   const rec = await Recording.load(file);
   assert.throws(() => Agent.replay(rec), /full/);
-  fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('Agent.replay reproduces a recorded run with zero network and recorded tool output', async () => {
+test('Agent.replay reproduces a recorded run with zero network and recorded tool output', async (t) => {
   const Agent = (await import('../../src/core/agent.js')).default;
-  const { dir, file } = writeFullFixture(fullFixtureLines());
+  const resource = { agent: undefined };
+  t.after(() => resource.agent?.cleanup());
+  const { file } = writeFullFixture(t, fullFixtureLines());
   const rec = await Recording.load(file);
 
   const orig = global.fetch;
@@ -177,7 +180,8 @@ test('Agent.replay reproduces a recorded run with zero network and recorded tool
     throw new Error('replay must not touch the network');
   };
   try {
-    const agent = Agent.replay(rec); // default toolMode: 'replay'
+    resource.agent = Agent.replay(rec); // default toolMode: 'replay'
+    const { agent } = resource;
     const out = await agent.run();
     assert.equal(out, 'done', 'replay reproduces the recorded final assistant content');
     assert.equal(fetched, false, 'replay must not call fetch');
@@ -185,13 +189,14 @@ test('Agent.replay reproduces a recorded run with zero network and recorded tool
     assert.equal(toolMsg.content, 'recorded-echo', 'replay returns the recorded tool output, not a live re-run');
   } finally {
     global.fetch = orig;
-    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('Agent.replay toolMode live re-executes tools against the provided registry', async () => {
+test('Agent.replay toolMode live re-executes tools against the provided registry', async (t) => {
   const Agent = (await import('../../src/core/agent.js')).default;
-  const { dir, file } = writeFullFixture(fullFixtureLines());
+  const resource = { agent: undefined };
+  t.after(() => resource.agent?.cleanup());
+  const { file } = writeFullFixture(t, fullFixtureLines());
   const rec = await Recording.load(file);
 
   const registry = new ToolRegistry();
@@ -211,7 +216,8 @@ test('Agent.replay toolMode live re-executes tools against the provided registry
     throw new Error('replay must not touch the network');
   };
   try {
-    const agent = Agent.replay(rec, { tools: registry, toolMode: 'live' });
+    resource.agent = Agent.replay(rec, { tools: registry, toolMode: 'live' });
+    const { agent } = resource;
     const out = await agent.run();
     assert.equal(out, 'done');
     assert.equal(calls, 1, 'live mode re-runs the real tool');
@@ -219,17 +225,18 @@ test('Agent.replay toolMode live re-executes tools against the provided registry
     assert.equal(toolMsg.content, 'LIVE:hi', 'live mode uses the freshly computed tool output');
   } finally {
     global.fetch = orig;
-    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('Agent.replay reproduces a recorded tool error', async () => {
+test('Agent.replay reproduces a recorded tool error', async (t) => {
   const Agent = (await import('../../src/core/agent.js')).default;
   const lines = fullFixtureLines();
   const te = lines.find((l) => l.type === 'tool_end');
   delete te.output;
   te.error = 'recorded failure';
-  const { dir, file } = writeFullFixture(lines);
+  const resource = { agent: undefined };
+  t.after(() => resource.agent?.cleanup());
+  const { file } = writeFullFixture(t, lines);
   const rec = await Recording.load(file);
 
   const orig = global.fetch;
@@ -237,21 +244,20 @@ test('Agent.replay reproduces a recorded tool error', async () => {
     throw new Error('no network');
   };
   try {
-    const agent = Agent.replay(rec);
+    resource.agent = Agent.replay(rec);
+    const { agent } = resource;
     const out = await agent.run();
     assert.equal(out, 'done');
     const toolMsg = agent.messages.find((m) => m.role === 'tool');
     assert.match(toolMsg.content, /recorded failure/, 'replay surfaces the recorded tool error');
   } finally {
     global.fetch = orig;
-    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('Agent.replay throws on an unknown toolMode', async () => {
+test('Agent.replay throws on an unknown toolMode', async (t) => {
   const Agent = (await import('../../src/core/agent.js')).default;
-  const { dir, file } = writeFullFixture(fullFixtureLines());
+  const { file } = writeFullFixture(t, fullFixtureLines());
   const rec = await Recording.load(file);
   assert.throws(() => Agent.replay(rec, { toolMode: 'bogus' }), /unknown toolMode/);
-  fs.rmSync(dir, { recursive: true, force: true });
 });
