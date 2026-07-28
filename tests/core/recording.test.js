@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { Recording } from '../../src/core/recording.js';
+import { resolveLogger } from '../../src/support/logger.js';
 
 function writeFixture(lines) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'recload-'));
@@ -103,6 +104,41 @@ test('forkAt inherits parent appName', async () => {
   const child = parent.forkAt(rec, 1);
   assert.equal(child.appName, 'lumen');
   assert.equal(child._memoryDir, path.resolve('.lumen/memory'));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('forkAt creates an Agent child logger', async () => {
+  const Agent = (await import('../../src/core/agent.js')).default;
+  const { dir, file } = writeFixture([
+    { t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' },
+    {
+      t: 'x',
+      type: 'turn_snapshot',
+      turn: 1,
+      messages: [{ role: 'user', content: 'hi' }],
+      usage: { cost: 0, tokens: 0 },
+    },
+  ]);
+  const records = [];
+  const target = Object.fromEntries(
+    ['debug', 'info', 'warn', 'error'].map((level) => [
+      level,
+      (context, message) => records.push({ level, context, message }),
+    ]),
+  );
+
+  const parent = new Agent({ apiKey: 'sk-test', logger: resolveLogger(target) });
+  const child = parent.forkAt(await Recording.load(file), 1);
+  child.logger.info({ turn: 1 }, 'Fork started');
+
+  assert.deepEqual(
+    records.find((record) => record.message === 'Fork started'),
+    {
+      level: 'info',
+      context: { component: 'agent', agent: 'fork', turn: 1 },
+      message: 'Fork started',
+    },
+  );
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

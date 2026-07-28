@@ -13,10 +13,10 @@ import {
 import { mergeReasoningDelta, finalizeReasoningDetails, sanitizeAssistantReasoning } from './reasoning.js';
 import { ToolRegistry } from '../registry/tool.js';
 import { ApiError, ConfigError } from './errors.js';
-import logger from './logger.js';
 import { createSessionRecorder } from './session-recorder.js';
 import config from '../config.js';
 import skillRegistry from '../registry/skill.js';
+import { resolveLogger } from '../support/logger.js';
 import crypto from 'node:crypto';
 import os from 'node:os';
 import fs from 'node:fs';
@@ -156,13 +156,13 @@ class Agent {
       record,
       emptyTurnRecovery,
       sessionId,
+      logger,
     } = options;
 
+    this.logger = logger ?? resolveLogger(undefined, { debug: config.DEBUG });
     this.restricted = restricted !== false;
     if (this.restricted === false) {
-      logger.warn(
-        'Agent constructed with restricted=false: security checks disabled (project-root boundary, Bash blocked-command list, env-var filtering). Use only in trusted contexts.',
-      );
+      this.logger.warn({ component: 'agent', restricted: false }, 'Agent constructed with security checks disabled');
     }
 
     if (!apiKey && !config.API_KEY) {
@@ -336,7 +336,7 @@ class Agent {
         try {
           base = fs.readFileSync(path.join(__dirname, '..', '..', 'RULE.md'), 'utf8');
         } catch {
-          logger.debug('No RULE.md found, using default instruction.');
+          this.logger.debug({ component: 'agent' }, 'No RULE.md found; using default instruction');
         }
 
         return base;
@@ -541,6 +541,7 @@ class Agent {
       maxTurns: this.maxTurns,
       appName: this.appName,
       storagePaths: { pluginsDir: this._pluginsDir },
+      logger: this.logger.child({ component: 'agent', agent: 'fork' }),
     });
     // keep in sync with sampling params in constructor
     const carry = [
@@ -581,7 +582,7 @@ class Agent {
     try {
       await this.#recorder.close();
     } catch (err) {
-      logger.warn(`Failed to close session recorder: ${err.message}`);
+      this.logger.warn({ component: 'agent', error: err }, 'Failed to close session recorder');
     }
     this.#recorder = null;
     this.#recordConfig = null;
@@ -608,7 +609,7 @@ class Agent {
       try {
         fn(event);
       } catch (err) {
-        logger.warn(`raw bg listener threw: ${err.message}`);
+        this.logger.warn({ component: 'agent', error: err }, 'Background listener threw');
       }
     }
 
@@ -630,7 +631,7 @@ class Agent {
       try {
         fn(event);
       } catch (err) {
-        logger.warn(`onBackgroundExit listener threw: ${err.message}`);
+        this.logger.warn({ component: 'agent', error: err }, 'Background exit listener threw');
       }
     }
 
@@ -698,14 +699,14 @@ class Agent {
 
   async #runInjectors(scope) {
     const bucket = this.#injectors[scope];
-    const ctx = { messages: this.messages, usage: this.usage, turn: this.messages.length };
+    const ctx = { messages: this.messages, usage: this.usage, turn: this.messages.length, logger: this.logger };
     const out = [];
     for (const entry of bucket) {
       let result;
       try {
         result = await entry.fn(ctx);
       } catch (err) {
-        logger.warn(`Injector '${entry.name}' (${scope}) threw: ${err?.message || err}`);
+        this.logger.warn({ component: 'agent', injector: entry.name, scope, error: err }, 'Agent injector failed');
         continue;
       }
       if (typeof result === 'string' && result.trim().length > 0) {
@@ -728,7 +729,7 @@ class Agent {
     try {
       this.#recorder = createSessionRecorder({ ...this.#recordConfig, model: this.model });
     } catch (err) {
-      logger.warn(`Failed to start session recorder: ${err.message}`);
+      this.logger.warn({ component: 'agent', error: err }, 'Failed to start session recorder');
       this.#recordConfig = null;
     }
   }
@@ -747,7 +748,7 @@ class Agent {
             try {
               await notify(event);
             } catch (err) {
-              logger.debug('Notify callback error:', err.message);
+              this.logger.debug({ component: 'agent', error: err }, 'Notify callback failed');
             }
           })(),
         );
@@ -806,7 +807,7 @@ class Agent {
       try {
         decision = await fn(ctx);
       } catch (err) {
-        logger.warn(`Stop hook threw: ${err?.message || err}`);
+        this.logger.warn({ component: 'agent', error: err }, 'Stop hook threw');
         continue;
       }
       if (decision && decision.action && decision.action !== 'stop') {
@@ -834,7 +835,10 @@ class Agent {
       }
 
       if (this.#stopAttempts > MAX_STOP_RECOVERY) {
-        logger.warn(`Agent: stop-recovery ceiling (${MAX_STOP_RECOVERY}) reached; forcing stop.`);
+        this.logger.warn(
+          { component: 'agent', maxStopRecovery: MAX_STOP_RECOVERY },
+          'Stop recovery ceiling reached; forcing stop',
+        );
         this.#stopAttempts = 0;
         return { content, reasoning, reasoning_details, tool_calls, finish_reason };
       }
@@ -1021,9 +1025,9 @@ class Agent {
     if (typeof this._sendForTest === 'function') {
       return this.#sendTestStub(payload);
     }
-    logger.debug(`Sending request to LLM (${this.model})...`);
+    this.logger.debug({ component: 'agent', model: this.model }, 'Sending request to LLM');
     const response = await this.#request(payload, signal);
-    logger.debug(`Received response from LLM.`);
+    this.logger.debug({ component: 'agent', model: this.model }, 'Received response from LLM');
 
     this.usage.cost += response.usage?.cost || 0;
     this.usage.tokens += response.usage?.total_tokens || 0;
@@ -1210,13 +1214,13 @@ class Agent {
       const rawArgs = tc.function.arguments;
       input = rawArgs && rawArgs.trim() ? JSON.parse(rawArgs.trim()) : {};
     } catch (parseErr) {
-      logger.warn(`Agent: failed to parse tool arguments for "${name}": ${parseErr.message}`);
+      this.logger.warn({ component: 'agent', tool: name, error: parseErr }, 'Failed to parse tool arguments');
       throw new Error(`invalid JSON arguments: ${parseErr.message}`, { cause: parseErr });
     }
 
     await this.#broadcast({ tool_start: { tool_call_id, name, input } });
 
-    logger.debug('Agent: Executing tool:', name);
+    this.logger.debug({ component: 'agent', tool: name }, 'Executing tool');
     const started = Date.now();
     let output;
     let toolError;
@@ -1343,7 +1347,7 @@ class Agent {
 
         const notify = typeof this.autoWakeNotify === 'function' ? this.autoWakeNotify : null;
         this.run(null, notify, this.autoWakeOptions ?? {}).catch((err) =>
-          logger.warn(`autoWake run failed: ${err.message}`),
+          this.logger.warn({ component: 'agent', error: err }, 'Auto-wake run failed'),
         );
       });
     }
@@ -1475,7 +1479,7 @@ class Agent {
       try {
         await this.#recorder.close();
       } catch (err) {
-        logger.warn(`Failed to close session recorder: ${err.message}`);
+        this.logger.warn({ component: 'agent', error: err }, 'Failed to close session recorder');
       }
       this.#recorder = null;
       this.#recordConfig = null;
@@ -1531,7 +1535,7 @@ class Agent {
         try {
           await unlink(path.join(this._storageTmpDir, entry.name));
         } catch (err) {
-          logger.debug(`cleanup: failed to delete ${entry.name}: ${err.message}`);
+          this.logger.debug({ component: 'agent', path: entry.name, error: err }, 'Cleanup failed to delete file');
         }
       }
     } else if (this._bgLogDir) {
@@ -1539,7 +1543,10 @@ class Agent {
       try {
         await rm(this._bgLogDir, { recursive: true, force: true });
       } catch (err) {
-        logger.debug(`cleanup: failed to remove bg log dir: ${err.message}`);
+        this.logger.debug(
+          { component: 'agent', path: this._bgLogDir, error: err },
+          'Cleanup failed to remove log directory',
+        );
       }
     }
 
@@ -1547,7 +1554,7 @@ class Agent {
       try {
         await this.tools.cleanup();
       } catch (err) {
-        logger.warn(`Failed to cleanup tools registry: ${err.message}`);
+        this.logger.warn({ component: 'agent', error: err }, 'Failed to clean up tools registry');
       }
     }
 
@@ -1556,7 +1563,7 @@ class Agent {
         try {
           await subagent.cleanup();
         } catch (err) {
-          logger.warn(`Failed to cleanup subagent ${id}: ${err.message}`);
+          this.logger.warn({ component: 'agent', subagentId: id, error: err }, 'Failed to clean up subagent');
         }
       }
       this.subagents.clear();
@@ -1591,7 +1598,10 @@ class Agent {
         }
 
         if (this.maxTurns > 0 && loopCount >= this.maxTurns) {
-          logger.warn(`Agent: max request turns reached (${this.maxTurns}), forcing break.`);
+          this.logger.warn(
+            { component: 'agent', maxTurns: this.maxTurns },
+            'Maximum request turns reached; forcing break',
+          );
           if (this.isSubagent) {
             const lastMsg = this.messages[this.messages.length - 1];
             if (lastMsg?.role === 'tool') {
@@ -1662,8 +1672,9 @@ class Agent {
               errMsg.includes('video'));
 
           if (isMultimodalError && !this.#multimodalUnsupported && payloadHasMultimodal(payload)) {
-            logger.warn(
-              `Request rejected with multimodal error (${err.status || err.message}); degrading and retrying text-only fallback.`,
+            this.logger.warn(
+              { component: 'agent', status: err.status, error: err },
+              'Multimodal request rejected; degrading and retrying text-only fallback',
             );
             this.#multimodalUnsupported = true;
             for (const msg of this.messages) {
@@ -1703,7 +1714,7 @@ class Agent {
 
         const message = response.choices?.[0]?.message;
         if (!message) {
-          logger.warn('Agent: LLM returned no message in response. Breaking loop.');
+          this.logger.warn({ component: 'agent' }, 'LLM returned no message; breaking loop');
           break;
         }
 
@@ -1796,8 +1807,7 @@ class Agent {
               richToolIds.push(tool_call_id);
             }
           } else {
-            const summary = (r.reason?.message || '').split('\n')[0];
-            logger.warn(`Tool ${tc.function.name} failed: ${summary}`);
+            this.logger.warn({ component: 'agent', tool: tc.function.name, error: r.reason }, 'Tool call failed');
             this.messages.push({
               role: 'tool',
               content: `Error: ${r.reason?.message ?? r.reason}`,
@@ -2014,11 +2024,11 @@ function memoryHintInjector(memoryDirFn, memoryTypesFn) {
   };
 }
 
-async function skillListInjector() {
+async function skillListInjector({ logger }) {
   try {
     await skillRegistry._ensureDiscovered();
   } catch (err) {
-    logger.warn(`Skill discovery failed: ${err?.message || err}`);
+    logger.warn({ component: 'agent', injector: 'skillList', error: err }, 'Skill discovery failed');
     return '';
   }
   const skills = skillRegistry.skills;
@@ -2039,11 +2049,11 @@ async function skillListInjector() {
   );
 }
 
-async function pluginInstructionsInjector() {
+async function pluginInstructionsInjector({ logger }) {
   try {
     await skillRegistry._ensureDiscovered();
   } catch (err) {
-    logger.warn(`Skill discovery failed: ${err?.message || err}`);
+    logger.warn({ component: 'agent', injector: 'pluginInstructions', error: err }, 'Skill discovery failed');
     return '';
   }
   const instructions = skillRegistry.getPluginInstructions();

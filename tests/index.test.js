@@ -44,6 +44,49 @@ describe('createAgent', () => {
     await assert.rejects(createAgent({ logger: { info() {}, warn() {}, error() {} } }), ConfigError);
   });
 
+  it('delivers redacted Agent logs to a caller logger during a run', async () => {
+    const records = [];
+    const logger = Object.fromEntries(
+      ['debug', 'info', 'warn', 'error'].map((level) => [
+        level,
+        (context, message) => records.push({ level, context, message }),
+      ]),
+    );
+    const originalFetch = global.fetch;
+    global.fetch = async () => ({
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          choices: [{ message: { content: 'done', reasoning: null, tool_calls: null } }],
+          usage: { cost: 0, total_tokens: 1 },
+        }),
+    });
+
+    try {
+      const agent = await createAgent({ logger, injectors: { date: false } });
+      agent.registerInjector({
+        name: 'failing-log-test',
+        scope: 'per-turn',
+        fn: () => {
+          throw new Error('Bearer hidden-token');
+        },
+      });
+
+      await agent.run('go');
+    } finally {
+      global.fetch = originalFetch;
+    }
+
+    const record = records.find((entry) => entry.message === 'Agent injector failed');
+    assert.equal(record?.level, 'warn');
+    assert.equal(record?.context.component, 'agent');
+    assert.equal(record?.context.injector, 'failing-log-test');
+    const serialized = JSON.stringify(record);
+    assert.doesNotMatch(serialized, /hidden-token/);
+    assert.match(serialized, /REDACTED/);
+  });
+
   it('should load built-in tools (Read, Write, Edit, Find, List, Bash, etc.)', async () => {
     const agent = await createAgent();
     const tools = agent.tools.listTools();

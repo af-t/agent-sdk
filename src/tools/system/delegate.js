@@ -68,6 +68,7 @@ export const execute = async ({ description, prompt, persona, id, background = f
       restricted: agent.restricted,
       storagePaths: agent._storagePaths ?? undefined,
       appName: agent.appName,
+      logger: agent.logger.child({ component: 'agent', agent: 'subagent', subagentId: resolvedId }),
     });
     if (typeof agent._sendForTest === 'function') {
       subagent._sendForTest = agent._sendForTest;
