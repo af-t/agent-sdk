@@ -11,11 +11,14 @@ describe('Bash tool module', () => {
   let mod;
 
   before(async () => {
-    mod = await import('../../../src/tools/system/bash.js');
+    mod = (await import('../../../src/tools/system/run-shell.js')).runShell;
   });
 
-  it('should export name', () => {
-    assert.strictEqual(mod.name, 'Bash');
+  it('exports runShell with a strict workingDirectory input', () => {
+    assert.strictEqual(mod.name, 'runShell');
+    assert.strictEqual(mod.inputSchema.additionalProperties, false);
+    assert.ok(mod.inputSchema.properties.workingDirectory);
+    assert.equal(mod.inputSchema.properties.cwd, undefined);
   });
 
   it('should export description', () => {
@@ -35,7 +38,7 @@ describe('Bash tool: command injection fuzzing', () => {
   let mod;
 
   before(async () => {
-    mod = await import('../../../src/tools/system/bash.js');
+    mod = (await import('../../../src/tools/system/run-shell.js')).runShell;
   });
 
   // All of these command injection attempts should be BLOCKED by the
@@ -322,7 +325,7 @@ describe('Bash tool: env sanitization', () => {
   let mod;
 
   before(async () => {
-    mod = await import('../../../src/tools/system/bash.js');
+    mod = (await import('../../../src/tools/system/run-shell.js')).runShell;
   });
 
   it('strips sensitive keys like OPENROUTER_API_KEY from custom env', async () => {
@@ -464,7 +467,7 @@ describe('Bash tool: abort signal handling', () => {
   let mod;
 
   before(async () => {
-    mod = await import('../../../src/tools/system/bash.js');
+    mod = (await import('../../../src/tools/system/run-shell.js')).runShell;
   });
 
   it('rejects immediately when ctx.signal is already aborted', async () => {
@@ -500,7 +503,7 @@ describe('Bash tool: background hint message', () => {
   let bash;
 
   before(async () => {
-    bash = await import('../../../src/tools/system/bash.js');
+    bash = (await import('../../../src/tools/system/run-shell.js')).runShell;
   });
 
   it('background return message reflects automatic exit reporting', async (t) => {
@@ -522,7 +525,7 @@ describe('Bash tool: advanced execution paths', () => {
   let mod;
 
   before(async () => {
-    mod = await import('../../../src/tools/system/bash.js');
+    mod = (await import('../../../src/tools/system/run-shell.js')).runShell;
   });
 
   it('blocks eval on sensitive path', async () => {
@@ -539,7 +542,7 @@ describe('Bash tool: advanced execution paths', () => {
 
   it('executes command with custom cwd', async () => {
     const tmp = os.tmpdir();
-    const result = await mod.execute({ command: 'pwd', cwd: tmp, timeout: 5000 });
+    const result = await mod.execute({ command: 'pwd', workingDirectory: tmp, timeout: 5000 });
     assert.equal(fs.realpathSync(result.trim()), fs.realpathSync(tmp));
   });
 

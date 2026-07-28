@@ -2,13 +2,12 @@ import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import logger from '../../core/logger.js';
 import { sanitizeChildEnvironment } from '../../support/environment.js';
 
 // Lazy-loaded PTY module: may be unavailable on platforms without native build support
 let _ptyModule = null;
 
-async function getPty() {
+async function getPty(logger) {
   if (_ptyModule === null) {
     // node-pty data loss under Bun
     if (process.versions.bun) {
@@ -46,9 +45,7 @@ async function getPty() {
       if (works) {
         _ptyModule = pty;
       } else {
-        logger.warn(
-          'node-pty is available but failed to execute commands or produce output; falling back to child_process.spawn',
-        );
+        logger?.warn({ component: 'runShell' }, 'node-pty unavailable; using child process fallback');
         _ptyModule = false;
       }
     } catch {
@@ -231,7 +228,7 @@ function handleForegroundExit({
   clearTimeout(killTimer);
   if (signal) signal.removeEventListener('abort', onAbort);
   if (aborted) {
-    reject(new Error(`Bash execution aborted\n\nPartial Output:\n${output}`));
+    reject(new Error(`runShell execution aborted\n\nPartial Output:\n${output}`));
     return;
   }
   if (exitCode !== 0) {
@@ -245,7 +242,7 @@ function handleForegroundExit({
   }
 }
 
-function runWithSpawn(command, cwd, env, timeout, signal, agent) {
+function runWithSpawn(command, cwd, env, timeout, signal, agent, logger) {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
     const child = spawn('bash', ['-c', 'exec 2>&1; ' + command], {
@@ -296,7 +293,7 @@ function runWithSpawn(command, cwd, env, timeout, signal, agent) {
             `Output so far (first 4KB):\n${output.slice(0, 4096)}`,
         );
       } else {
-        logger.warn('Bash timeout cannot detach to background without ctx.agent; killing the process');
+        logger?.warn({ component: 'runShell', timeout }, 'Timeout cannot detach without an agent; killing process');
         child.kill();
         reject(new Error(`Execution timed out after ${timeout}ms\n\nPartial Output:\n${output}`));
       }
@@ -330,7 +327,7 @@ function runWithSpawn(command, cwd, env, timeout, signal, agent) {
 
 // PTY mode (primary, uses node-pty)
 
-function runWithPty(command, cwd, env, timeout, signal, agent) {
+function runWithPty(command, cwd, env, timeout, signal, agent, logger) {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
     let ptyProcess;
@@ -386,7 +383,7 @@ function runWithPty(command, cwd, env, timeout, signal, agent) {
             `Output so far (first 4KB):\n${output.slice(0, 4096)}`,
         );
       } else {
-        logger.warn('Bash timeout cannot detach to background without ctx.agent; killing the process');
+        logger?.warn({ component: 'runShell', timeout }, 'Timeout cannot detach without an agent; killing process');
         ptyProcess.kill();
         reject(new Error(`Execution timed out after ${timeout}ms\n\nPartial Output:\n${output}`));
       }
@@ -510,14 +507,14 @@ function runWithPtyBackground(command, cwd, env, signal, agent) {
   return { id, logPath, pid: ptyProcess.pid };
 }
 
-export const name = 'Bash';
-export const description =
+const description =
   'Execute a shell command. Use this for system operations that do not have a specialized tool, such as running tests, performing builds, or using complex CLI utilities. Side effect: executes arbitrary shell commands. The agent may issue multiple tool calls in one turn that run concurrently: do not request parallel calls that mutate the same files or processes.';
-export const inputSchema = {
+const inputSchema = {
   type: 'object',
+  additionalProperties: false,
   properties: {
     command: { type: 'string', description: 'Shell command to execute' },
-    cwd: { type: 'string', description: 'Working directory' },
+    workingDirectory: { type: 'string', description: 'Working directory' },
     env: { type: 'object', description: 'Environment variables' },
     timeout: { type: 'number', description: 'Timeout in ms (default 300000)' },
     background: {
@@ -529,15 +526,16 @@ export const inputSchema = {
   required: ['command'],
 };
 
-export const execute = async (
-  { command, cwd = process.cwd(), env = process.env, timeout = 300000, background = false },
-  ctx = {},
-) => {
-  const signal = ctx.signal;
+const execute = async ({ command, workingDirectory, env, timeout = 300000, background = false }, ctx = {}) => {
+  const { agent, signal, logger } = ctx;
+  const config = agent?.config ?? {};
+  const cwd = workingDirectory ?? config.workingDirectory ?? process.cwd();
+  const baseEnvironment = config.environment ?? {};
+  const requestedEnvironment = env ?? baseEnvironment;
   const restricted = ctx.agent?.restricted !== false;
 
   if (signal?.aborted) {
-    throw new Error('Bash execution aborted before start');
+    throw new Error('runShell execution aborted before start');
   }
 
   if (restricted) {
@@ -550,7 +548,7 @@ export const execute = async (
 
     const suspicious = hasSuspiciousPattern(command);
     if (suspicious) {
-      logger.warn(`Suspicious command pattern detected: ${suspicious}. Proceeding but this may be unsafe.`);
+      logger?.warn({ component: 'runShell', rule: String(suspicious) }, 'Suspicious command pattern detected');
     }
   }
 
@@ -558,15 +556,14 @@ export const execute = async (
   if (restricted) {
     safeEnv = {};
     for (const key of SAFE_ENV_KEYS) {
-      if (key in process.env) safeEnv[key] = process.env[key];
+      if (key in baseEnvironment) safeEnv[key] = baseEnvironment[key];
     }
-    if (env !== process.env) {
-      Object.assign(safeEnv, sanitizeChildEnvironment(env));
+    if (requestedEnvironment !== baseEnvironment) {
+      Object.assign(safeEnv, sanitizeChildEnvironment(requestedEnvironment));
     }
   } else {
-    // Trust mode: passthrough full process.env, merge user-supplied env raw.
-    safeEnv = { ...process.env };
-    if (env !== process.env) Object.assign(safeEnv, env);
+    safeEnv = { ...baseEnvironment };
+    if (requestedEnvironment !== baseEnvironment) Object.assign(safeEnv, requestedEnvironment);
   }
 
   // Prevent git/etc pagination hang in interactive pseudo-terminals by defaulting to PAGER=cat
@@ -574,23 +571,25 @@ export const execute = async (
     safeEnv.PAGER = 'cat';
   }
 
-  const ptyMod = await getPty();
+  const ptyMod = await getPty(logger);
   if (ptyMod) _ptyModule = ptyMod;
 
   if (background) {
     if (!ctx.agent) {
-      throw new Error('Bash background mode requires ctx.agent (an Agent instance).');
+      throw new Error('runShell background mode requires ctx.agent (an Agent instance).');
     }
     const info = ptyMod
       ? runWithPtyBackground(command, cwd, safeEnv, signal, ctx.agent)
       : runWithSpawnBackground(command, cwd, safeEnv, signal, ctx.agent);
-    return `Started in background.\nJob ID: ${info.id} (kind: bash)\nLog: ${info.logPath}\nPID: ${info.pid ?? 'n/a'}\nExit will be reported automatically. Use readFile for the log, or Wakeup({ delay_ms | at, watch: ['${info.id}'] }) for a timed check-in with a log tail.`;
+    return `Started in background.\nJob ID: ${info.id} (kind: bash)\nLog: ${info.logPath}\nPID: ${info.pid ?? 'n/a'}\nExit will be reported automatically. Use readFile for the log, or scheduleWakeup({ delay_ms | at, watch: ['${info.id}'] }) for a timed check-in with a log tail.`;
   }
 
   if (ptyMod) {
-    return runWithPty(command, cwd, safeEnv, timeout, signal, ctx.agent);
+    return runWithPty(command, cwd, safeEnv, timeout, signal, agent, logger);
   }
 
-  logger.debug('node-pty unavailable, falling back to spawn');
-  return runWithSpawn(command, cwd, safeEnv, timeout, signal, ctx.agent);
+  logger?.debug({ component: 'runShell' }, 'node-pty unavailable; using child process fallback');
+  return runWithSpawn(command, cwd, safeEnv, timeout, signal, agent, logger);
 };
+
+export const runShell = { name: 'runShell', description, inputSchema, execute };

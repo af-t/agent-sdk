@@ -5,11 +5,14 @@ describe('WebFetch tool module', () => {
   let mod;
 
   before(async () => {
-    mod = await import('../../../src/tools/web/fetch.js');
+    mod = (await import('../../../src/tools/web/fetch-url.js')).fetchUrl;
   });
 
-  it('should export name', () => {
-    assert.strictEqual(mod.name, 'WebFetch');
+  it('exports fetchUrl with a strict rawContent input contract', () => {
+    assert.strictEqual(mod.name, 'fetchUrl');
+    assert.strictEqual(mod.inputSchema.additionalProperties, false);
+    assert.ok(mod.inputSchema.properties.rawContent);
+    assert.equal(mod.inputSchema.properties.use_raw, undefined);
   });
 
   it('should export description', () => {
@@ -375,7 +378,7 @@ describe('WebFetch tool module', () => {
     it('returns raw HTML when useRaw=true', async () => {
       const html = '<html><body><p>Raw content here</p></body></html>';
       mockFetch({ contentType: 'text/html', body: html });
-      const result = await mod.execute({ url: 'https://example.com/', useRaw: true });
+      const result = await mod.execute({ url: 'https://example.com/', rawContent: true });
       assert.ok(result.includes('text/html'));
       assert.ok(result.includes('<html>'));
     });

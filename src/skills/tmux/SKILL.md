@@ -7,7 +7,7 @@ description: Terminal multiplexer (tmux) usage for managing persistent terminal 
 
 ## Overview
 
-Tmux is a terminal multiplexer that allows you to run and manage multiple terminal sessions within a single shell. This skill teaches you how to use tmux effectively via the `Bash` tool to:
+Tmux is a terminal multiplexer that allows you to run and manage multiple terminal sessions within a single shell. This skill teaches you how to use tmux effectively via the `runShell` tool to:
 
 - Run long-lived processes that survive agent shell termination
 - Manage multiple parallel terminal sessions
@@ -19,11 +19,11 @@ Tmux is a terminal multiplexer that allows you to run and manage multiple termin
 
 ### Why tmux for AI Agents?
 
-The agent's `Bash` tool runs commands in ephemeral shells. When a command completes or times out, the session is destroyed. Tmux solves this:
+The agent's `runShell` tool runs commands in ephemeral shells. When a command completes or times out, the session is destroyed. Tmux solves this:
 
 ```
-Bash(tmux) → creates persistent session → survives timeout/detach
-                                     → reattach later with new Bash call
+runShell(tmux) → creates persistent session → survives timeout/detach
+                                     → reattach later with new runShell call
                                      → program keeps running in background
 ```
 
@@ -217,7 +217,7 @@ tmux kill-pane -t <session>:<window>.<pane>
 
 ### Pattern: Non-blocking Long Process
 
-When a Bash command might timeout, use tmux to run it asynchronously:
+When a runShell command might timeout, use tmux to run it asynchronously:
 
 ```bash
 # Instead of: npm run build (might timeout)
@@ -293,7 +293,7 @@ tmux kill-session -t server
 
 1. **Always use named sessions** - Never rely on default session numbers. Use `-s <descriptive-name>`.
 
-2. **Detach by default** - Create sessions with `-d` (detached) so the Bash tool returns immediately.
+2. **Detach by default** - Create sessions with `-d` (detached) so the runShell tool returns immediately.
 
 3. **Check session existence first** - Before sending to a session, verify it exists:
 

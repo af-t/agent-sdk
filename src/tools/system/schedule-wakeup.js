@@ -1,11 +1,11 @@
 const INT32_MAX = 2 ** 31 - 1;
 const DEFAULT_TAIL = 4096;
 
-export const name = 'Wakeup';
-export const description =
+const description =
   'Schedule a non-blocking wakeup timer. Registers a background timer and returns immediately; when it fires, the agent receives a notification (the custom `prompt` if given, otherwise a generic exit notice; plus, if `watch` is set, a tail of those job logs). Use for timed check-ins or pacing without blocking the run loop.';
-export const inputSchema = {
+const inputSchema = {
   type: 'object',
+  additionalProperties: false,
   properties: {
     delay_ms: { type: 'number', description: 'Milliseconds until the timer fires. Mutually exclusive with `at`.' },
     at: {
@@ -31,7 +31,7 @@ export const inputSchema = {
   },
 };
 
-export const execute = async (input, ctx = {}) => {
+const execute = async (input, ctx = {}) => {
   const { delay_ms, at, watch = [], tail_bytes = DEFAULT_TAIL, reason, prompt } = input;
 
   if (delay_ms == null && !at) {
@@ -71,3 +71,5 @@ export const execute = async (input, ctx = {}) => {
   const reasonNote = reason ? ` (reason: ${reason})` : '';
   return `Wakeup ${id} set${reasonNote}; fires in ${durationMs}ms${watchNote}. Exit will be reported automatically.`;
 };
+
+export const scheduleWakeup = { name: 'scheduleWakeup', description, inputSchema, execute };

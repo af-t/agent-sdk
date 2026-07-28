@@ -84,7 +84,7 @@ test('forkAt seeds a new independent Agent from the snapshot', async (t) => {
   assert.throws(() => parent.forkAt(rec, 99), /No snapshot/);
 });
 
-test('forkAt shares the SkillRegistry used by the shared Skill tool', async (t) => {
+test('forkAt shares the SkillRegistry used by loadSkill', async (t) => {
   const createAgent = (await import('../../src/index.js')).default;
   const { file } = writeFixture(t, [
     { t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' },
@@ -96,7 +96,10 @@ test('forkAt shares the SkillRegistry used by the shared Skill tool', async (t) 
   const child = parent.forkAt(await Recording.load(file), 1);
 
   assert.equal(child.skillRegistry, parent.skillRegistry);
-  assert.match(await child.tools.execute('Skill', { action: 'load', argument: 'fork-marker' }), /Fork marker body/);
+  assert.match(
+    await child.tools.execute('loadSkill', { action: 'load', argument: 'fork-marker' }, { agent: child }),
+    /Fork marker body/,
+  );
 });
 
 test('forkAt inherits parent appName', async (t) => {

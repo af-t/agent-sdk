@@ -9,11 +9,11 @@ Minimal SDK for building AI agents connected to the [OpenRouter API](https://ope
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Basic Usage](#basic-usage)
-- [Background Jobs](#background-jobs)
+- [Background manageJobs](#background-jobs)
 - [Integration into Your Project](#integration-into-your-project)
 - [Available Tools](#available-tools)
 - [MCP Server](#mcp-server)
-- [Skill System](#skill-system)
+- [loadSkill System](#skill-system)
 - [Context Injection Layer](#context-injection-layer)
 - [Persistent Memory](#persistent-memory)
 - [Project Structure](#project-structure)
@@ -28,8 +28,8 @@ Minimal SDK for building AI agents connected to the [OpenRouter API](https://ope
 - **OpenRouter Integration**: Access 300+ LLM models through a single API with provider routing (order/only).
 - **Automatic Tool Execution Loop**: The agent automatically calls tools, receives results, and continues the conversation until a final answer is produced.
 - **MCP (Model Context Protocol) Support**: Connect your agent to external tools via stdio-based MCP servers.
-- **Skill Discovery System**: Discover and load skills from SKILL.md files across builtin (`src/skills/`) and plugin directories.
-- **Built-in Tools**: File operations (readFile, writeFile, editFile, findFiles, listFiles), shell command execution (Bash with optional **node-pty** support), web search (Tavily), web fetch (using **cheerio**), and subagent delegation.
+- **loadSkill Discovery System**: Discover and load skills from SKILL.md files across builtin (`src/skills/`) and plugin directories.
+- **Built-in Tools**: File operations (readFile, writeFile, editFile, findFiles, listFiles), shell command execution (runShell with optional **node-pty** support), web search (Tavily), web fetch (using **cheerio**), and subagent delegation.
 - **Safety & Validation**: Tool inputs are validated against their schema (type checks, required fields, enums). Path traversal protection on readFile, writeFile, editFile, listFiles, and findFiles; **.gitignore** filtering on listFiles (and on findFiles when ripgrep is available): readFile, writeFile, and editFile do _not_ consult .gitignore, so ignored files inside the project root (such as `.env`) remain accessible to the agent. Dangerous shell command detection.
 - **Retry with Exponential Backoff**: Auto-retry with jitter to handle rate limits and transient errors.
 - **Abort Signal Support**: Cancel agent execution at any point.
@@ -112,7 +112,7 @@ cp .env.example .env
 | `OPENROUTER_MAX_TURNS`                                                                                                                                                          | No       | Maximum number of request cycles per `run()` (default: 25)                                                                                                          |
 | `OPENROUTER_ORDER`                                                                                                                                                              | No       | Comma-separated provider priority order                                                                                                                             |
 | `OPENROUTER_ONLY`                                                                                                                                                               | No       | Restrict to specific providers only                                                                                                                                 |
-| `TAVILY_API_KEY`                                                                                                                                                                | No       | API key for WebSearch tool (from [Tavily](https://tavily.com))                                                                                                      |
+| `TAVILY_API_KEY`                                                                                                                                                                | No       | API key for searchWeb tool (from [Tavily](https://tavily.com))                                                                                                      |
 | `DEBUG`                                                                                                                                                                         | No       | Enable debug logging (`true`/`1`)                                                                                                                                   |
 | `OPENROUTER_TEMPERATURE`, `OPENROUTER_TOP_P`, `OPENROUTER_MIN_P`, `OPENROUTER_TOP_K`                                                                                            | No       | Sampling controls                                                                                                                                                   |
 | `OPENROUTER_FREQUENCY_PENALTY`, `OPENROUTER_PRESENCE_PENALTY`, `OPENROUTER_REPETITION_PENALTY`                                                                                  | No       | Repetition controls                                                                                                                                                 |
@@ -312,26 +312,26 @@ Options: `port` (required; integer `0`-`65535`; `0` = ephemeral, read back via `
 
 Each matched request emits `{ type, method, path, query, headers, body, rawBody, ip, requestId, respond }`. Call `event.respond(value)` to reply: a string -> `200 text/plain`; an object -> a `{ status, headers, body }` spec (wrap a JSON payload as `respond({ body: {...} })`). Because the daemon awaits the handler, awaiting `ctx.agent.run(...)` before calling `respond` returns the agent's result to the HTTP caller; returning a bare `run` action is fire-and-forget and will `504` unless you also call `respond`. Auth (token + HMAC) uses constant-time comparison; bind stays on `127.0.0.1` by default: terminate TLS upstream before exposing it.
 
-## Background Jobs
+## Background manageJobs
 
-Bash commands and Delegate subagents can run detached from the current turn. The agent returns immediately with a job ID and log path, and delivers a `<system-reminder>` to the run loop when the job finishes.
+runShell commands and delegateTask subagents can run detached from the current turn. The agent returns immediately with a job ID and log path, and delivers a `<system-reminder>` to the run loop when the job finishes.
 
 ```javascript
 // Detach a shell command
 const jobInfo = await agent.run('Run the test suite in the background.');
-// The Bash tool was called with background:true: agent got a job ID and log path back.
+// The runShell tool was called with background:true: agent got a job ID and log path back.
 
-// Delegate a subagent in fire-and-forget mode
-// (Delegate tool called with background:true inside the agent's tool loop)
+// delegateTask a subagent in fire-and-forget mode
+// (delegateTask tool called with background:true inside the agent's tool loop)
 ```
 
-The `Wakeup` tool complements background jobs: it pauses the run loop until a duration elapses or a specific time is reached, optionally short-circuiting when any watched background job exits:
+The `scheduleWakeup` tool complements background jobs: it pauses the run loop until a duration elapses or a specific time is reached, optionally short-circuiting when any watched background job exits:
 
 ```
-Wakeup({ delay_ms: 30000 })              // wait 30 s
-Wakeup({ at: '2026-01-01T00:00:00Z' })   // wait until a timestamp
-Wakeup({ delay_ms: 60000, watch: ['bg-a1b2c'] }) // wake early if job finishes
-Wakeup({ delay_ms: 60000, reason: 'pace check-in', prompt: 'resume the task' }) // self-documenting, custom wake text
+scheduleWakeup({ delay_ms: 30000 })              // wait 30 s
+scheduleWakeup({ at: '2026-01-01T00:00:00Z' })   // wait until a timestamp
+scheduleWakeup({ delay_ms: 60000, watch: ['bg-a1b2c'] }) // wake early if job finishes
+scheduleWakeup({ delay_ms: 60000, reason: 'pace check-in', prompt: 'resume the task' }) // self-documenting, custom wake text
 ```
 
 Register a listener for background-job completion from outside the run loop:
@@ -437,15 +437,15 @@ await agent.tools.connectMcpServer({
 | `editFile`  | File     | Edit a file with find-and-replace                                                     |
 | `findFiles` | File     | Search for files by name or content                                                   |
 | `listFiles` | File     | List directory contents (ls alternative)                                              |
-| `Todo`      | General  | Manage a todo list (add, list, complete, delete, update, clear) with persistence      |
-| `RecallMemory` | General | Semantic search over stored memory files (embeddings, with lexical fallback)        |
-| `Bash`      | System   | Execute shell commands (pty with fallback to child_process); supports background mode |
-| `Delegate`  | System   | Delegate tasks to a sub-agent; supports background mode                               |
-| `Wakeup`    | System   | Pause execution until a duration elapses or an absolute time is reached               |
-| `Skill`     | System   | Manage and load skills                                                                |
-| `Jobs`      | System   | List and stop background jobs (Bash / Delegate / Wakeup)                              |
-| `WebSearch` | Web      | Web search via Tavily API                                                             |
-| `WebFetch`  | Web      | Extract content from URLs                                                             |
+| `manageTodos`      | General  | Manage a todo list (add, list, complete, delete, update, clear) with persistence      |
+| `recallMemory` | General | Semantic search over stored memory files (embeddings, with lexical fallback)        |
+| `runShell`      | System   | Execute shell commands (pty with fallback to child_process); supports background mode |
+| `delegateTask`  | System   | delegateTask tasks to a sub-agent; supports background mode                               |
+| `scheduleWakeup`    | System   | Pause execution until a duration elapses or an absolute time is reached               |
+| `loadSkill`     | System   | Manage and load skills                                                                |
+| `manageJobs`      | System   | List and stop background jobs (runShell / delegateTask / scheduleWakeup)                              |
+| `searchWeb` | Web      | Web search via Tavily API                                                             |
+| `fetchUrl`  | Web      | Extract content from URLs                                                             |
 
 ### Reading non-text files
 
@@ -490,7 +490,7 @@ rl.on('line', (line) => {
 
 See `src/integrations/mcp-client.js` for the full implementation.
 
-## Skill System
+## loadSkill System
 
 The SDK has a discovery system for skills based on `SKILL.md` files. Skills are searched in:
 
@@ -672,11 +672,11 @@ Custom keys are merged on top of the built-in defaults.
 
 ### Protocol
 
-The `using-memory` builtin skill (see `src/skills/using-memory/SKILL.md`) covers the full protocol: when to save, when not to save, file naming, index conventions, and stale-memory handling. The LLM loads it on demand via the `Skill` tool when it decides memory is relevant.
+The `using-memory` builtin skill (see `src/skills/using-memory/SKILL.md`) covers the full protocol: when to save, when not to save, file naming, index conventions, and stale-memory handling. The LLM loads it on demand via the `loadSkill` tool when it decides memory is relevant.
 
 ### Semantic Memory Recall
 
-To retrieve the full contents of memories relevant to the current task by meaning, the agent can use the `RecallMemory` tool:
+To retrieve the full contents of memories relevant to the current task by meaning, the agent can use the `recallMemory` tool:
 
 - `query` (required) - Natural language query to search stored memories for.
 - `limit` (optional) - Maximum number of memories to return (defaults to `5`, capped at `20`).
@@ -727,8 +727,8 @@ openrouter/
 │   │   └── skill.js       # SkillRegistry: discover & load SKILL.md
 │   └── tools/
 │       ├── files/         # readFile, writeFile, editFile, findFiles, listFiles
-│       ├── general/       # Todo, RecallMemory
-│       ├── system/        # Bash, Delegate, Jobs, Skill, Wakeup
+│       ├── general/       # manageTodos, recallMemory
+│       ├── system/        # runShell, delegateTask, manageJobs, loadSkill, scheduleWakeup
 │       └── web/           # Search (Tavily), Fetch
 ├── CONTRIBUTING.md        # Contribution guidelines
 ├── LICENSE                # MIT License

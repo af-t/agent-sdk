@@ -3,9 +3,9 @@ import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-import createAgent from '../../src/index.js';
-import Agent from '../../src/core/agent.js';
-import { createTestTempDir } from '../support/temp.js';
+import createAgent from '../../../src/index.js';
+import Agent from '../../../src/core/agent.js';
+import { createTestTempDir } from '../../support/temp.js';
 
 test('Delegate-spawned subagent inherits parent.restricted', async (t) => {
   mock.method(Agent.prototype, 'run', async () => 'subagent report');
@@ -14,7 +14,9 @@ test('Delegate-spawned subagent inherits parent.restricted', async (t) => {
   const tmpDir = createTestTempDir(t, 'delegate-parent-');
   parent = await createAgent({ apiKey: 'x', restricted: false, storagePaths: { tmpDir } });
 
-  const { execute: delegateExecute } = await import('../../src/tools/system/delegate.js');
+  const {
+    delegateTask: { execute: delegateExecute },
+  } = await import('../../../src/tools/system/delegate-task.js');
   const out = await delegateExecute(
     { agent: 'researcher', prompt: 'test', description: 'test delegation' },
     { agent: parent, signal: new AbortController().signal },
@@ -33,7 +35,9 @@ test('Delegate-spawned subagent shares parent storagePaths.tmpDir', async (t) =>
     apiKey: 'x',
     storagePaths: { tmpDir },
   });
-  const { execute: delegateExecute } = await import('../../src/tools/system/delegate.js');
+  const {
+    delegateTask: { execute: delegateExecute },
+  } = await import('../../../src/tools/system/delegate-task.js');
   await delegateExecute(
     { agent: 'researcher', prompt: 'test', description: 'test delegation' },
     { agent: parent, signal: new AbortController().signal },
@@ -59,7 +63,9 @@ test('Delegate background:true returns immediately with job id', async (t) => {
     return 'final report from subagent';
   });
 
-  const { execute: delegateExecute } = await import('../../src/tools/system/delegate.js');
+  const {
+    delegateTask: { execute: delegateExecute },
+  } = await import('../../../src/tools/system/delegate-task.js');
   const t0 = Date.now();
   const out = await delegateExecute(
     { agent: 'researcher', prompt: 'do work', description: 'do work', background: true },
@@ -97,7 +103,9 @@ test('foreground Delegate writes a trace file with subagent activity', async (t)
   t.after(() => parent?.cleanup());
   const tmpDir = createTestTempDir(t, 'delegate-parent-');
   parent = await createAgent({ apiKey: 'x', storagePaths: { tmpDir } });
-  const { execute: delegateExecute } = await import('../../src/tools/system/delegate.js');
+  const {
+    delegateTask: { execute: delegateExecute },
+  } = await import('../../../src/tools/system/delegate-task.js');
   const out = await delegateExecute(
     { prompt: 'do work', description: 'do work' },
     { agent: parent, signal: new AbortController().signal },
@@ -130,7 +138,9 @@ test('background Delegate streams a trace file and exit event carries traceLogPa
     seen.push(e);
     resolveDone();
   });
-  const { execute: delegateExecute } = await import('../../src/tools/system/delegate.js');
+  const {
+    delegateTask: { execute: delegateExecute },
+  } = await import('../../../src/tools/system/delegate-task.js');
   const out = await delegateExecute(
     { prompt: 'do work', description: 'do work', background: true },
     { agent: parent, signal: new AbortController().signal },

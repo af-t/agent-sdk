@@ -157,6 +157,7 @@ class Agent {
     } = options;
 
     this.logger = logger ?? resolveLogger(undefined, { debug: config.debug });
+    this.config = { ...config, environment: { ...process.env } };
     this.skillRegistry = suppliedSkillRegistry ?? new SkillRegistry({ logger: this.logger });
     this.restricted = restricted !== false;
     if (this.restricted === false) {
@@ -2046,7 +2047,7 @@ function memoryHintInjector(memoryDirFn, memoryTypesFn) {
       '### Available types',
       typeLines,
       '',
-      'You **MUST** load the `using-memory` skill (via the Skill tool with action="load",',
+      'You **MUST** load the `using-memory` skill (via the loadSkill tool with action="load",',
       'argument="using-memory") BEFORE the first memory write or update in this conversation,',
       'unless you have already loaded it. The skill defines file format, naming conventions,',
       'and the MEMORY.md index protocol, and you are required to follow it exactly.',
@@ -2073,7 +2074,7 @@ function skillListInjector(skillRegistry) {
     if (lines.length === 0) return '';
     return (
       `## Available skills\n${lines.join('\n')}\n\n` +
-      'When a skill is relevant to your current task, you **MUST** load it via the Skill tool ' +
+      'When a skill is relevant to your current task, you **MUST** load it via the loadSkill tool ' +
       '(action="load", argument=<skill name>) and follow its instructions and conventions exactly. ' +
       'Do not invent alternative approaches or formats when a skill provides authoritative guidance ' +
       'for the task at hand. Skill bodies are the source of truth for their respective domains.'

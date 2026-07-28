@@ -7,7 +7,7 @@ description: Persistent file-based memory protocol: when to save, how to format,
 
 ## Overview
 
-This skill covers the persistent file-based memory system. Memory files are stored as markdown files with YAML-like frontmatter in the memory directory (see `<system-reminder>` for the exact path). The LLM uses `writeFile`, `readFile`, and `editFile` to manage memory files, and the **RecallMemory** tool to search memories by meaning. Nothing is auto-created; you create files on demand.
+This skill covers the persistent file-based memory system. Memory files are stored as markdown files with YAML-like frontmatter in the memory directory (see `<system-reminder>` for the exact path). The LLM uses `writeFile`, `readFile`, and `editFile` to manage memory files, and the **recallMemory** tool to search memories by meaning. Nothing is auto-created; you create files on demand.
 
 Memory is injected into the LLM's context on every turn via the **injector system**: specifically the `memoryIndex` (first-turn) and `memoryHint` (first-turn) injectors. Their output is concatenated into a single `<system-reminder>…</system-reminder>` block that appears before the last user message content part. The `date` injector (per-turn) also adds the current timestamp.
 
@@ -38,7 +38,7 @@ LLM sees index on the very first turn → reads relevant files on demand
 
 - **You** create, read, update, and delete memory files using standard tools: the agent never auto-writes memories.
 - **`resolveSafePath`** applies to all memory file operations (paths are validated against the project root).
-- **Subagents** (spawned via Delegate) receive the same builtin injectors with defaults but **do not** inherit custom injectors, custom `memoryDir`, or `memoryTypes` from the parent agent.
+- **Subagents** (spawned via delegateTask) receive the same builtin injectors with defaults but **do not** inherit custom injectors, custom `memoryDir`, or `memoryTypes` from the parent agent.
 - The `memoryIndex` injector reads `<memoryDir>/MEMORY.md`: if the file is missing or empty, it returns an empty string (no error).
 
 ### Memory Directory
@@ -148,7 +148,7 @@ See [Setup](project_setup.md) for initial configuration steps.
 
 ## Stale Memory Guidance
 
-- **Before recommending from memory**: verify the information is still current. Check git log, file timestamps, or run a quick Bash command.
+- **Before recommending from memory**: verify the information is still current. Check git log, file timestamps, or run a quick runShell command.
 - **If a memory is stale**: update it in-place (editFile) rather than creating a duplicate.
 - **If a memory is obsolete**: delete the file and remove its line from MEMORY.md.
 
@@ -188,7 +188,7 @@ Then update MEMORY.md:
 ### Retrieving Memories
 
 1. Check `<memoryDir>/MEMORY.md` index for relevant entries (already visible in first-turn context).
-2. If you need the full content of specific memories or want to search memories by meaning, call the `RecallMemory` tool with a descriptive query.
+2. If you need the full content of specific memories or want to search memories by meaning, call the `recallMemory` tool with a descriptive query.
 3. Use readFile for specific memory files if you need to browse them, or rely on the tool's recalled bodies.
 4. Verify the information is still current before acting on it.
 
@@ -251,7 +251,7 @@ The reminder block is inserted as a new text part **before** the last content pa
 
 ### Subagent Behavior
 
-Subagents (spawned via the Delegate tool) construct their own Agent with default injectors. They **do not** inherit:
+Subagents (spawned via the delegateTask tool) construct their own Agent with default injectors. They **do not** inherit:
 
 - Custom `memoryDir` or `memoryTypes` from the parent
 - Custom injectors registered via `registerInjector()`

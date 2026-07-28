@@ -6,7 +6,7 @@ import os from 'node:os';
 
 import { createTestTempDir } from '../../support/temp.js';
 
-describe('Todo Tool', () => {
+describe('manageTodos tool', () => {
   let tmpDir;
   let testFile;
   let cleanup; // for helper
@@ -22,9 +22,9 @@ describe('Todo Tool', () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('should export required fields', async () => {
-    const mod = await import('../../../src/tools/general/todo.js');
-    assert.strictEqual(mod.name, 'Todo');
+  it('exports only the canonical manageTodos object', async () => {
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
+    assert.strictEqual(mod.name, 'manageTodos');
     assert.ok(mod.description);
     assert.ok(mod.inputSchema);
     assert.strictEqual(typeof mod.execute, 'function');
@@ -32,7 +32,7 @@ describe('Todo Tool', () => {
 
   it('should add a new todo', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     const result = await mod.execute({
       action: 'add',
       text: 'Learn Unit Testing',
@@ -49,7 +49,7 @@ describe('Todo Tool', () => {
 
   it('should reject add without text', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await assert.rejects(
       () =>
         mod.execute({
@@ -62,7 +62,7 @@ describe('Todo Tool', () => {
 
   it('should list todos', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await mod.execute({
       action: 'add',
       text: 'Task 1',
@@ -88,7 +88,7 @@ describe('Todo Tool', () => {
 
   it('should list empty message when no todos', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     const result = await mod.execute({
       action: 'list',
       todo_file: testFile,
@@ -99,7 +99,7 @@ describe('Todo Tool', () => {
 
   it('should filter pending todos', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await mod.execute({ action: 'add', text: 'Pending Task', todo_file: testFile });
     await mod.execute({ action: 'add', text: 'Completed Task', todo_file: testFile });
 
@@ -124,7 +124,7 @@ describe('Todo Tool', () => {
 
   it('should filter completed todos', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await mod.execute({ action: 'add', text: 'Task to complete', todo_file: testFile });
 
     const listResult = await mod.execute({ action: 'list', todo_file: testFile });
@@ -145,7 +145,7 @@ describe('Todo Tool', () => {
 
   it('should complete a todo', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await mod.execute({ action: 'add', text: 'Task to be completed', todo_file: testFile });
 
     const listResult = await mod.execute({ action: 'list', todo_file: testFile });
@@ -168,13 +168,13 @@ describe('Todo Tool', () => {
 
   it('should reject complete without id', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await assert.rejects(() => mod.execute({ action: 'complete', todo_file: testFile }), /Parameter "id" is required/);
   });
 
   it('should reject complete with non-existent id', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await assert.rejects(
       () => mod.execute({ action: 'complete', id: 'nonexistent', todo_file: testFile }),
       /not found/,
@@ -183,7 +183,7 @@ describe('Todo Tool', () => {
 
   it('should reject complete already completed todo', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await mod.execute({ action: 'add', text: 'Task', todo_file: testFile });
     const listResult = await mod.execute({ action: 'list', todo_file: testFile });
     const idMatch = listResult.match(/ID: (\w+)/);
@@ -197,7 +197,7 @@ describe('Todo Tool', () => {
 
   it('should delete a todo', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await mod.execute({ action: 'add', text: 'Task to delete', todo_file: testFile });
 
     const listResult = await mod.execute({ action: 'list', todo_file: testFile });
@@ -220,19 +220,19 @@ describe('Todo Tool', () => {
 
   it('should reject delete without id', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await assert.rejects(() => mod.execute({ action: 'delete', todo_file: testFile }), /Parameter "id" is required/);
   });
 
   it('should reject delete with non-existent id', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await assert.rejects(() => mod.execute({ action: 'delete', id: 'nonexistent', todo_file: testFile }), /not found/);
   });
 
   it('should update todo text', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await mod.execute({ action: 'add', text: 'Old task', todo_file: testFile });
     const listResult = await mod.execute({ action: 'list', todo_file: testFile });
     const idMatch = listResult.match(/ID: (\w+)/);
@@ -252,7 +252,7 @@ describe('Todo Tool', () => {
 
   it('should update todo priority', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await mod.execute({ action: 'add', text: 'Task', todo_file: testFile });
     const listResult = await mod.execute({ action: 'list', todo_file: testFile });
     const idMatch = listResult.match(/ID: (\w+)/);
@@ -272,7 +272,7 @@ describe('Todo Tool', () => {
 
   it('should update todo status (mark as complete)', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await mod.execute({ action: 'add', text: 'Task', todo_file: testFile });
     const listResult = await mod.execute({ action: 'list', todo_file: testFile });
     const idMatch = listResult.match(/ID: (\w+)/);
@@ -292,7 +292,7 @@ describe('Todo Tool', () => {
 
   it('should not change priority when updating other fields (regression)', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await mod.execute({ action: 'add', text: 'Important task', priority: 'high', todo_file: testFile });
 
     const listResult = await mod.execute({ action: 'list', todo_file: testFile });
@@ -315,7 +315,7 @@ describe('Todo Tool', () => {
 
   it('should sort by priority', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await mod.execute({ action: 'add', text: 'Task Low', priority: 'low', todo_file: testFile });
     await mod.execute({ action: 'add', text: 'Task High', priority: 'high', todo_file: testFile });
     await mod.execute({ action: 'add', text: 'Task Medium', priority: 'medium', todo_file: testFile });
@@ -334,7 +334,7 @@ describe('Todo Tool', () => {
 
   it('should clear all todos', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await mod.execute({ action: 'add', text: 'Task 1', todo_file: testFile });
     await mod.execute({ action: 'add', text: 'Task 2', todo_file: testFile });
 
@@ -347,14 +347,14 @@ describe('Todo Tool', () => {
 
   it('should handle clear on empty list', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     const result = await mod.execute({ action: 'clear', todo_file: testFile });
     assert.ok(result.includes('already empty'));
   });
 
   it('should reject when MAX_TODOS limit is reached', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     // Write 1000 todos directly to avoid slow loop
     const todos = Array.from({ length: 1000 }, (_, i) => ({
       id: `id${i}`,
@@ -376,7 +376,7 @@ describe('Todo Tool', () => {
 
   it('should sort by due_date', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await mod.execute({ action: 'add', text: 'Later task', due_date: '2030-12-31T00:00:00Z', todo_file: testFile });
     await mod.execute({ action: 'add', text: 'Earlier task', due_date: '2025-01-01T00:00:00Z', todo_file: testFile });
     await mod.execute({ action: 'add', text: 'No due date task', todo_file: testFile });
@@ -389,7 +389,7 @@ describe('Todo Tool', () => {
 
   it('should display due_date info when listing todos with due_date', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await mod.execute({
       action: 'add',
       text: 'Task with due date',
@@ -403,7 +403,7 @@ describe('Todo Tool', () => {
 
   it('should reject update without id', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await assert.rejects(
       () => mod.execute({ action: 'update', text: 'New text', todo_file: testFile }),
       /Parameter "id" is required/,
@@ -412,7 +412,7 @@ describe('Todo Tool', () => {
 
   it('should reject update with non-existent id', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await assert.rejects(
       () => mod.execute({ action: 'update', id: 'nonexistent', text: 'New text', todo_file: testFile }),
       /not found/,
@@ -421,7 +421,7 @@ describe('Todo Tool', () => {
 
   it('should update todo category', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await mod.execute({ action: 'add', text: 'Task', todo_file: testFile });
     const listResult = await mod.execute({ action: 'list', todo_file: testFile });
     const id = listResult.match(/ID: (\w+)/)[1];
@@ -433,7 +433,7 @@ describe('Todo Tool', () => {
 
   it('should update todo due_date', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await mod.execute({ action: 'add', text: 'Task', todo_file: testFile });
     const listResult = await mod.execute({ action: 'list', todo_file: testFile });
     const id = listResult.match(/ID: (\w+)/)[1];
@@ -444,7 +444,7 @@ describe('Todo Tool', () => {
 
   it('should return no-changes message when update has no fields', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await mod.execute({ action: 'add', text: 'Task', todo_file: testFile });
     const listResult = await mod.execute({ action: 'list', todo_file: testFile });
     const id = listResult.match(/ID: (\w+)/)[1];
@@ -455,7 +455,7 @@ describe('Todo Tool', () => {
 
   it('should display due_date info in update output', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await mod.execute({ action: 'add', text: 'Task', due_date: '2030-06-15T00:00:00Z', todo_file: testFile });
     const listResult = await mod.execute({ action: 'list', todo_file: testFile });
     const id = listResult.match(/ID: (\w+)/)[1];
@@ -466,7 +466,7 @@ describe('Todo Tool', () => {
 
   it('should throw for unknown action', async () => {
     await cleanup();
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await assert.rejects(() => mod.execute({ action: 'invalid_action', todo_file: testFile }), /Unknown action/);
   });
 
@@ -476,7 +476,7 @@ describe('Todo Tool', () => {
     const tmpDir = createTestTempDir(t, 'todo-agent-test-');
     const agentTodoFile = path_.join(tmpDir, 'todos-abc12.json');
 
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     const ctx = {
       agent: {
         _todoFile: agentTodoFile,
@@ -494,7 +494,7 @@ describe('Todo Tool', () => {
   });
 
   it('throws a clear error when neither todo_file nor ctx.agent._todoFile is provided', async () => {
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await assert.rejects(() => mod.execute({ action: 'list' }, {}), /configured storage path|todo_file/i);
   });
 
@@ -504,7 +504,7 @@ describe('Todo Tool', () => {
     const base = createTestTempDir(t, 'todo-mkdir-');
     const nestedFile = path_.join(base, '.agent-sdk', 'todos.json');
 
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     const ctx = { agent: { _todoFile: nestedFile, trustedPaths: new Set([base]) } };
 
     const result = await mod.execute({ action: 'add', text: 'Nested todo' }, ctx);
@@ -521,7 +521,7 @@ describe('Todo Tool', () => {
     const agentTodoFile = path_.join(tmpDir, 'agent.json');
     const explicitFile = path_.join(tmpDir, 'explicit.json');
 
-    const mod = await import('../../../src/tools/general/todo.js');
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     const ctx = {
       agent: {
         _todoFile: agentTodoFile,

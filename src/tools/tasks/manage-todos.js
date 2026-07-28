@@ -42,13 +42,12 @@ const formatTodoDetails = (todo) => {
   return { status, priorityLabel, dueInfo };
 };
 
-export const name = 'Todo';
-
-export const description =
+const description =
   'Manage a todo list to track tasks and activities. Supports add, list, complete, delete, update, and clear actions with filtering, sorting, priority, category, and due date support. Data is persisted to a JSON file.';
 
-export const inputSchema = {
+const inputSchema = {
   type: 'object',
+  additionalProperties: false,
   properties: {
     action: {
       type: 'string',
@@ -99,7 +98,7 @@ export const inputSchema = {
   required: ['action'],
 };
 
-export const execute = async (
+const execute = async (
   { action, text, priority, due_date, category, id, completed, filter = 'all', sort_by = 'created_at', todo_file },
   ctx = {},
 ) => {
@@ -309,3 +308,5 @@ export const execute = async (
     throw error;
   }
 };
+
+export const manageTodos = { name: 'manageTodos', description, inputSchema, execute };

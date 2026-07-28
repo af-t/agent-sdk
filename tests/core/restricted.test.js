@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import createAgent from '../../src/index.js';
 import { ToolRegistry } from '../../src/registries/tool-registry.js';
-import { execute as bashExecute } from '../../src/tools/system/bash.js';
+import { runShell } from '../../src/tools/system/run-shell.js';
+const { execute: bashExecute } = runShell;
 
 test('agent.restricted defaults to true', async () => {
   const agent = await createAgent({ apiKey: 'sk-test' });

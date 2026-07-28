@@ -208,26 +208,24 @@ function requestOnce(urlStr, { signal, lookup } = {}) {
 
 let _transport = requestOnce;
 // Swap the transport (tests inject a stub); no argument restores the default
-export function _setTransport(fn) {
+function _setTransport(fn) {
   _transport = fn || requestOnce;
 }
 
-export const name = 'WebFetch';
-export const description =
+const description =
   'Fetch and analyze content from a URL. Use this to retrieve documentation, research technical topics, or read raw code from the web. It automatically cleans HTML for readability.';
-export const inputSchema = {
+const inputSchema = {
   type: 'object',
+  additionalProperties: false,
   properties: {
     url: { type: 'string', description: 'Target URL' },
-    use_raw: { type: 'boolean', description: 'Return raw HTML if true' },
+    rawContent: { type: 'boolean', description: 'Return raw HTML if true' },
     limit: { type: 'number', description: 'Max characters to return (default 20000)' },
   },
   required: ['url'],
 };
 
-export const execute = async ({ url, use_raw, useRaw = false, limit = 20000 }, ctx = {}) => {
-  const finalUseRaw = use_raw !== undefined ? use_raw : useRaw;
-
+const execute = async ({ url, rawContent = false, limit = 20000 }, ctx = {}) => {
   // Validate URL format (throws if invalid)
   new URL(url);
 
@@ -274,7 +272,7 @@ export const execute = async ({ url, use_raw, useRaw = false, limit = 20000 }, c
         await checkSSRF(redirectUrl);
         // Release the redirect response body before recursing
         await res.body?.cancel().catch(() => {});
-        return execute({ url: redirectUrl, use_raw: finalUseRaw, limit }, { ...ctx, _redirectDepth: redirectDepth });
+        return execute({ url: redirectUrl, rawContent, limit }, { ...ctx, _redirectDepth: redirectDepth });
       }
     }
 
@@ -296,7 +294,7 @@ export const execute = async ({ url, use_raw, useRaw = false, limit = 20000 }, c
   }
 
   if (isBinaryContent(raw)) {
-    throw new Error(`Binary content detected (content-type: ${contentType}). WebFetch cannot process binary files.`);
+    throw new Error(`Binary content detected (content-type: ${contentType}). fetchUrl cannot process binary files.`);
   }
 
   if (contentType.includes('application/json')) {
@@ -313,7 +311,7 @@ export const execute = async ({ url, use_raw, useRaw = false, limit = 20000 }, c
   }
 
   // Only HTML reaches cheerio
-  if (finalUseRaw) {
+  if (rawContent) {
     return withContentType(contentType, truncateOutput(raw, limit));
   }
 
@@ -336,4 +334,7 @@ export const execute = async ({ url, use_raw, useRaw = false, limit = 20000 }, c
   return truncateOutput(cleanText, limit);
 };
 
-export { checkSSRF, isBlockedIp };
+export const fetchUrl = Object.assign(
+  { name: 'fetchUrl', description, inputSchema, execute },
+  { _setTransport, checkSSRF, isBlockedIp },
+);

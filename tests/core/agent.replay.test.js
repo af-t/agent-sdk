@@ -247,7 +247,7 @@ test('Agent.replay requires tools and skillRegistry to be supplied together', as
   }
 });
 
-test('Agent.replay uses the SkillRegistry bound to its supplied Skill tool', async (t) => {
+test('Agent.replay uses the SkillRegistry bound to loadSkill', async (t) => {
   const Agent = (await import('../../src/core/agent.js')).default;
   const resource = { agent: undefined };
   t.after(() => resource.agent?.cleanup());
@@ -263,7 +263,11 @@ test('Agent.replay uses the SkillRegistry bound to its supplied Skill tool', asy
 
   assert.equal(resource.agent.skillRegistry, skillRegistry);
   assert.match(
-    await resource.agent.tools.execute('Skill', { action: 'load', argument: 'replay-marker' }),
+    await resource.agent.tools.execute(
+      'loadSkill',
+      { action: 'load', argument: 'replay-marker' },
+      { agent: resource.agent },
+    ),
     /Replay marker body/,
   );
 });

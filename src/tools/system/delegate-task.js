@@ -4,14 +4,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import Agent from '../../core/agent.js';
 import { LIMITS } from '../../support/payload.js';
-import logger from '../../core/logger.js';
 import { createTraceWriter } from '../../core/trace-writer.js';
 
-export const name = 'Delegate';
-export const description =
-  'Delegate a specific task to a specialized sub-agent. Use this for complex research, repetitive operations, or tasks with high-volume output to keep the main session history clean. Side effect: spawns a subagent that may itself touch the filesystem and shell. Avoid parallel Delegate calls targeting overlapping work.';
-export const inputSchema = {
+const description =
+  'Delegate a specific task to a specialized sub-agent. Use this for complex research, repetitive operations, or tasks with high-volume output to keep the main session history clean. Side effect: spawns a subagent that may itself touch the filesystem and shell. Avoid parallel delegateTask calls targeting overlapping work.';
+const inputSchema = {
   type: 'object',
+  additionalProperties: false,
   properties: {
     description: { type: 'string', description: 'Explain why to use this tool' },
     prompt: {
@@ -34,15 +33,15 @@ export const inputSchema = {
   required: ['prompt', 'description'],
 };
 
-export const execute = async ({ description, prompt, persona, id, background = false }, { agent, signal }) => {
+const execute = async ({ description, prompt, persona, id, background = false }, { agent, signal, logger }) => {
   if (signal?.aborted) {
-    throw new Error('Delegate aborted');
+    throw new Error('delegateTask aborted');
   }
 
   const depth = (agent._delegateDepth || 0) + 1;
   const MAX_DELEGATE_DEPTH = 3;
   if (depth > MAX_DELEGATE_DEPTH) {
-    throw new Error(`Delegate depth limit reached (${MAX_DELEGATE_DEPTH}). Cannot nest deeper.`);
+    throw new Error(`delegateTask depth limit reached (${MAX_DELEGATE_DEPTH}). Cannot nest deeper.`);
   }
 
   let resolvedId = id;
@@ -81,7 +80,7 @@ export const execute = async ({ description, prompt, persona, id, background = f
     subagent = agent.subagents.get(resolvedId);
   }
 
-  logger.info('Spawning subagent for:', description);
+  logger?.info({ component: 'delegateTask', description, background }, 'Starting delegated task');
 
   if (background) {
     if (!agent) {
@@ -153,7 +152,7 @@ export const execute = async ({ description, prompt, persona, id, background = f
       try {
         fs.writeFileSync(logPath, report + footer);
       } catch (err) {
-        logger.warn(`Delegate background log write failed: ${err.message}`);
+        logger?.warn({ component: 'delegateTask', error: err }, 'Background log write failed');
       }
 
       agent._fireBackgroundExit({
@@ -165,7 +164,7 @@ export const execute = async ({ description, prompt, persona, id, background = f
         logPath,
         traceLogPath,
       });
-    })().catch((err) => logger.warn(`Delegate background finalize failed: ${err.message}`));
+    })().catch((err) => logger?.warn({ component: 'delegateTask', error: err }, 'Background task finalization failed'));
 
     return (
       `Subagent started in background.\n` +
@@ -173,7 +172,7 @@ export const execute = async ({ description, prompt, persona, id, background = f
       `Subagent ID: ${resolvedId} (${isNew ? 'new' : 'reused'})\n` +
       `Log: ${logPath}\n` +
       `Trace (live): ${traceLogPath}\n` +
-      `Use Wakeup({ delay_ms, watch: ['${bgId}'] }) to wait or peek, or use readFile for the log.`
+      `Use scheduleWakeup({ delay_ms, watch: ['${bgId}'] }) to wait or peek, or use readFile for the log.`
     );
   }
 
@@ -249,3 +248,5 @@ export const execute = async ({ description, prompt, persona, id, background = f
     throw new Error(`Delegation failed: ${err.message}`, { cause: err });
   }
 };
+
+export const delegateTask = { name: 'delegateTask', description, inputSchema, execute };

@@ -108,7 +108,7 @@ describe('createAgent', () => {
     assert.equal(closed, false);
   });
 
-  it('should load built-in tools (readFile, writeFile, editFile, findFiles, listFiles, Bash, etc.)', async () => {
+  it('loads the canonical built-in tools', async () => {
     const agent = await createAgent();
     const tools = agent.tools.listTools();
     const names = tools.map((t) => t.name);
@@ -118,12 +118,19 @@ describe('createAgent', () => {
     assert(names.includes('editFile'), 'editFile tool should be loaded');
     assert(names.includes('findFiles'), 'findFiles tool should be loaded');
     assert(names.includes('listFiles'), 'listFiles tool should be loaded');
-    assert(names.includes('Bash'), 'Bash tool should be loaded');
-    assert(names.includes('Delegate'), 'Delegate tool should be loaded');
-    assert(names.includes('WebSearch'), 'WebSearch tool should be loaded');
-    assert(names.includes('WebFetch'), 'WebFetch tool should be loaded');
-    assert(names.includes('Todo'), 'Todo tool should be loaded');
-    assert(names.includes('Skill'), 'Skill tool should be loaded');
+    for (const name of [
+      'manageTodos',
+      'recallMemory',
+      'fetchUrl',
+      'searchWeb',
+      'runShell',
+      'delegateTask',
+      'manageJobs',
+      'loadSkill',
+      'scheduleWakeup',
+    ]) {
+      assert(names.includes(name), `${name} tool should be loaded`);
+    }
   });
 
   it('explicit model option wins over env config', async () => {

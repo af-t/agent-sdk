@@ -1,7 +1,7 @@
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import createAgent from '../../src/index.js';
-import Agent from '../../src/core/agent.js';
+import createAgent from '../../../src/index.js';
+import Agent from '../../../src/core/agent.js';
 
 test('foreground Delegate waits for subagent background jobs to finish', async () => {
   const parent = await createAgent({ apiKey: 'x' });
@@ -24,7 +24,9 @@ test('foreground Delegate waits for subagent background jobs to finish', async (
   });
 
   try {
-    const { execute: delegateExecute } = await import('../../src/tools/system/delegate.js');
+    const {
+      delegateTask: { execute: delegateExecute },
+    } = await import('../../../src/tools/system/delegate-task.js');
     const t0 = Date.now();
     const out = await delegateExecute(
       { agent: 'researcher', prompt: 'do work', description: 'do work', background: false },

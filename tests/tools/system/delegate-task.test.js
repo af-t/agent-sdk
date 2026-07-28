@@ -34,11 +34,12 @@ describe('Delegate tool module', () => {
   let mod;
 
   before(async () => {
-    mod = await import('../../../src/tools/system/delegate.js');
+    mod = (await import('../../../src/tools/system/delegate-task.js')).delegateTask;
   });
 
-  it('should export name', () => {
-    assert.strictEqual(mod.name, 'Delegate');
+  it('exports delegateTask as a strict tool object', () => {
+    assert.strictEqual(mod.name, 'delegateTask');
+    assert.strictEqual(mod.inputSchema.additionalProperties, false);
   });
 
   it('should export description', () => {
@@ -76,7 +77,7 @@ describe('Delegate tool: execute()', () => {
   let Agent;
 
   before(async () => {
-    mod = await import('../../../src/tools/system/delegate.js');
+    mod = (await import('../../../src/tools/system/delegate-task.js')).delegateTask;
     Agent = (await import('../../../src/core/agent.js')).default;
   });
 
@@ -127,7 +128,7 @@ describe('Delegate tool: execute()', () => {
     const child = parent.subagents.get('shared-skills');
     assert.equal(child.skillRegistry, parent.skillRegistry);
     assert.match(
-      await child.tools.execute('Skill', { action: 'load', argument: 'delegate-marker' }),
+      await child.tools.execute('loadSkill', { action: 'load', argument: 'delegate-marker' }, { agent: child }),
       /Delegate marker body/,
     );
   });
@@ -187,7 +188,7 @@ describe('Delegate tool: execute()', () => {
 
     await assert.rejects(
       () => mod.execute({ description: 'd', prompt: 'p' }, { agent: parent }),
-      /Delegate depth limit reached/,
+      /delegateTask depth limit reached/,
     );
   });
 
@@ -196,7 +197,7 @@ describe('Delegate tool: execute()', () => {
 
     await assert.rejects(
       () => mod.execute({ description: 'Deep task', prompt: 'Do it' }, { agent: fakeAgent }),
-      /Delegate depth limit reached/,
+      /delegateTask depth limit reached/,
     );
   });
 
@@ -300,7 +301,7 @@ describe('Delegate tool: execute()', () => {
 
     await assert.rejects(
       () => mod.execute({ description: 'd', prompt: 'p' }, { agent: fakeAgent, signal: controller.signal }),
-      /Delegate aborted/,
+      /delegateTask aborted/,
     );
 
     // Subagent should never have been created

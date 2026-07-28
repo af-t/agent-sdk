@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import * as tool from '../../../src/tools/general/recall-memory.js';
+import { recallMemory } from '../../../src/tools/tasks/recall-memory.js';
 
-describe('RecallMemory tool', () => {
+describe('recallMemory tool', () => {
   let dir;
 
   before(async () => {
@@ -18,11 +18,11 @@ describe('RecallMemory tool', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  it('exports the required tool fields', () => {
-    assert.equal(tool.name, 'RecallMemory');
-    assert.ok(tool.description);
-    assert.ok(tool.inputSchema);
-    assert.equal(typeof tool.execute, 'function');
+  it('exports the canonical recallMemory object', () => {
+    assert.equal(recallMemory.name, 'recallMemory');
+    assert.ok(recallMemory.description);
+    assert.ok(recallMemory.inputSchema);
+    assert.equal(typeof recallMemory.execute, 'function');
   });
 
   it('formats ranked results from the lexical path (no apiKey)', async () => {
@@ -32,7 +32,7 @@ describe('RecallMemory tool', () => {
       trustedPaths: new Set([dir]),
       usage: { cost: 0, tokens: 0 },
     };
-    const out = await tool.execute({ query: 'gpg signing commits' }, { agent });
+    const out = await recallMemory.execute({ query: 'gpg signing commits' }, { agent });
     assert.match(out, /Recalled memories/);
     assert.match(out, /gpg\.md/);
     assert.match(out, /All commits gpg signed/);
@@ -46,9 +46,9 @@ describe('RecallMemory tool', () => {
       trustedPaths: new Set([dir]),
       usage: { cost: 0, tokens: 0 },
     };
-    const out = await tool.execute({ query: 'x', limit: 999 }, { agent });
+    const out = await recallMemory.execute({ query: 'x', limit: 999 }, { agent });
     assert.ok(out.length > 0); // does not throw on an out-of-range limit
-    const out2 = await tool.execute({ query: 'x', limit: 0 }, { agent });
+    const out2 = await recallMemory.execute({ query: 'x', limit: 0 }, { agent });
     assert.match(out2, /score/); // floored to 1, still returns a result
   });
 
@@ -61,7 +61,7 @@ describe('RecallMemory tool', () => {
         trustedPaths: new Set([empty]),
         usage: { cost: 0, tokens: 0 },
       };
-      const out = await tool.execute({ query: 'x' }, { agent });
+      const out = await recallMemory.execute({ query: 'x' }, { agent });
       assert.match(out, /No memories are stored/);
     } finally {
       await fs.rm(empty, { recursive: true, force: true });
@@ -98,7 +98,7 @@ describe('RecallMemory tool', () => {
         trustedPaths: new Set([fresh]),
         usage: { cost: 0, tokens: 0 },
       };
-      await tool.execute({ query: 'q' }, { agent });
+      await recallMemory.execute({ query: 'q' }, { agent });
       assert.equal(agent.usage.tokens, 30);
     } finally {
       global.fetch = original;

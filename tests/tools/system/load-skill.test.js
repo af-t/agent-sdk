@@ -9,11 +9,12 @@ describe('Skill tool module', () => {
   let mod;
 
   before(async () => {
-    mod = await import('../../../src/tools/system/skill.js');
+    mod = (await import('../../../src/tools/system/load-skill.js')).loadSkill;
   });
 
-  it('should export name', () => {
-    assert.strictEqual(mod.name, 'Skill');
+  it('exports loadSkill as the only tool object', () => {
+    assert.deepStrictEqual(Object.keys(mod), ['name', 'description', 'inputSchema', 'execute']);
+    assert.strictEqual(mod.name, 'loadSkill');
   });
 
   it('should export description', () => {
@@ -34,7 +35,7 @@ describe('Skill tool module', () => {
   });
 
   it('creates an execute function for an injected registry', () => {
-    assert.strictEqual(typeof mod.createSkillTool(new SkillRegistry()).execute, 'function');
+    assert.strictEqual(typeof mod.execute, 'function');
   });
 });
 
@@ -47,7 +48,7 @@ describe('Skill tool: execute()', () => {
 
   before(async () => {
     // Reset and configure registry to find our test skill
-    mod = await import('../../../src/tools/system/skill.js');
+    mod = (await import('../../../src/tools/system/load-skill.js')).loadSkill;
     registry = new SkillRegistry();
     registry.reset();
 
@@ -73,7 +74,7 @@ describe('Skill tool: execute()', () => {
 
     registry.configure({ pluginsDir });
     await registry.refresh();
-    tool = mod.createSkillTool(registry);
+    tool = { execute: (input) => mod.execute(input, { agent: { skillRegistry: registry } }) };
   });
 
   after(async () => {

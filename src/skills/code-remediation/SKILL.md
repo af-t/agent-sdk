@@ -43,13 +43,13 @@ For complex phases, use this three-actor pattern:
 ```
 You (Orchestrator)
   │
-  ├──→ Delegate #1 (Implementor)
+  ├──→ delegateTask #1 (Implementor)
   │     ├── Read all relevant files
   │     ├── Apply all changes for the phase
   │     ├── Mark the plan file [x] for each item
   │     └── Return summary
   │
-  ├──→ Delegate #2 (Reviewer)
+  ├──→ delegateTask #2 (Reviewer)
   │     ├── Read all modified files
   │     ├── Check: correctness, security, edge cases, regressions
   │     ├── Check: imports, consistency, plan file marks
@@ -178,7 +178,7 @@ if (hostname === 'localhost' || hostname === '127.0.0.1') {
 }
 ```
 
-### Command Injection Prevention (Bash Tool)
+### Command Injection Prevention (runShell Tool)
 
 ```js
 // Use blocklist for destruction-level commands
@@ -327,9 +327,9 @@ When reviewing changes, check these dimensions:
    - Simple (1 file, 1 change) → do yourself
    - Complex (multiple files, coordinated changes) → delegate
 3. For complex items:
-   a. Delegate #1: "Implement all items in this group"
+   a. delegateTask #1: "Implement all items in this group"
       - Give file paths, specific changes, and mark the plan file
-   b. Delegate #2: "Review all changes in these files"
+   b. delegateTask #2: "Review all changes in these files"
       - Check correctness, security, edge cases, regressions
    c. Fix findings yourself (don't re-delegate for minor fixes)
 4. Mark the plan file [x] as each item completes
@@ -343,7 +343,7 @@ Categorize findings as:
 - **⚠️ FINDING**: Minor issue or improvement suggestion
 - **🚨 CRITICAL**: Bug or security hole that must be fixed before proceeding
 
-### When to NOT Delegate
+### When to NOT delegateTask
 
 - Single-file, single-line changes (faster to do yourself)
 - Review findings that are minor (fix directly)
@@ -357,7 +357,7 @@ Categorize findings as:
 1. **Read before you write**: Always read the current file state before making changes
 2. **One change at a time**: Apply changes incrementally, not all at once
 3. **Mark as you go**: Update the plan file [x] immediately after each item
-4. **Delegate complex, do simple**: Use sub-agents for multi-file changes, do trivial fixes yourself
+4. **delegateTask complex, do simple**: Use sub-agents for multi-file changes, do trivial fixes yourself
 5. **Review before accepting**: Always verify delegated work with a reviewer
 6. **Fix criticals immediately**: Never leave 🚨 CRITICAL findings unresolved
 7. **Size limits are security**: Add max read/write sizes to prevent resource exhaustion
@@ -376,7 +376,7 @@ Quick-reference checklist for security hardening reviews. Covers 7 categories wi
 
 ### scripts/remediation_helper.sh
 
-Bash script for automated security auditing
+runShell script for automated security auditing
 
 ```bash
 # source the script

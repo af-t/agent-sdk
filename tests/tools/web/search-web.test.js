@@ -19,11 +19,14 @@ describe('WebSearch tool module', () => {
   let mod;
 
   before(async () => {
-    mod = await import('../../../src/tools/web/search.js');
+    mod = (await import('../../../src/tools/web/search-web.js')).searchWeb;
   });
 
-  it('should export name', () => {
-    assert.strictEqual(mod.name, 'WebSearch');
+  it('exports searchWeb with canonical strict input fields', () => {
+    assert.strictEqual(mod.name, 'searchWeb');
+    assert.strictEqual(mod.inputSchema.additionalProperties, false);
+    assert.ok(mod.inputSchema.properties.maxResults);
+    assert.equal(mod.inputSchema.properties.max_results, undefined);
   });
 
   it('should export description', () => {
@@ -50,7 +53,7 @@ describe('ddgJsonSearch()', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../../src/tools/web/search.js');
+    const mod = (await import('../../../src/tools/web/search-web.js')).searchWeb;
     ddgJsonSearch = mod.ddgJsonSearch;
     originalFetch = global.fetch;
   });
@@ -200,7 +203,7 @@ describe('ddgHtmlSearch()', () => {
   ].join('\n');
 
   before(async () => {
-    const mod = await import('../../../src/tools/web/search.js');
+    const mod = (await import('../../../src/tools/web/search-web.js')).searchWeb;
     ddgHtmlSearch = mod.ddgHtmlSearch;
     originalFetch = global.fetch;
   });
@@ -314,7 +317,7 @@ describe('ddgSearch() + formatDdgResults()', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../../src/tools/web/search.js');
+    const mod = (await import('../../../src/tools/web/search-web.js')).searchWeb;
     ddgSearch = mod.ddgSearch;
     formatDdgResults = mod.formatDdgResults;
     originalFetch = global.fetch;
@@ -404,8 +407,8 @@ describe('execute(): fallback when no TAVILY_API_KEY', () => {
   let savedKey;
 
   before(async () => {
-    const mod = await import('../../../src/tools/web/search.js');
-    execute = mod.execute;
+    const mod = await import('../../../src/tools/web/search-web.js');
+    execute = mod.searchWeb.execute;
     originalFetch = global.fetch;
     savedKey = process.env.TAVILY_API_KEY;
     delete process.env.TAVILY_API_KEY;
@@ -471,8 +474,9 @@ describe('execute(): Tavily API path', () => {
   let savedKey;
 
   before(async () => {
-    const mod = await import('../../../src/tools/web/search.js');
-    execute = mod.execute;
+    const mod = await import('../../../src/tools/web/search-web.js');
+    execute = (input, context) =>
+      mod.searchWeb.execute(input, { ...context, agent: { config: { tavilyApiKey: 'tvly-test-key-12345' } } });
     originalFetch = global.fetch;
     savedKey = process.env.TAVILY_API_KEY;
     process.env.TAVILY_API_KEY = 'tvly-test-key-12345';

@@ -20,11 +20,11 @@ function createAbortTimer(signal, timeoutMs) {
   return { controller, timer };
 }
 
-export const name = 'WebSearch';
-export const description =
+const description =
   'Search the web. Uses Tavily when TAVILY_API_KEY is configured, otherwise falls back to DuckDuckGo. Use to find current information, research topics, or answer questions that require up-to-date web data. Returns results with snippets and source URLs.';
-export const inputSchema = {
+const inputSchema = {
   type: 'object',
+  additionalProperties: false,
   properties: {
     query: { type: 'string', description: 'Search query: be specific for best results' },
     depth: {
@@ -32,22 +32,22 @@ export const inputSchema = {
       enum: ['basic', 'advanced'],
       description: '"basic" for quick results (default), "advanced" for deeper research with longer context',
     },
-    max_results: { type: 'number', description: 'Number of results to return (default: 5, max: 20)' },
-    include_answer: {
+    maxResults: { type: 'number', description: 'Number of results to return (default: 5, max: 20)' },
+    includeAnswer: {
       type: 'boolean',
       description: 'Include an AI-generated answer synthesizing results (default: false)',
     },
-    include_domains: {
+    includeDomains: {
       type: 'array',
       items: { type: 'string' },
       description: 'Only search within these domains (e.g. ["python.org", "stackoverflow.com"])',
     },
-    exclude_domains: { type: 'array', items: { type: 'string' }, description: 'Exclude these domains from results' },
+    excludeDomains: { type: 'array', items: { type: 'string' }, description: 'Exclude these domains from results' },
   },
   required: ['query'],
 };
 
-export async function ddgJsonSearch(query, maxResults, signal) {
+async function ddgJsonSearch(query, maxResults, signal) {
   const { controller, timer } = createAbortTimer(signal, LIMITS.fetchTimeoutMs);
 
   try {
@@ -79,7 +79,7 @@ export async function ddgJsonSearch(query, maxResults, signal) {
   }
 }
 
-export async function ddgHtmlSearch(query, maxResults, signal) {
+async function ddgHtmlSearch(query, maxResults, signal) {
   const { controller, timer } = createAbortTimer(signal, LIMITS.fetchTimeoutMs);
 
   try {
@@ -120,7 +120,7 @@ export async function ddgHtmlSearch(query, maxResults, signal) {
   }
 }
 
-export async function ddgSearch(query, maxResults, signal) {
+async function ddgSearch(query, maxResults, signal) {
   try {
     const results = await ddgJsonSearch(query, maxResults, signal);
     if (results.length > 0) return results;
@@ -130,7 +130,7 @@ export async function ddgSearch(query, maxResults, signal) {
   return ddgHtmlSearch(query, maxResults, signal);
 }
 
-export function formatDdgResults(query, results) {
+function formatDdgResults(query, results) {
   if (results.length === 0) return 'No results found.';
   let output = `## Search Results for: "${query}" [via DuckDuckGo]\n\n`;
   results.forEach((r, i) => {
@@ -142,33 +142,16 @@ export function formatDdgResults(query, results) {
   return output.trim();
 }
 
-export const execute = async (
-  {
-    query,
-    depth = 'basic',
-    max_results,
-    maxResults,
-    include_answer,
-    includeAnswer,
-    include_domains,
-    includeDomains,
-    exclude_domains,
-    excludeDomains,
-  },
+const execute = async (
+  { query, depth = 'basic', maxResults = 5, includeAnswer = false, includeDomains, excludeDomains },
   ctx = {},
 ) => {
   if (ctx.signal?.aborted) throw new Error('Request aborted');
 
-  const finalMaxResults = max_results !== undefined ? max_results : maxResults !== undefined ? maxResults : 5;
-  const finalIncludeAnswer =
-    include_answer !== undefined ? include_answer : includeAnswer !== undefined ? includeAnswer : false;
-  const finalIncludeDomains = include_domains !== undefined ? include_domains : includeDomains;
-  const finalExcludeDomains = exclude_domains !== undefined ? exclude_domains : excludeDomains;
-
-  const apiKey = process.env.TAVILY_API_KEY;
+  const apiKey = ctx.agent?.config?.tavilyApiKey;
 
   if (!apiKey) {
-    const capped = Math.min(finalMaxResults, 20);
+    const capped = Math.min(maxResults, 20);
     try {
       const results = await ddgSearch(query, capped, ctx.signal);
       return formatDdgResults(query, results);
@@ -187,11 +170,11 @@ export const execute = async (
       api_key: apiKey,
       query,
       search_depth: depth,
-      max_results: Math.min(finalMaxResults, 20),
-      include_answer: finalIncludeAnswer,
+      max_results: Math.min(maxResults, 20),
+      include_answer: includeAnswer,
     };
-    if (finalIncludeDomains?.length) body.include_domains = finalIncludeDomains;
-    if (finalExcludeDomains?.length) body.exclude_domains = finalExcludeDomains;
+    if (includeDomains?.length) body.include_domains = includeDomains;
+    if (excludeDomains?.length) body.exclude_domains = excludeDomains;
 
     const res = await fetch('https://api.tavily.com/search', {
       method: 'POST',
@@ -239,3 +222,8 @@ export const execute = async (
     clearTimeout(timeout);
   }
 };
+
+export const searchWeb = Object.assign(
+  { name: 'searchWeb', description, inputSchema, execute },
+  { ddgJsonSearch, ddgHtmlSearch, ddgSearch, formatDdgResults },
+);

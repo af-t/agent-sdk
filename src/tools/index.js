@@ -3,34 +3,30 @@ import { findFiles } from './files/find-files.js';
 import { listFiles } from './files/list-files.js';
 import { readFile } from './files/read-file.js';
 import { writeFile } from './files/write-file.js';
-import * as recallMemoryTool from './general/recall-memory.js';
-import * as todoTool from './general/todo.js';
-import * as bashTool from './system/bash.js';
-import * as delegateTool from './system/delegate.js';
-import * as jobsTool from './system/jobs.js';
-import * as skillTool from './system/skill.js';
-import * as wakeupTool from './system/wakeup.js';
-import * as fetchTool from './web/fetch.js';
-import * as searchTool from './web/search.js';
+import { recallMemory } from './tasks/recall-memory.js';
+import { manageTodos } from './tasks/manage-todos.js';
+import { runShell } from './system/run-shell.js';
+import { delegateTask } from './system/delegate-task.js';
+import { manageJobs } from './system/manage-jobs.js';
+import { loadSkill } from './system/load-skill.js';
+import { scheduleWakeup } from './system/schedule-wakeup.js';
+import { fetchUrl } from './web/fetch-url.js';
+import { searchWeb } from './web/search-web.js';
 
 export const builtInTools = [readFile, writeFile, editFile, findFiles, listFiles];
 
 const otherStaticTools = [
-  recallMemoryTool,
-  todoTool,
-  bashTool,
-  delegateTool,
-  jobsTool,
-  wakeupTool,
-  fetchTool,
-  searchTool,
-].map((mod) => ({
-  name: mod.name || mod.default?.name,
-  description: mod.description || mod.default?.description,
-  inputSchema: mod.inputSchema || mod.default?.inputSchema,
-  execute: mod.execute || mod.default?.execute,
-}));
+  manageTodos,
+  recallMemory,
+  fetchUrl,
+  searchWeb,
+  runShell,
+  delegateTask,
+  manageJobs,
+  loadSkill,
+  scheduleWakeup,
+];
 
-export function createBuiltinTools(skillRegistry) {
-  return [...builtInTools, ...otherStaticTools, skillTool.createSkillTool(skillRegistry)];
+export function createBuiltinTools() {
+  return [...builtInTools, ...otherStaticTools];
 }

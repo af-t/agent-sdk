@@ -1,13 +1,13 @@
 import { recallMemories } from '../../core/memory-recall.js';
 
-export const name = 'RecallMemory';
-export const description =
+const description =
   'Search your stored memories by meaning and return the most relevant ones in full. ' +
   'Use this when the memory index hints at a memory whose details you need, or when the ' +
   'user references past context that is not in your current window. Returns memory bodies ' +
   'ranked by relevance to your query. Read-only: it does not modify any memory file.';
-export const inputSchema = {
+const inputSchema = {
   type: 'object',
+  additionalProperties: false,
   properties: {
     query: { type: 'string', description: 'What to search your memories for, in natural language.' },
     limit: { type: 'number', description: 'Maximum memories to return (default 5, capped at 20).' },
@@ -15,7 +15,7 @@ export const inputSchema = {
   required: ['query'],
 };
 
-export const execute = async ({ query, limit }, ctx = {}) => {
+const execute = async ({ query, limit }, ctx = {}) => {
   const agent = ctx.agent || {};
   const memoryDir = agent._memoryDir || `.${agent.appName || 'agent-sdk'}/memory`;
 
@@ -48,3 +48,5 @@ export const execute = async ({ query, limit }, ctx = {}) => {
   const blocks = results.map((r) => `### ${r.name} (score ${r.score.toFixed(2)})\n${r.body}`);
   return [header, ...blocks].join('\n\n');
 };
+
+export const recallMemory = { name: 'recallMemory', description, inputSchema, execute };

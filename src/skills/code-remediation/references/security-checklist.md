@@ -25,7 +25,7 @@
 - [ ] Block non-HTTP(S) protocols
 - [ ] URL format validation (`new URL(url)`)
 
-## Command Injection (Bash)
+## Command Injection (runShell)
 
 - [ ] Destruction-level commands blocked (rm -rf /, dd, mkfs, fork bomb, shutdown)
 - [ ] Suspicious patterns trigger warnings (eval, sudo, chmod, curl|sh)
