@@ -1,5 +1,6 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { ConfigError } from '../src/support/errors.js';
 
 // Ensure env is available for createAgent
 process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || 'sk-test-key-for-index';
@@ -37,6 +38,10 @@ describe('createAgent', () => {
     assert.strictEqual(agent.messages.length, 0);
     assert.strictEqual(agent.usage.cost, 0);
     assert.strictEqual(agent.usage.tokens, 0);
+  });
+
+  it('validates a caller-supplied structured logger', async () => {
+    await assert.rejects(createAgent({ logger: { info() {}, warn() {}, error() {} } }), ConfigError);
   });
 
   it('should load built-in tools (Read, Write, Edit, Find, List, Bash, etc.)', async () => {

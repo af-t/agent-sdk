@@ -1,9 +1,11 @@
 import Agent from './core/agent.js';
 import config from './config.js';
 import { ToolRegistry } from './registry/tool.js';
+import { resolveLogger } from './support/logger.js';
 import { builtinTools } from './tools/index.js';
 
-async function createAgent(options = {}) {
+export async function createAgent(options = {}) {
+  const logger = resolveLogger(options.logger, { debug: config.DEBUG });
   const restricted = options.restricted !== false;
   // Honor a caller-supplied registry; otherwise auto-discover builtins
   let tools = options.tools;
@@ -20,6 +22,7 @@ async function createAgent(options = {}) {
     model: options.model || config.MODEL,
     restricted,
     tools,
+    logger,
   });
 }
 
