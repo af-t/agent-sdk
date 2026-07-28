@@ -112,6 +112,26 @@ describe('Delegate tool: execute()', () => {
     assert.strictEqual(sub.maxTokens, undefined);
   });
 
+  it('shares the parent SkillRegistry when it shares the parent tools', async (t) => {
+    mock.method(Agent.prototype, 'run', async () => 'done');
+    const createAgent = (await import('../../../src/index.js')).default;
+    const parent = await createAgent({ apiKey: 'sk-test-key' });
+    t.after(() => parent.cleanup());
+    await parent.skillRegistry._ensureDiscovered();
+    parent.skillRegistry.skills.set('delegate-marker', {
+      description: 'shared marker',
+      content: 'Delegate marker body.',
+    });
+
+    await mod.execute({ description: 'Task', prompt: 'Work', id: 'shared-skills' }, { agent: parent });
+    const child = parent.subagents.get('shared-skills');
+    assert.equal(child.skillRegistry, parent.skillRegistry);
+    assert.match(
+      await child.tools.execute('Skill', { action: 'load', argument: 'delegate-marker' }),
+      /Delegate marker body/,
+    );
+  });
+
   it('subagent defaults maxCompletionTokens to MAX_COMPLETION_TOKENS_SUBAGENT', async (t) => {
     mock.method(Agent.prototype, 'run', async () => 'done');
 

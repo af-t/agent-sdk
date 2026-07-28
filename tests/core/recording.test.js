@@ -84,6 +84,21 @@ test('forkAt seeds a new independent Agent from the snapshot', async (t) => {
   assert.throws(() => parent.forkAt(rec, 99), /No snapshot/);
 });
 
+test('forkAt shares the SkillRegistry used by the shared Skill tool', async (t) => {
+  const createAgent = (await import('../../src/index.js')).default;
+  const { file } = writeFixture(t, [
+    { t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' },
+    { t: 'x', type: 'turn_snapshot', turn: 1, messages: [], usage: { cost: 0, tokens: 0 } },
+  ]);
+  const parent = await createAgent({ apiKey: 'sk-test' });
+  await parent.skillRegistry._ensureDiscovered();
+  parent.skillRegistry.skills.set('fork-marker', { description: 'shared marker', content: 'Fork marker body.' });
+  const child = parent.forkAt(await Recording.load(file), 1);
+
+  assert.equal(child.skillRegistry, parent.skillRegistry);
+  assert.match(await child.tools.execute('Skill', { action: 'load', argument: 'fork-marker' }), /Fork marker body/);
+});
+
 test('forkAt inherits parent appName', async (t) => {
   const Agent = (await import('../../src/core/agent.js')).default;
   const { file } = writeFixture(t, [

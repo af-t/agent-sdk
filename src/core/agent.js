@@ -454,7 +454,7 @@ class Agent {
   // Each turn's transport yields the recorded response via the _sendForTest
   // seam. toolMode 'replay' (default) returns recorded tool outputs (no side
   // effects re-run); 'live' re-executes the provided tools for real.
-  static replay(recording, { tools, toolMode = 'replay' } = {}) {
+  static replay(recording, { tools, skillRegistry, toolMode = 'replay' } = {}) {
     if (!recording || recording.level !== 'full') {
       throw new Error("Agent.replay requires a 'full'-level recording (record at level 'full' to capture responses)");
     }
@@ -465,6 +465,7 @@ class Agent {
       apiKey: 'replay',
       model: recording.model,
       tools,
+      skillRegistry,
       maxTurns: 0,
       injectors: {
         date: false,
@@ -536,7 +537,7 @@ class Agent {
       appName: this.appName,
       storagePaths: { pluginsDir: this._pluginsDir },
       logger: childLogger,
-      skillRegistry: new SkillRegistry({ logger: childLogger }),
+      skillRegistry: this.skillRegistry,
     });
     // keep in sync with sampling params in constructor
     const carry = [

@@ -61,6 +61,7 @@ export const execute = async ({ description, prompt, persona, id, background = f
       model: agent.model,
       provider: agent.provider,
       tools: agent.tools,
+      skillRegistry: agent.skillRegistry,
       systemPrompt: persona,
       maxCompletionTokens: agent.maxCompletionTokens || LIMITS.maxSubagentCompletionTokens,
       maxTurns: 1000,

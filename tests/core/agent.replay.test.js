@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ToolRegistry } from '../../src/registries/tool-registry.js';
+import { SkillRegistry } from '../../src/registries/skill-registry.js';
 import { Recording } from '../../src/core/recording.js';
 import { createTestTempDir } from '../support/temp.js';
 
@@ -226,6 +227,20 @@ test('Agent.replay toolMode live re-executes tools against the provided registry
   } finally {
     global.fetch = orig;
   }
+});
+
+test('Agent.replay adopts the supplied SkillRegistry alongside supplied tools', async (t) => {
+  const Agent = (await import('../../src/core/agent.js')).default;
+  const resource = { agent: undefined };
+  t.after(() => resource.agent?.cleanup());
+  const { file } = writeFullFixture(t, fullFixtureLines());
+  const rec = await Recording.load(file);
+  const skillRegistry = new SkillRegistry();
+  const tools = new ToolRegistry();
+
+  resource.agent = Agent.replay(rec, { tools, skillRegistry });
+
+  assert.equal(resource.agent.skillRegistry, skillRegistry);
 });
 
 test('Agent.replay reproduces a recorded tool error', async (t) => {

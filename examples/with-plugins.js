@@ -13,25 +13,24 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import createAgent from '../src/index.js';
-import skillRegistry from '../src/registries/skill-registry.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pluginsDir = path.join(__dirname, 'plugins');
 
-// The constructor calls skillRegistry.configure({ pluginsDir }) for us.
+// The constructor configures the Agent-owned SkillRegistry for us.
 const agent = await createAgent({ storagePaths: { pluginsDir } });
 
 // Force discovery so we can inspect what the plugins contributed (no API call).
-await skillRegistry._ensureDiscovered();
+await agent.skillRegistry._ensureDiscovered();
 
 console.log('--- Skills discovered from plugins ---');
-for (const [name, skill] of skillRegistry.skills) {
+for (const [name, skill] of agent.skillRegistry.skills) {
   if (skill.scope !== 'plugin') continue;
   console.log(`- ${name} (plugin: ${skill.plugin}): ${skill.description}`);
 }
 
 console.log('\n--- Plugin instructions (injected as a first-turn system-reminder) ---');
-for (const { plugin, content } of skillRegistry.getPluginInstructions()) {
+for (const { plugin, content } of agent.skillRegistry.getPluginInstructions()) {
   console.log(`### ${plugin}\n${content}`);
 }
 
