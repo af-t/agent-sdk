@@ -49,9 +49,11 @@ import os from 'node:os';
 import fs from 'node:fs';
 
 test('background log dir uses storagePaths.tmpDir when configured', async (t) => {
+  const resource = { agent: undefined };
+  t.after(() => resource.agent?.cleanup());
   const tmp = createTestTempDir(t, 'or-bg-');
-  const agent = await createAgent({ apiKey: 'x', storagePaths: { tmpDir: tmp } });
-  t.after(() => agent.cleanup());
+  resource.agent = await createAgent({ apiKey: 'x', storagePaths: { tmpDir: tmp } });
+  const { agent } = resource;
   const dir = agent._resolveBackgroundLogDir();
   assert.equal(dir, fs.realpathSync(tmp));
 });

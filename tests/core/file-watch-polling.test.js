@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+/* eslint-disable prefer-const */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,11 +20,12 @@ async function waitUntil(fn, ms) {
 // Polling is the recommended mode on WSL2 / network FS, where it must still
 // detect files created after watching started.
 test('polling backend detects a newly created file in a watched directory', async (t) => {
+  let src;
+  t.after(() => src?.stop());
   const dir = createTestTempDir(t, 'fw-poll-');
   fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
   const events = [];
-  const src = createFileWatchSource({ paths: [dir], usePolling: true, pollIntervalMs: 100, debounceMs: 20 });
-  t.after(() => src.stop());
+  src = createFileWatchSource({ paths: [dir], usePolling: true, pollIntervalMs: 100, debounceMs: 20 });
   src.start((e) => events.push(e));
   await sleep(250);
   fs.writeFileSync(path.join(dir, 'fresh.txt'), 'created');
@@ -33,12 +35,13 @@ test('polling backend detects a newly created file in a watched directory', asyn
 });
 
 test('polling backend still reports modifications to pre-existing files', async (t) => {
+  let src;
+  t.after(() => src?.stop());
   const dir = createTestTempDir(t, 'fw-poll-');
   const seed = path.join(dir, 'seed.txt');
   fs.writeFileSync(seed, 'seed');
   const events = [];
-  const src = createFileWatchSource({ paths: [dir], usePolling: true, pollIntervalMs: 100, debounceMs: 20 });
-  t.after(() => src.stop());
+  src = createFileWatchSource({ paths: [dir], usePolling: true, pollIntervalMs: 100, debounceMs: 20 });
   src.start((e) => events.push(e));
   await sleep(250);
   fs.writeFileSync(seed, 'modified-' + Date.now());

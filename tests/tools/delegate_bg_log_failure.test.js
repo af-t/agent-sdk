@@ -1,4 +1,5 @@
 import { describe, it, before, after, mock } from 'node:test';
+/* eslint-disable prefer-const */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createTestTempDir } from '../support/temp.js';
@@ -20,9 +21,10 @@ describe('Delegate background: log write failure does not crash the host', () =>
   });
 
   it('survives a failing background log write and still fires the exit event', async (t) => {
+    let parent;
+    t.after(() => parent?.cleanup());
     const tmpDir = createTestTempDir(t, 'delegate-background-');
-    const parent = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir } });
-    t.after(() => parent.cleanup());
+    parent = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir } });
     // Subagents inherit _sendForTest, so the subagent loop makes no network call.
     parent._sendForTest = async () => ({
       choices: [{ message: { content: 'sub report done', reasoning: null, tool_calls: null }, finish_reason: 'stop' }],

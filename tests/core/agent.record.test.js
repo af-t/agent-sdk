@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { Recording } from '../../src/core/recording.js';
+import { createTestTempDir } from '../support/temp.js';
 
 function makeSse(lines) {
   const encoder = new TextEncoder();
@@ -16,8 +16,10 @@ function makeSse(lines) {
   return { ok: true, status: 200, body: stream };
 }
 
-test('a tool-using run writes events and a turn snapshot to a session file', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentrec-'));
+test('a tool-using run writes events and a turn snapshot to a session file', async (t) => {
+  let agent;
+  t.after(() => agent?.cleanup());
+  const dir = createTestTempDir(t, 'agentrec-');
   const Agent = (await import('../../src/core/agent.js')).default;
   const orig = global.fetch;
   let n = 0;
@@ -33,7 +35,7 @@ test('a tool-using run writes events and a turn snapshot to a session file', asy
   };
 
   try {
-    const agent = new Agent({ apiKey: 'sk-test', record: { dir } });
+    agent = new Agent({ apiKey: 'sk-test', record: { dir } });
     agent.use({
       name: 'Echo',
       description: 'echo',
@@ -60,12 +62,13 @@ test('a tool-using run writes events and a turn snapshot to a session file', asy
     assert.ok(Array.isArray(snap.messages) && snap.messages.length > 0);
   } finally {
     global.fetch = orig;
-    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('non-streaming run (no notify) still records assistant and tool_calls', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentrec-ns-'));
+test('non-streaming run (no notify) still records assistant and tool_calls', async (t) => {
+  let agent;
+  t.after(() => agent?.cleanup());
+  const dir = createTestTempDir(t, 'agentrec-ns-');
   const Agent = (await import('../../src/core/agent.js')).default;
   const orig = global.fetch;
   let n = 0;
@@ -103,7 +106,7 @@ test('non-streaming run (no notify) still records assistant and tool_calls', asy
   };
 
   try {
-    const agent = new Agent({ apiKey: 'sk-test', record: { dir } });
+    agent = new Agent({ apiKey: 'sk-test', record: { dir } });
     agent.use({
       name: 'Echo',
       description: 'echo',
@@ -132,6 +135,5 @@ test('non-streaming run (no notify) still records assistant and tool_calls', asy
     assert.match(trace, /\[assistant\]/);
   } finally {
     global.fetch = orig;
-    fs.rmSync(dir, { recursive: true, force: true });
   }
 });

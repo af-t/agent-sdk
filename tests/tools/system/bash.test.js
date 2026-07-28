@@ -1,4 +1,5 @@
 import { describe, it, before } from 'node:test';
+/* eslint-disable prefer-const */
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import fs from 'node:fs';
@@ -503,14 +504,17 @@ describe('Bash tool: background hint message', () => {
   });
 
   it('background return message reflects automatic exit reporting', async (t) => {
+    let agent;
+    t.after(() => agent?.cleanup());
     const tmpDir = createTestTempDir(t, 'bash-background-');
-    const agent = new Agent({ apiKey: 'x', storagePaths: { tmpDir } });
-    t.after(() => agent.cleanup());
+    agent = new Agent({ apiKey: 'x', storagePaths: { tmpDir } });
     const out = await bash.execute({ command: 'true', background: true }, { agent });
     assert.match(out, /reported automatically/i);
     assert.doesNotMatch(out, /to wait\/peek/);
     const job = agent.backgroundJobs.get(out.match(/Job ID: (bg-\S+)/)[1]);
-    while (job.status === 'running') await new Promise((resolve) => setTimeout(resolve, 10));
+    const deadline = Date.now() + 1000;
+    while (job.status === 'running' && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.notEqual(job.status, 'running', 'background job should finish within one second');
   });
 });
 

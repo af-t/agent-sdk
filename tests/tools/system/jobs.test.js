@@ -1,4 +1,5 @@
 import { describe, it, test, mock } from 'node:test';
+/* eslint-disable prefer-const */
 import assert from 'node:assert/strict';
 
 import Agent from '../../../src/core/agent.js';
@@ -153,9 +154,10 @@ describe('_killBackgroundJob helper', () => {
 });
 
 test('cleanup aborts a running background Delegate controller', async (t) => {
+  let parent;
+  t.after(() => parent?.cleanup());
   const tmpDir = createTestTempDir(t, 'delegate-parent-');
-  const parent = await createAgent({ apiKey: 'x', storagePaths: { tmpDir } });
-  t.after(() => parent.cleanup());
+  parent = await createAgent({ apiKey: 'x', storagePaths: { tmpDir } });
   const controller = new AbortController();
   parent.backgroundJobs.set('bg-clean', {
     id: 'bg-clean',
@@ -179,16 +181,18 @@ test('Jobs stop terminates a real background Delegate (status killed)', async (t
     });
   });
 
+  let parent;
+  let dispose = () => {};
+  t.after(() => parent?.cleanup());
+  t.after(() => dispose());
   const tmpDir = createTestTempDir(t, 'delegate-parent-');
-  const parent = await createAgent({ apiKey: 'x', storagePaths: { tmpDir } });
-  t.after(() => parent.cleanup());
+  parent = await createAgent({ apiKey: 'x', storagePaths: { tmpDir } });
   let resolveExit;
   const exited = new Promise((r) => (resolveExit = r));
-  const dispose = parent._onBackgroundExitRaw((e) => {
+  dispose = parent._onBackgroundExitRaw((e) => {
     if (e.kind === 'delegate') resolveExit(e);
   });
 
-  t.after(dispose);
   const { execute: delegateExecute } = await import('../../../src/tools/system/delegate.js');
   const out = await delegateExecute(
     { prompt: 'long task', description: 'long task', background: true },

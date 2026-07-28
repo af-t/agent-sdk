@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+/* eslint-disable prefer-const */
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -227,12 +228,13 @@ test('a second start warns and does not start the backend twice', () => {
 });
 
 test('real fs.watch backend emits on a real file change, then stops cleanly', async (t) => {
+  let src;
+  t.after(() => src?.stop());
   const dir = createTestTempDir(t, 'fws-');
   const file = join(dir, 'watched.txt');
   writeFileSync(file, 'init');
   const events = [];
-  const src = createFileWatchSource({ paths: dir, debounceMs: 20 });
-  t.after(() => src.stop());
+  src = createFileWatchSource({ paths: dir, debounceMs: 20 });
   src.start((e) => events.push(e));
   await tick(20);
   writeFileSync(file, 'changed');

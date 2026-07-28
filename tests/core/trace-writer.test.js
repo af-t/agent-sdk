@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+/* eslint-disable prefer-const */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -7,11 +8,12 @@ import { createTraceWriter } from '../../src/core/trace-writer.js';
 import { createTestTempDir } from '../support/temp.js';
 
 function createTestTraceWriter(t) {
-  const dir = createTestTempDir(t, 'trace-test-');
-  const writer = createTraceWriter(path.join(dir, 'trace.log'));
   let closePromise;
-  const close = () => (closePromise ??= writer.close());
+  let writer;
+  const close = () => (closePromise ??= writer?.close());
   t.after(close);
+  const dir = createTestTempDir(t, 'trace-test-');
+  writer = createTraceWriter(path.join(dir, 'trace.log'));
   return { close, logPath: path.join(dir, 'trace.log'), writer };
 }
 
@@ -43,12 +45,13 @@ test('flushes a final turn with no tool_calls on close', async (t) => {
 });
 
 test('records tool errors and truncates oversized output', async (t) => {
+  let closePromise;
+  let w;
+  const close = () => (closePromise ??= w?.close());
+  t.after(close);
   const dir = createTestTempDir(t, 'trace-test-');
   const logPath = path.join(dir, 'trace.log');
-  const w = createTraceWriter(logPath, { toolOutputCap: 20 });
-  let closePromise;
-  const close = () => (closePromise ??= w.close());
-  t.after(close);
+  w = createTraceWriter(logPath, { toolOutputCap: 20 });
   await w.notify({ tool_calls: [{ id: 'e1', function: { name: 'Bash' } }] });
   await w.notify({ tool_end: { tool_call_id: 'e1', name: 'Bash', duration_ms: 5, error: 'boom' } });
   await w.notify({ tool_calls: [{ id: 'big', function: { name: 'Read' } }] });

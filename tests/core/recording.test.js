@@ -1,21 +1,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 
 import { Recording } from '../../src/core/recording.js';
 import { resolveLogger } from '../../src/support/logger.js';
+import { createTestTempDir } from '../support/temp.js';
 
-function writeFixture(lines) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'recload-'));
+function writeFixture(t, lines) {
+  const dir = createTestTempDir(t, 'recload-');
   const file = path.join(dir, 'session-fixture.jsonl');
   fs.writeFileSync(file, lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
   return { dir, file };
 }
 
-test('load parses meta, events, and snapshots and skips malformed lines', async () => {
-  const { dir, file } = writeFixture([
+test('load parses meta, events, and snapshots and skips malformed lines', async (t) => {
+  const { file } = writeFixture(t, [
     { t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' },
     { t: 'x', type: 'tool_calls', turn: 1, calls: [{ id: 'c1', name: 'Echo' }] },
     {
@@ -38,12 +38,11 @@ test('load parses meta, events, and snapshots and skips malformed lines', async 
   assert.equal(rec.snapshots.length, 1);
   assert.deepEqual(rec.snapshotAt(1).usage, { cost: 1, tokens: 2 });
   assert.equal(rec.snapshotAt(99), null);
-  fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('forkAt seeds a new independent Agent from the snapshot', async () => {
+test('forkAt seeds a new independent Agent from the snapshot', async (t) => {
   const Agent = (await import('../../src/core/agent.js')).default;
-  const { dir, file } = writeFixture([
+  const { file } = writeFixture(t, [
     { t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' },
     {
       t: 'x',
@@ -83,12 +82,11 @@ test('forkAt seeds a new independent Agent from the snapshot', async () => {
   );
 
   assert.throws(() => parent.forkAt(rec, 99), /No snapshot/);
-  fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('forkAt inherits parent appName', async () => {
+test('forkAt inherits parent appName', async (t) => {
   const Agent = (await import('../../src/core/agent.js')).default;
-  const { dir, file } = writeFixture([
+  const { file } = writeFixture(t, [
     { t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' },
     {
       t: 'x',
@@ -104,12 +102,11 @@ test('forkAt inherits parent appName', async () => {
   const child = parent.forkAt(rec, 1);
   assert.equal(child.appName, 'lumen');
   assert.equal(child._memoryDir, path.resolve('.lumen/memory'));
-  fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('forkAt creates an Agent child logger', async () => {
+test('forkAt creates an Agent child logger', async (t) => {
   const Agent = (await import('../../src/core/agent.js')).default;
-  const { dir, file } = writeFixture([
+  const { file } = writeFixture(t, [
     { t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' },
     {
       t: 'x',
@@ -139,12 +136,11 @@ test('forkAt creates an Agent child logger', async () => {
       message: 'Fork started',
     },
   );
-  fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('forkAt forwards parent pluginsDir', async () => {
+test('forkAt forwards parent pluginsDir', async (t) => {
   const Agent = (await import('../../src/core/agent.js')).default;
-  const { dir, file } = writeFixture([
+  const { file } = writeFixture(t, [
     { t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' },
     {
       t: 'x',
@@ -159,11 +155,10 @@ test('forkAt forwards parent pluginsDir', async () => {
   const parent = new Agent({ apiKey: 'sk-test', storagePaths: { pluginsDir: '/tmp/custom-plugins-xyz' } });
   const child = parent.forkAt(rec, 1);
   assert.equal(child._pluginsDir, parent._pluginsDir);
-  fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('renderTrace reconstructs the human trace from recorded events', async () => {
-  const { dir, file } = writeFixture([
+test('renderTrace reconstructs the human trace from recorded events', async (t) => {
+  const { file } = writeFixture(t, [
     { t: 'x', type: 'session_start', id: 's1', level: 'events', model: 'm' },
     { t: 'x', type: 'assistant', turn: 1, content: 'I will read the file', reasoning: 'thinking about the task' },
     { t: 'x', type: 'tool_calls', turn: 1, calls: [{ id: 'abc', name: 'Read' }] },
@@ -182,22 +177,20 @@ test('renderTrace reconstructs the human trace from recorded events', async () =
   assert.match(trace, /-> Read#abc end \(12ms\): file body/);
   assert.match(trace, /=== turn 2 ===/);
   assert.match(trace, /\[assistant\]\nfinal answer/);
-  fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('renderTrace shows tool errors', async () => {
-  const { dir, file } = writeFixture([
+test('renderTrace shows tool errors', async (t) => {
+  const { file } = writeFixture(t, [
     { t: 'x', type: 'session_start', id: 's1', level: 'events', model: 'm' },
     { t: 'x', type: 'tool_calls', turn: 1, calls: [{ id: 'e1', name: 'Bash' }] },
     { t: 'x', type: 'tool_end', turn: 1, tool_call_id: 'e1', name: 'Bash', duration_ms: 5, error: 'boom' },
   ]);
   const rec = await Recording.load(file);
   assert.match(rec.renderTrace(), /-> Bash#e1 end \(5ms\): ERROR boom/);
-  fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('reads request/response payloads and tool results from a full recording', async () => {
-  const { dir, file } = writeFixture([
+test('reads request/response payloads and tool results from a full recording', async (t) => {
+  const { file } = writeFixture(t, [
     { t: 'x', type: 'session_start', id: 's1', level: 'full', model: 'm' },
     { t: 'x', type: 'request', turn: 1, payload: { model: 'm', messages: [{ role: 'user', content: 'hi' }] } },
     {
@@ -222,5 +215,4 @@ test('reads request/response payloads and tool results from a full recording', a
   assert.deepEqual(rec.toolResult('c1'), { output: 'echoed' });
   assert.deepEqual(rec.toolResult('c2'), { error: 'boom' });
   assert.equal(rec.toolResult('missing'), null);
-  fs.rmSync(dir, { recursive: true, force: true });
 });

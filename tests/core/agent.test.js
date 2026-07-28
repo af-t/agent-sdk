@@ -1,9 +1,11 @@
 import { describe, it, before, after, beforeEach, afterEach, mock } from 'node:test';
+/* eslint-disable prefer-const */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { LIMITS } from '../../src/support/payload.js';
+import { createTestTempDir } from '../support/temp.js';
 
 function makeSseResponse(lines) {
   const encoder = new TextEncoder();
@@ -761,43 +763,46 @@ describe('Agent: cleanup()', () => {
     await assert.doesNotReject(() => agent.cleanup());
   });
 
-  it('deletes files in _storageTmpDir', async () => {
+  it('deletes files in _storageTmpDir', async (t) => {
     const fsP = await import('node:fs/promises');
-    const tmpDir = await fsP.mkdtemp(path.join(os.tmpdir(), 'sdk-cleanup-test-'));
+    let agent;
+    t.after(() => agent?.cleanup());
+    const tmpDir = createTestTempDir(t, 'sdk-cleanup-test-');
     await fsP.writeFile(path.join(tmpDir, 'todos-abc12.json'), '[]');
     await fsP.writeFile(path.join(tmpDir, 'todos-xyz89.json'), '[]');
 
-    const agent = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir } });
+    agent = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir } });
     await agent.cleanup();
 
     const entries = await fsP.readdir(tmpDir);
     assert.strictEqual(entries.length, 0);
-    await fsP.rm(tmpDir, { recursive: true });
   });
 
-  it('does not remove the tmpDir itself', async () => {
+  it('does not remove the tmpDir itself', async (t) => {
     const fsP = await import('node:fs/promises');
-    const tmpDir = await fsP.mkdtemp(path.join(os.tmpdir(), 'sdk-cleanup-test-'));
+    let agent;
+    t.after(() => agent?.cleanup());
+    const tmpDir = createTestTempDir(t, 'sdk-cleanup-test-');
 
-    const agent = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir } });
+    agent = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir } });
     await agent.cleanup();
 
     const stat = await fsP.stat(tmpDir);
     assert.ok(stat.isDirectory());
-    await fsP.rm(tmpDir, { recursive: true });
   });
 
-  it('skips subdirectories in tmpDir', async () => {
+  it('skips subdirectories in tmpDir', async (t) => {
     const fsP = await import('node:fs/promises');
-    const tmpDir = await fsP.mkdtemp(path.join(os.tmpdir(), 'sdk-cleanup-test-'));
+    let agent;
+    t.after(() => agent?.cleanup());
+    const tmpDir = createTestTempDir(t, 'sdk-cleanup-test-');
     await fsP.mkdir(path.join(tmpDir, 'subdir'));
 
-    const agent = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir } });
+    agent = new Agent({ apiKey: 'sk-test', storagePaths: { tmpDir } });
     await agent.cleanup();
 
     const entries = await fsP.readdir(tmpDir);
     assert.deepStrictEqual(entries, ['subdir']);
-    await fsP.rm(tmpDir, { recursive: true });
   });
 
   it('is a no-op when tmpDir does not exist yet', async () => {

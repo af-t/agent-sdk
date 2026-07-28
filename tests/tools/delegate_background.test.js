@@ -1,4 +1,5 @@
 import { test, mock } from 'node:test';
+/* eslint-disable prefer-const */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
@@ -8,9 +9,10 @@ import { createTestTempDir } from '../support/temp.js';
 
 test('Delegate-spawned subagent inherits parent.restricted', async (t) => {
   mock.method(Agent.prototype, 'run', async () => 'subagent report');
+  let parent;
+  t.after(() => parent?.cleanup());
   const tmpDir = createTestTempDir(t, 'delegate-parent-');
-  const parent = await createAgent({ apiKey: 'x', restricted: false, storagePaths: { tmpDir } });
-  t.after(() => parent.cleanup());
+  parent = await createAgent({ apiKey: 'x', restricted: false, storagePaths: { tmpDir } });
 
   const { execute: delegateExecute } = await import('../../src/tools/system/delegate.js');
   const out = await delegateExecute(
@@ -24,12 +26,13 @@ test('Delegate-spawned subagent inherits parent.restricted', async (t) => {
 
 test('Delegate-spawned subagent shares parent storagePaths.tmpDir', async (t) => {
   mock.method(Agent.prototype, 'run', async () => 'r');
+  let parent;
+  t.after(() => parent?.cleanup());
   const tmpDir = createTestTempDir(t, 'delegate-parent-');
-  const parent = await createAgent({
+  parent = await createAgent({
     apiKey: 'x',
     storagePaths: { tmpDir },
   });
-  t.after(() => parent.cleanup());
   const { execute: delegateExecute } = await import('../../src/tools/system/delegate.js');
   await delegateExecute(
     { agent: 'researcher', prompt: 'test', description: 'test delegation' },
@@ -40,9 +43,10 @@ test('Delegate-spawned subagent shares parent storagePaths.tmpDir', async (t) =>
 });
 
 test('Delegate background:true returns immediately with job id', async (t) => {
+  let parent;
+  t.after(() => parent?.cleanup());
   const tmpDir = createTestTempDir(t, 'delegate-parent-');
-  const parent = await createAgent({ apiKey: 'x', storagePaths: { tmpDir } });
-  t.after(() => parent.cleanup());
+  parent = await createAgent({ apiKey: 'x', storagePaths: { tmpDir } });
 
   // Mock Agent.prototype.run: covers both parent and any subagent instances.
   let resolveSubagent;
@@ -89,9 +93,10 @@ test('foreground Delegate writes a trace file with subagent activity', async (t)
     await notify({ tool_end: { tool_call_id: 't1', name: 'Read', duration_ms: 7, output: 'body' } });
     return 'final report from subagent';
   });
+  let parent;
+  t.after(() => parent?.cleanup());
   const tmpDir = createTestTempDir(t, 'delegate-parent-');
-  const parent = await createAgent({ apiKey: 'x', storagePaths: { tmpDir } });
-  t.after(() => parent.cleanup());
+  parent = await createAgent({ apiKey: 'x', storagePaths: { tmpDir } });
   const { execute: delegateExecute } = await import('../../src/tools/system/delegate.js');
   const out = await delegateExecute(
     { prompt: 'do work', description: 'do work' },
@@ -114,15 +119,17 @@ test('background Delegate streams a trace file and exit event carries traceLogPa
     await notify({ tool_end: { tool_call_id: 'b1', name: 'Bash', duration_ms: 3, output: 'ok' } });
     return 'bg final report';
   });
+  let parent;
+  t.after(() => parent?.cleanup());
+  let dispose = () => {};
+  t.after(() => dispose());
   const tmpDir = createTestTempDir(t, 'delegate-parent-');
-  const parent = await createAgent({ apiKey: 'x', storagePaths: { tmpDir } });
-  t.after(() => parent.cleanup());
+  parent = await createAgent({ apiKey: 'x', storagePaths: { tmpDir } });
   const seen = [];
-  const dispose = parent._onBackgroundExitRaw((e) => {
+  dispose = parent._onBackgroundExitRaw((e) => {
     seen.push(e);
     resolveDone();
   });
-  t.after(dispose);
   const { execute: delegateExecute } = await import('../../src/tools/system/delegate.js');
   const out = await delegateExecute(
     { prompt: 'do work', description: 'do work', background: true },
