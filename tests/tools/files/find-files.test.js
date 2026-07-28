@@ -2,11 +2,10 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { execSync } from 'node:child_process';
 
 const FIXTURES = path.resolve('tests/fixtures/find-test-dir');
 
-describe('find.js execute', () => {
+describe('findFiles execute', () => {
   before(async () => {
     await fs.mkdir(path.join(FIXTURES, 'sub'), { recursive: true });
     await fs.writeFile(path.join(FIXTURES, 'alpha.txt'), 'content alpha: hello world', 'utf8');
@@ -20,8 +19,8 @@ describe('find.js execute', () => {
   });
 
   it('finds files by name pattern (mode=name)', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
-    const result = await mod.execute({
+    const mod = await import('../../../src/tools/files/find-files.js');
+    const result = await mod.findFiles.execute({
       path: FIXTURES,
       pattern: 'alpha',
       mode: 'name',
@@ -31,8 +30,8 @@ describe('find.js execute', () => {
   });
 
   it('finds files by content pattern (mode=content)', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
-    const result = await mod.execute({
+    const mod = await import('../../../src/tools/files/find-files.js');
+    const result = await mod.findFiles.execute({
       path: FIXTURES,
       pattern: 'hello',
       mode: 'content',
@@ -42,8 +41,8 @@ describe('find.js execute', () => {
   });
 
   it('returns "No matches found" when nothing matches (name mode)', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
-    const result = await mod.execute({
+    const mod = await import('../../../src/tools/files/find-files.js');
+    const result = await mod.findFiles.execute({
       path: FIXTURES,
       pattern: 'zzznonexistent',
       mode: 'name',
@@ -52,8 +51,8 @@ describe('find.js execute', () => {
   });
 
   it('returns "No matches found" when nothing matches (content mode)', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
-    const result = await mod.execute({
+    const mod = await import('../../../src/tools/files/find-files.js');
+    const result = await mod.findFiles.execute({
       path: FIXTURES,
       pattern: 'zzznonexistent',
       mode: 'content',
@@ -62,8 +61,8 @@ describe('find.js execute', () => {
   });
 
   it('finds by name using regex patterns', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
-    const result = await mod.execute({
+    const mod = await import('../../../src/tools/files/find-files.js');
+    const result = await mod.findFiles.execute({
       path: FIXTURES,
       pattern: '\\.txt$',
       mode: 'name',
@@ -74,7 +73,7 @@ describe('find.js execute', () => {
   });
 });
 
-describe('find.js: injection resistance', () => {
+describe('findFiles: injection resistance', () => {
   let fixturesDir;
 
   before(async () => {
@@ -89,9 +88,9 @@ describe('find.js: injection resistance', () => {
   });
 
   it('handles double-quote in pattern without crashing (name mode)', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
+    const mod = await import('../../../src/tools/files/find-files.js');
     try {
-      const result = await mod.execute({
+      const result = await mod.findFiles.execute({
         path: fixturesDir,
         pattern: '"',
         mode: 'name',
@@ -103,9 +102,9 @@ describe('find.js: injection resistance', () => {
   });
 
   it('handles double-quote in pattern without crashing (content mode)', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
+    const mod = await import('../../../src/tools/files/find-files.js');
     try {
-      const result = await mod.execute({
+      const result = await mod.findFiles.execute({
         path: fixturesDir,
         pattern: '"',
         mode: 'content',
@@ -117,9 +116,9 @@ describe('find.js: injection resistance', () => {
   });
 
   it('handles semicolon in pattern without crashing (name mode)', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
+    const mod = await import('../../../src/tools/files/find-files.js');
     try {
-      const result = await mod.execute({
+      const result = await mod.findFiles.execute({
         path: fixturesDir,
         pattern: ';',
         mode: 'name',
@@ -131,9 +130,9 @@ describe('find.js: injection resistance', () => {
   });
 
   it('handles semicolon in pattern without crashing (content mode)', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
+    const mod = await import('../../../src/tools/files/find-files.js');
     try {
-      const result = await mod.execute({
+      const result = await mod.findFiles.execute({
         path: fixturesDir,
         pattern: ';',
         mode: 'content',
@@ -145,9 +144,9 @@ describe('find.js: injection resistance', () => {
   });
 
   it('handles backticks in pattern without crashing (name mode)', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
+    const mod = await import('../../../src/tools/files/find-files.js');
     try {
-      const result = await mod.execute({
+      const result = await mod.findFiles.execute({
         path: fixturesDir,
         pattern: '`test`',
         mode: 'name',
@@ -159,9 +158,9 @@ describe('find.js: injection resistance', () => {
   });
 
   it('handles backticks in pattern without crashing (content mode)', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
+    const mod = await import('../../../src/tools/files/find-files.js');
     try {
-      const result = await mod.execute({
+      const result = await mod.findFiles.execute({
         path: fixturesDir,
         pattern: '`test`',
         mode: 'content',
@@ -173,11 +172,11 @@ describe('find.js: injection resistance', () => {
   });
 
   it('treats $(id) as literal regex, not command substitution (name mode)', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
+    const mod = await import('../../../src/tools/files/find-files.js');
     // Create a file that literally contains $(id) in its name
     await fs.writeFile(path.join(fixturesDir, 'cmd-$(id)-test.txt'), 'content', 'utf8');
     try {
-      const result = await mod.execute({
+      const result = await mod.findFiles.execute({
         path: fixturesDir,
         pattern: '\\$\\(id\\)',
         mode: 'name',
@@ -194,10 +193,10 @@ describe('find.js: injection resistance', () => {
   });
 
   it('treats $(id) as literal regex, not command substitution (content mode)', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
+    const mod = await import('../../../src/tools/files/find-files.js');
     await fs.writeFile(path.join(fixturesDir, 'content-test.txt'), 'this file contains $(id) as literal text', 'utf8');
     try {
-      const result = await mod.execute({
+      const result = await mod.findFiles.execute({
         path: fixturesDir,
         pattern: '\\$\\(id\\)',
         mode: 'content',
@@ -211,9 +210,9 @@ describe('find.js: injection resistance', () => {
   });
 
   it('handles pipe character in pattern without crashing', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
+    const mod = await import('../../../src/tools/files/find-files.js');
     try {
-      const result = await mod.execute({
+      const result = await mod.findFiles.execute({
         path: fixturesDir,
         pattern: '|',
         mode: 'name',
@@ -225,7 +224,7 @@ describe('find.js: injection resistance', () => {
   });
 });
 
-describe('find.js: abort signal handling', () => {
+describe('findFiles: abort signal handling', () => {
   const FIXTURES_ABORT = path.resolve('tests/fixtures/find-abort-dir');
 
   before(async () => {
@@ -239,49 +238,43 @@ describe('find.js: abort signal handling', () => {
   });
 
   it('rejects immediately when ctx.signal is pre-aborted (mode=name)', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
+    const mod = await import('../../../src/tools/files/find-files.js');
     const ac = new AbortController();
     ac.abort();
     await assert.rejects(
-      () => mod.execute({ path: FIXTURES_ABORT, pattern: '.', mode: 'name' }, { signal: ac.signal }),
+      () => mod.findFiles.execute({ path: FIXTURES_ABORT, pattern: '.', mode: 'name' }, { signal: ac.signal }),
       /abort/i,
     );
   });
 
   it('rejects immediately when ctx.signal is pre-aborted (mode=content)', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
+    const mod = await import('../../../src/tools/files/find-files.js');
     const ac = new AbortController();
     ac.abort();
     await assert.rejects(
-      () => mod.execute({ path: FIXTURES_ABORT, pattern: 'hello', mode: 'content' }, { signal: ac.signal }),
+      () => mod.findFiles.execute({ path: FIXTURES_ABORT, pattern: 'hello', mode: 'content' }, { signal: ac.signal }),
       /abort/i,
     );
   });
 
   it('runs normally when no ctx is provided', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
-    const result = await mod.execute({ path: FIXTURES_ABORT, pattern: 'a\\.txt', mode: 'name' });
+    const mod = await import('../../../src/tools/files/find-files.js');
+    const result = await mod.findFiles.execute({ path: FIXTURES_ABORT, pattern: 'a\\.txt', mode: 'name' });
     assert.ok(typeof result === 'string');
   });
 
   it('runs normally when no ctx is provided (content mode)', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
-    const result = await mod.execute({ path: FIXTURES_ABORT, pattern: 'world', mode: 'content' });
+    const mod = await import('../../../src/tools/files/find-files.js');
+    const result = await mod.findFiles.execute({ path: FIXTURES_ABORT, pattern: 'world', mode: 'content' });
     assert.ok(typeof result === 'string');
   });
 });
 
-describe('find.js: nativeSearch fallback & edge cases', () => {
+describe('findFiles: nativeSearch fallback & edge cases', () => {
   const FIXTURES_NATIVE = path.resolve('tests/fixtures/find-native-dir');
 
   before(async () => {
-    // Clean up any leftover directory from a previous interrupted run
-    // Use execSync for robust cleanup: fs.rm can't delete dirs with 000 permissions
-    try {
-      execSync(`rm -rf ${FIXTURES_NATIVE}`);
-    } catch {
-      /* ignore */
-    }
+    await fs.rm(FIXTURES_NATIVE, { recursive: true, force: true });
     await fs.mkdir(path.join(FIXTURES_NATIVE, 'deep'), { recursive: true });
     await fs.writeFile(path.join(FIXTURES_NATIVE, 'report.pdf'), 'some pdf content', 'utf8');
     await fs.writeFile(path.join(FIXTURES_NATIVE, 'deep', 'notes.txt'), 'important notes here', 'utf8');
@@ -297,35 +290,35 @@ describe('find.js: nativeSearch fallback & edge cases', () => {
   });
 
   it('throws on invalid regex pattern', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
+    const mod = await import('../../../src/tools/files/find-files.js');
     await assert.rejects(
-      () => mod.execute({ path: FIXTURES_NATIVE, pattern: '[invalid', mode: 'name' }),
+      () => mod.findFiles.execute({ path: FIXTURES_NATIVE, pattern: '[invalid', mode: 'name' }),
       /Invalid regex pattern/,
     );
   });
 
   it('skips binary files with null bytes in nativeSearch content mode', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
+    const mod = await import('../../../src/tools/files/find-files.js');
     // Binary file has 'hello' but starts with null bytes -> should be skipped.
     // notes.txt has 'notes' and no null bytes -> should match.
-    const result = await mod.execute({ path: FIXTURES_NATIVE, pattern: 'notes', mode: 'content' });
+    const result = await mod.findFiles.execute({ path: FIXTURES_NATIVE, pattern: 'notes', mode: 'content' });
     assert.ok(result.includes('notes.txt'), 'should find text file with matching content');
     assert.ok(!result.includes('binary.bin'), 'should skip binary file with null bytes');
   });
 
   it('skips binary files with high non-printable chars in nativeSearch', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
+    const mod = await import('../../../src/tools/files/find-files.js');
     const badBuf = Buffer.alloc(200);
     for (let i = 0; i < 150; i++) badBuf[i] = 0x02;
     badBuf.write('secret', 160);
     await fs.writeFile(path.join(FIXTURES_NATIVE, 'junk.bin'), badBuf);
 
-    const result = await mod.execute({ path: FIXTURES_NATIVE, pattern: 'secret', mode: 'content' });
+    const result = await mod.findFiles.execute({ path: FIXTURES_NATIVE, pattern: 'secret', mode: 'content' });
     assert.ok(!result.includes('junk.bin'), 'should skip binary file with high non-printable ratio');
   });
 
   it('handles unreadable directory entries gracefully in nativeSearch', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
+    const mod = await import('../../../src/tools/files/find-files.js');
     const restrictedDir = path.join(FIXTURES_NATIVE, 'restricted');
     await fs.mkdir(restrictedDir, { recursive: true });
     await fs.writeFile(path.join(restrictedDir, 'secret.txt'), 'hidden content', 'utf8');
@@ -335,7 +328,7 @@ describe('find.js: nativeSearch fallback & edge cases', () => {
       // May not work on all platforms: skip restriction
     }
 
-    const result = await mod.execute({ path: FIXTURES_NATIVE, pattern: 'notes', mode: 'content' });
+    const result = await mod.findFiles.execute({ path: FIXTURES_NATIVE, pattern: 'notes', mode: 'content' });
     assert.ok(typeof result === 'string');
 
     try {
@@ -344,26 +337,26 @@ describe('find.js: nativeSearch fallback & edge cases', () => {
   });
 
   it('handles search in subdirectory with relative path prefix', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
-    const result = await mod.execute({ path: FIXTURES_NATIVE, pattern: 'notes', mode: 'name' });
+    const mod = await import('../../../src/tools/files/find-files.js');
+    const result = await mod.findFiles.execute({ path: FIXTURES_NATIVE, pattern: 'notes', mode: 'name' });
     assert.ok(result.includes('notes.txt'));
   });
 
   it('lists matching file with line number and snippet in content mode', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
+    const mod = await import('../../../src/tools/files/find-files.js');
     await fs.writeFile(
       path.join(FIXTURES_NATIVE, 'multi-line.txt'),
       'line one\nline two\nmatch-this-word\nline four',
       'utf8',
     );
 
-    const result = await mod.execute({ path: FIXTURES_NATIVE, pattern: 'match-this-word', mode: 'content' });
+    const result = await mod.findFiles.execute({ path: FIXTURES_NATIVE, pattern: 'match-this-word', mode: 'content' });
     assert.ok(result.includes('multi-line.txt'), 'should mention the filename');
     assert.ok(result.includes(':3:'), 'should reference line 3');
   });
 
   it('handles abort mid-flight in nativeSearch', async () => {
-    const mod = await import('../../../src/tools/file/find.js');
+    const mod = await import('../../../src/tools/files/find-files.js');
     const ac = new AbortController();
     // Create many files to ensure walk takes time
     for (let i = 0; i < 20; i++) {
@@ -372,7 +365,8 @@ describe('find.js: nativeSearch fallback & edge cases', () => {
     setTimeout(() => ac.abort(), 0);
 
     await assert.rejects(
-      () => mod.execute({ path: FIXTURES_NATIVE, pattern: 'content', mode: 'content' }, { signal: ac.signal }),
+      () =>
+        mod.findFiles.execute({ path: FIXTURES_NATIVE, pattern: 'content', mode: 'content' }, { signal: ac.signal }),
       /abort/i,
     );
   });

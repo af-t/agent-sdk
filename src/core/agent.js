@@ -2041,7 +2041,7 @@ function memoryHintInjector(memoryDirFn, memoryTypesFn) {
       .join('\n');
     return [
       '## Memory system',
-      `Memory files live at \`${memoryDir}/\`. Use Write/Read/Edit tools to manage them.`,
+      `Memory files live at \`${memoryDir}/\`. Use writeFile, readFile, and editFile to manage them.`,
       '',
       '### Available types',
       typeLines,

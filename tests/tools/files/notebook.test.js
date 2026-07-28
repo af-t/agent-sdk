@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { flattenNotebook } from '../../src/core/notebook.js';
+import { flattenNotebook } from '../../../src/tools/files/notebook.js';
 
 function makeNb(cells, meta = {}) {
   return JSON.stringify({

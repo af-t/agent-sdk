@@ -5,7 +5,7 @@ import path from 'node:path';
 
 const FIXTURES = path.resolve('tests/fixtures/list-test-dir');
 
-describe('list.js execute', () => {
+describe('listFiles execute', () => {
   before(async () => {
     await fs.mkdir(path.join(FIXTURES, 'subdir'), { recursive: true });
     await fs.writeFile(path.join(FIXTURES, 'file_a.txt'), 'aaa', 'utf8');
@@ -18,8 +18,8 @@ describe('list.js execute', () => {
   });
 
   it('lists files at the given path (depth=1)', async () => {
-    const mod = await import('../../../src/tools/file/list.js');
-    const result = await mod.execute({ path: FIXTURES });
+    const mod = await import('../../../src/tools/files/list-files.js');
+    const result = await mod.listFiles.execute({ path: FIXTURES });
     assert.ok(result.includes('file_a.txt'));
     assert.ok(result.includes('file_b.txt'));
     assert.ok(result.includes('subdir/'));
@@ -28,8 +28,8 @@ describe('list.js execute', () => {
   });
 
   it('lists nested files with depth > 1', async () => {
-    const mod = await import('../../../src/tools/file/list.js');
-    const result = await mod.execute({ path: FIXTURES, depth: 2 });
+    const mod = await import('../../../src/tools/files/list-files.js');
+    const result = await mod.listFiles.execute({ path: FIXTURES, depth: 2 });
     assert.ok(result.includes('file_a.txt'));
     assert.ok(result.includes('subdir/'));
     assert.ok(result.includes('nested.txt'));
@@ -38,22 +38,24 @@ describe('list.js execute', () => {
   it('returns "(Empty directory)" for an empty directory', async () => {
     const emptyDir = path.join(FIXTURES, 'empty');
     await fs.mkdir(emptyDir, { recursive: true });
-    const mod = await import('../../../src/tools/file/list.js');
-    const result = await mod.execute({ path: emptyDir });
+    const mod = await import('../../../src/tools/files/list-files.js');
+    const result = await mod.listFiles.execute({ path: emptyDir });
     assert.strictEqual(result, '(Empty directory)');
     await fs.rm(emptyDir, { recursive: true, force: true });
   });
 
   it('includes file sizes in output', async () => {
-    const mod = await import('../../../src/tools/file/list.js');
-    const result = await mod.execute({ path: FIXTURES });
+    const mod = await import('../../../src/tools/files/list-files.js');
+    const result = await mod.listFiles.execute({ path: FIXTURES });
     // file_a.txt has 3 bytes content => "3B"
     assert.ok(result.includes('(3B)'));
   });
 
   it('throws for non-existent directory within project root', async () => {
-    const mod = await import('../../../src/tools/file/list.js');
-    await assert.rejects(() => mod.execute({ path: 'tests/fixtures/nonexistent-dir-xyz' }), { code: 'ENOENT' });
+    const mod = await import('../../../src/tools/files/list-files.js');
+    await assert.rejects(() => mod.listFiles.execute({ path: 'tests/fixtures/nonexistent-dir-xyz' }), {
+      code: 'ENOENT',
+    });
   });
 
   it('shows @ suffix for symbolic links', async () => {
@@ -64,8 +66,8 @@ describe('list.js execute', () => {
     await fs.writeFile(target, 'real content', 'utf8');
     await fs.symlink(target, link);
 
-    const mod = await import('../../../src/tools/file/list.js');
-    const result = await mod.execute({ path: symlinkDir });
+    const mod = await import('../../../src/tools/files/list-files.js');
+    const result = await mod.listFiles.execute({ path: symlinkDir });
     assert.ok(result.includes('link.txt@'), 'symlink should have @ suffix');
 
     await fs.rm(symlinkDir, { recursive: true, force: true });

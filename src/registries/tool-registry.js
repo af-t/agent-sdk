@@ -15,7 +15,13 @@ function validateToolInput(inputSchema, input, toolName) {
   for (const [name, value] of Object.entries(input)) {
     if (name === 'outputLimit') continue;
     const property = properties[name];
-    if (!property || value === undefined || value === null) continue;
+    if (!property) {
+      if (inputSchema.additionalProperties === false) {
+        throw new ToolError(`Unsupported parameter "${name}"`, { toolName });
+      }
+      continue;
+    }
+    if (value === undefined || value === null) continue;
     const valid =
       !property.type ||
       (property.type === 'array'
@@ -29,6 +35,12 @@ function validateToolInput(inputSchema, input, toolName) {
     }
     if (property.enum && !property.enum.includes(value)) {
       throw new ToolError(`Parameter "${name}" must be one of [${property.enum.join(', ')}]`, { toolName });
+    }
+    if (property.type === 'object') validateToolInput(property, value, toolName);
+    if (property.type === 'array' && property.items) {
+      for (const item of value) {
+        if (property.items.type === 'object') validateToolInput(property.items, item, toolName);
+      }
     }
   }
 }

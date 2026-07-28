@@ -18,31 +18,31 @@ async function reset() {
   await fs.writeFile(TEST_FILE, INITIAL, 'utf8');
 }
 
-describe('Edit: replace action', () => {
+describe('editFile: replace action', () => {
   let execute;
   before(async () => {
     await fs.mkdir(FIXTURES, { recursive: true });
     await reset();
-    execute = (await import('../../../src/tools/file/edit.js')).execute;
+    execute = (await import('../../../src/tools/files/edit-file.js')).editFile.execute;
   });
   after(() => fs.rm(TEST_FILE, { force: true }));
   beforeEach(reset);
 
-  it('replaces old_text (single edit)', async () => {
+  it('replaces oldText (single edit)', async () => {
     const result = await execute({
       path: TEST_FILE,
-      edits: [{ action: 'replace', old_text: 'foo bar', new_text: 'FOO BAR' }],
+      edits: [{ action: 'replace', oldText: 'foo bar', newText: 'FOO BAR' }],
     });
-    assert.ok(result.includes('updated successfully'));
+    assert.ok(result.includes('Updated'));
     const content = await fs.readFile(TEST_FILE, 'utf8');
     assert.ok(content.includes('FOO BAR'));
     assert.ok(!content.includes('foo bar'));
   });
 
-  it('replaces line range via start_line/end_line', async () => {
+  it('replaces line range via startLine/endLine', async () => {
     await execute({
       path: TEST_FILE,
-      edits: [{ action: 'replace', start_line: 2, end_line: 4, new_text: 'REPLACED LINES' }],
+      edits: [{ action: 'replace', startLine: 2, endLine: 4, newText: 'REPLACED LINES' }],
     });
     const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');
     assert.equal(lines[0], 'Line one: hello world');
@@ -54,8 +54,8 @@ describe('Edit: replace action', () => {
     await execute({
       path: TEST_FILE,
       edits: [
-        { action: 'replace', old_text: 'foo bar', new_text: 'FOO BAR' },
-        { action: 'replace', old_text: 'baz qux', new_text: 'BAZ QUX' },
+        { action: 'replace', oldText: 'foo bar', newText: 'FOO BAR' },
+        { action: 'replace', oldText: 'baz qux', newText: 'BAZ QUX' },
       ],
     });
     const content = await fs.readFile(TEST_FILE, 'utf8');
@@ -63,67 +63,67 @@ describe('Edit: replace action', () => {
     assert.ok(content.includes('BAZ QUX'));
   });
 
-  it('throws edit[0] when old_text not found', async () => {
+  it('throws edit[0] when oldText not found', async () => {
     await assert.rejects(
-      () => execute({ path: TEST_FILE, edits: [{ action: 'replace', old_text: 'NOTEXIST', new_text: 'x' }] }),
-      /edit\[0\]: 'old_text' not found/,
+      () => execute({ path: TEST_FILE, edits: [{ action: 'replace', oldText: 'NOTEXIST', newText: 'x' }] }),
+      /edit\[0\]: 'oldText' not found/,
     );
   });
 
-  it('throws edit[0] when old_text appears multiple times', async () => {
+  it('throws edit[0] when oldText appears multiple times', async () => {
     await fs.writeFile(TEST_FILE, 'dup\ndup\nother', 'utf8');
     await assert.rejects(
-      () => execute({ path: TEST_FILE, edits: [{ action: 'replace', old_text: 'dup', new_text: 'x' }] }),
-      /edit\[0\]: 'old_text' found multiple times/,
+      () => execute({ path: TEST_FILE, edits: [{ action: 'replace', oldText: 'dup', newText: 'x' }] }),
+      /edit\[0\]: 'oldText' found multiple times/,
     );
   });
 
-  it('throws when replace missing new_text', async () => {
+  it('throws when replace missing newText', async () => {
     await assert.rejects(
-      () => execute({ path: TEST_FILE, edits: [{ action: 'replace', old_text: 'foo bar' }] }),
-      /edit\[0\]: replace requires 'new_text'/,
+      () => execute({ path: TEST_FILE, edits: [{ action: 'replace', oldText: 'foo bar' }] }),
+      /edit\[0\]: replace requires 'newText'/,
     );
   });
 
   it('throws when replace has no anchor', async () => {
     await assert.rejects(
-      () => execute({ path: TEST_FILE, edits: [{ action: 'replace', new_text: 'x' }] }),
-      /edit\[0\]: replace requires 'old_text' or 'start_line'\+'end_line'/,
+      () => execute({ path: TEST_FILE, edits: [{ action: 'replace', newText: 'x' }] }),
+      /edit\[0\]: replace requires 'oldText' or 'startLine'\+'endLine'/,
     );
   });
 
-  it('replaces new_text containing $& literally without interpolation', async () => {
+  it('replaces newText containing $& literally without interpolation', async () => {
     await execute({
       path: TEST_FILE,
-      edits: [{ action: 'replace', old_text: 'foo bar', new_text: '$&-literal' }],
+      edits: [{ action: 'replace', oldText: 'foo bar', newText: '$&-literal' }],
     });
     const content = await fs.readFile(TEST_FILE, 'utf8');
     assert.ok(content.includes('$&-literal'));
     assert.ok(!content.includes('foo bar-literal'));
   });
 
-  it('throws when start_line exceeds end_line', async () => {
+  it('throws when startLine exceeds endLine', async () => {
     await assert.rejects(
-      () => execute({ path: TEST_FILE, edits: [{ action: 'replace', start_line: 5, end_line: 2, new_text: 'x' }] }),
-      /edit\[0\]: start_line \(5\) must not exceed end_line \(2\)/,
+      () => execute({ path: TEST_FILE, edits: [{ action: 'replace', startLine: 5, endLine: 2, newText: 'x' }] }),
+      /edit\[0\]: startLine \(5\) must not exceed endLine \(2\)/,
     );
   });
 });
 
-describe('Edit: insert action', () => {
+describe('editFile: insert action', () => {
   let execute;
   before(async () => {
     await fs.mkdir(FIXTURES, { recursive: true });
     await reset();
-    execute = (await import('../../../src/tools/file/edit.js')).execute;
+    execute = (await import('../../../src/tools/files/edit-file.js')).editFile.execute;
   });
   after(() => fs.rm(TEST_FILE, { force: true }));
   beforeEach(reset);
 
-  it('inserts before line containing anchor_text', async () => {
+  it('inserts before line containing anchorText', async () => {
     await execute({
       path: TEST_FILE,
-      edits: [{ action: 'insert', anchor_text: 'Line two', position: 'before', text: 'INSERTED' }],
+      edits: [{ action: 'insert', anchorText: 'Line two', position: 'before', newText: 'INSERTED' }],
     });
     const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');
     assert.equal(lines[0], 'Line one: hello world');
@@ -131,10 +131,10 @@ describe('Edit: insert action', () => {
     assert.equal(lines[2], 'Line two: foo bar');
   });
 
-  it('inserts after line containing anchor_text', async () => {
+  it('inserts after line containing anchorText', async () => {
     await execute({
       path: TEST_FILE,
-      edits: [{ action: 'insert', anchor_text: 'Line two', position: 'after', text: 'INSERTED' }],
+      edits: [{ action: 'insert', anchorText: 'Line two', position: 'after', newText: 'INSERTED' }],
     });
     const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');
     assert.equal(lines[1], 'Line two: foo bar');
@@ -145,7 +145,7 @@ describe('Edit: insert action', () => {
   it('inserts before a line number', async () => {
     await execute({
       path: TEST_FILE,
-      edits: [{ action: 'insert', line: 3, position: 'before', text: 'BEFORE THREE' }],
+      edits: [{ action: 'insert', startLine: 3, position: 'before', newText: 'BEFORE THREE' }],
     });
     const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');
     assert.equal(lines[2], 'BEFORE THREE');
@@ -155,7 +155,7 @@ describe('Edit: insert action', () => {
   it('inserts after a line number', async () => {
     await execute({
       path: TEST_FILE,
-      edits: [{ action: 'insert', line: 2, position: 'after', text: 'AFTER TWO' }],
+      edits: [{ action: 'insert', startLine: 2, position: 'after', newText: 'AFTER TWO' }],
     });
     const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');
     assert.equal(lines[1], 'Line two: foo bar');
@@ -163,28 +163,29 @@ describe('Edit: insert action', () => {
     assert.equal(lines[3], 'Line three: baz qux');
   });
 
-  it('throws when anchor_text not found', async () => {
+  it('throws when anchorText not found', async () => {
     await assert.rejects(
       () =>
         execute({
           path: TEST_FILE,
-          edits: [{ action: 'insert', anchor_text: 'NOTEXIST', position: 'after', text: 'x' }],
+          edits: [{ action: 'insert', anchorText: 'NOTEXIST', position: 'after', newText: 'x' }],
         }),
-      /edit\[0\]: 'anchor_text' not found/,
+      /edit\[0\]: 'anchorText' not found/,
     );
   });
 
   it('throws when line is out of range', async () => {
     await assert.rejects(
-      () => execute({ path: TEST_FILE, edits: [{ action: 'insert', line: 999, position: 'after', text: 'x' }] }),
+      () =>
+        execute({ path: TEST_FILE, edits: [{ action: 'insert', startLine: 999, position: 'after', newText: 'x' }] }),
       /edit\[0\]: line 999 is out of range/,
     );
   });
 
   it('throws when insert has no anchor', async () => {
     await assert.rejects(
-      () => execute({ path: TEST_FILE, edits: [{ action: 'insert', position: 'after', text: 'x' }] }),
-      /edit\[0\]: insert requires 'anchor_text' or 'line'/,
+      () => execute({ path: TEST_FILE, edits: [{ action: 'insert', position: 'after', newText: 'x' }] }),
+      /edit\[0\]: insert requires 'anchorText' or 'startLine'/,
     );
   });
 
@@ -193,72 +194,72 @@ describe('Edit: insert action', () => {
       () =>
         execute({
           path: TEST_FILE,
-          edits: [{ action: 'insert', anchor_text: 'Line two', position: 'middle', text: 'x' }],
+          edits: [{ action: 'insert', anchorText: 'Line two', position: 'middle', newText: 'x' }],
         }),
       /edit\[0\]: insert requires 'position'/,
     );
   });
 });
 
-describe('Edit: delete action', () => {
+describe('editFile: delete action', () => {
   let execute;
   before(async () => {
     await fs.mkdir(FIXTURES, { recursive: true });
     await reset();
-    execute = (await import('../../../src/tools/file/edit.js')).execute;
+    execute = (await import('../../../src/tools/files/edit-file.js')).editFile.execute;
   });
   after(() => fs.rm(TEST_FILE, { force: true }));
   beforeEach(reset);
 
-  it('deletes matched old_text substring', async () => {
+  it('deletes matched oldText substring', async () => {
     await execute({
       path: TEST_FILE,
-      edits: [{ action: 'delete', old_text: 'foo bar' }],
+      edits: [{ action: 'delete', oldText: 'foo bar' }],
     });
     const content = await fs.readFile(TEST_FILE, 'utf8');
     assert.ok(!content.includes('foo bar'));
     assert.ok(content.includes('Line two:'));
   });
 
-  it('deletes line range via start_line/end_line', async () => {
+  it('deletes line range via startLine/endLine', async () => {
     await execute({
       path: TEST_FILE,
-      edits: [{ action: 'delete', start_line: 2, end_line: 3 }],
+      edits: [{ action: 'delete', startLine: 2, endLine: 3 }],
     });
     const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');
     assert.equal(lines[0], 'Line one: hello world');
     assert.equal(lines[1], 'Line four: lorem ipsum');
   });
 
-  it('throws when old_text not found', async () => {
+  it('throws when oldText not found', async () => {
     await assert.rejects(
-      () => execute({ path: TEST_FILE, edits: [{ action: 'delete', old_text: 'NOTEXIST' }] }),
-      /edit\[0\]: 'old_text' not found/,
+      () => execute({ path: TEST_FILE, edits: [{ action: 'delete', oldText: 'NOTEXIST' }] }),
+      /edit\[0\]: 'oldText' not found/,
     );
   });
 
-  it('throws when old_text appears multiple times', async () => {
+  it('throws when oldText appears multiple times', async () => {
     await fs.writeFile(TEST_FILE, 'dup\ndup\nother', 'utf8');
     await assert.rejects(
-      () => execute({ path: TEST_FILE, edits: [{ action: 'delete', old_text: 'dup' }] }),
-      /edit\[0\]: 'old_text' found multiple times/,
+      () => execute({ path: TEST_FILE, edits: [{ action: 'delete', oldText: 'dup' }] }),
+      /edit\[0\]: 'oldText' found multiple times/,
     );
   });
 
   it('throws when delete has no anchor', async () => {
     await assert.rejects(
       () => execute({ path: TEST_FILE, edits: [{ action: 'delete' }] }),
-      /edit\[0\]: delete requires 'old_text' or 'start_line'\+'end_line'/,
+      /edit\[0\]: delete requires 'oldText' or 'startLine'\+'endLine'/,
     );
   });
 });
 
-describe('Edit: multi-action and edge cases', () => {
+describe('editFile: multi-action and edge cases', () => {
   let execute;
   before(async () => {
     await fs.mkdir(FIXTURES, { recursive: true });
     await reset();
-    execute = (await import('../../../src/tools/file/edit.js')).execute;
+    execute = (await import('../../../src/tools/files/edit-file.js')).editFile.execute;
   });
   after(() => fs.rm(TEST_FILE, { force: true }));
   beforeEach(reset);
@@ -267,9 +268,9 @@ describe('Edit: multi-action and edge cases', () => {
     await execute({
       path: TEST_FILE,
       edits: [
-        { action: 'replace', old_text: 'foo bar', new_text: 'FOO BAR' },
-        { action: 'insert', anchor_text: 'Line three', position: 'after', text: 'INSERTED' },
-        { action: 'delete', old_text: 'lorem ipsum' },
+        { action: 'replace', oldText: 'foo bar', newText: 'FOO BAR' },
+        { action: 'insert', anchorText: 'Line three', position: 'after', newText: 'INSERTED' },
+        { action: 'delete', oldText: 'lorem ipsum' },
       ],
     });
     const content = await fs.readFile(TEST_FILE, 'utf8');
@@ -284,8 +285,8 @@ describe('Edit: multi-action and edge cases', () => {
       execute({
         path: TEST_FILE,
         edits: [
-          { action: 'replace', old_text: 'foo bar', new_text: 'FOO BAR' },
-          { action: 'replace', old_text: 'NONEXISTENT', new_text: 'x' },
+          { action: 'replace', oldText: 'foo bar', newText: 'FOO BAR' },
+          { action: 'replace', oldText: 'NONEXISTENT', newText: 'x' },
         ],
       }),
     );
@@ -299,17 +300,17 @@ describe('Edit: multi-action and edge cases', () => {
         execute({
           path: TEST_FILE,
           edits: [
-            { action: 'replace', old_text: 'foo bar', new_text: 'x' },
-            { action: 'replace', old_text: 'NOTFOUND', new_text: 'y' },
+            { action: 'replace', oldText: 'foo bar', newText: 'x' },
+            { action: 'replace', oldText: 'NOTFOUND', newText: 'y' },
           ],
         }),
-      /edit\[1\]: 'old_text' not found/,
+      /edit\[1\]: 'oldText' not found/,
     );
   });
 
   it('throws for unknown action', async () => {
     await assert.rejects(
-      () => execute({ path: TEST_FILE, edits: [{ action: 'upsert', old_text: 'x', new_text: 'y' }] }),
+      () => execute({ path: TEST_FILE, edits: [{ action: 'upsert', oldText: 'x', newText: 'y' }] }),
       /edit\[0\]: unknown action 'upsert'/,
     );
   });
@@ -324,8 +325,8 @@ describe('Edit: multi-action and edge cases', () => {
     await execute({
       path: TEST_FILE,
       edits: [
-        { action: 'delete', start_line: 1, end_line: 2 },
-        { action: 'replace', start_line: 4, end_line: 4, new_text: 'REPLACED' },
+        { action: 'delete', startLine: 1, endLine: 2 },
+        { action: 'replace', startLine: 4, endLine: 4, newText: 'REPLACED' },
       ],
     });
     const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');
@@ -341,8 +342,8 @@ describe('Edit: multi-action and edge cases', () => {
     await execute({
       path: TEST_FILE,
       edits: [
-        { action: 'insert', line: 2, position: 'after', text: 'INSERTED' },
-        { action: 'replace', start_line: 4, end_line: 4, new_text: 'REPLACED' },
+        { action: 'insert', startLine: 2, position: 'after', newText: 'INSERTED' },
+        { action: 'replace', startLine: 4, endLine: 4, newText: 'REPLACED' },
       ],
     });
     const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');
@@ -355,14 +356,14 @@ describe('Edit: multi-action and edge cases', () => {
     assert.equal(lines.length, 6);
   });
 
-  it('multi-edit: old_text replace then line-based replace: zero delta keeps line numbers intact', async () => {
-    // old_text replace on "foo bar" → "FOO BAR": same line count, delta=0.
+  it('multi-edit: oldText replace then line-based replace: zero delta keeps line numbers intact', async () => {
+    // oldText replace on "foo bar" → "FOO BAR": same line count, delta=0.
     // Subsequent line-based replace at original line 4 must not be shifted.
     await execute({
       path: TEST_FILE,
       edits: [
-        { action: 'replace', old_text: 'foo bar', new_text: 'FOO BAR' },
-        { action: 'replace', start_line: 4, end_line: 4, new_text: 'REPLACED' },
+        { action: 'replace', oldText: 'foo bar', newText: 'FOO BAR' },
+        { action: 'replace', startLine: 4, endLine: 4, newText: 'REPLACED' },
       ],
     });
     const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');
@@ -376,8 +377,8 @@ describe('Edit: multi-action and edge cases', () => {
         execute({
           path: TEST_FILE,
           edits: [
-            { action: 'replace', start_line: 4, end_line: 4, new_text: 'X' },
-            { action: 'delete', start_line: 2, end_line: 2 },
+            { action: 'replace', startLine: 4, endLine: 4, newText: 'X' },
+            { action: 'delete', startLine: 2, endLine: 2 },
           ],
         }),
       /edit\[1\]: line-based edits must be ordered top-to-bottom/,
@@ -385,11 +386,11 @@ describe('Edit: multi-action and edge cases', () => {
   });
 });
 
-describe('Edit: shell metacharacter path resistance', () => {
+describe('editFile: shell metacharacter path resistance', () => {
   let execute;
   before(async () => {
     await fs.mkdir(FIXTURES, { recursive: true });
-    execute = (await import('../../../src/tools/file/edit.js')).execute;
+    execute = (await import('../../../src/tools/files/edit-file.js')).editFile.execute;
   });
   after(async () => {
     try {
@@ -411,9 +412,9 @@ describe('Edit: shell metacharacter path resistance', () => {
     try {
       const result = await execute({
         path: filePath,
-        edits: [{ action: 'replace', old_text: 'original', new_text: 'REPLACED' }],
+        edits: [{ action: 'replace', oldText: 'original', newText: 'REPLACED' }],
       });
-      assert.ok(result.includes('updated successfully'));
+      assert.ok(result.includes('Updated'));
       assert.ok(!result.includes('uid='));
       assert.ok((await fs.readFile(filePath, 'utf8')).includes('REPLACED'));
     } finally {
@@ -426,9 +427,9 @@ describe('Edit: shell metacharacter path resistance', () => {
     try {
       const result = await execute({
         path: filePath,
-        edits: [{ action: 'replace', old_text: 'original', new_text: 'REPLACED' }],
+        edits: [{ action: 'replace', oldText: 'original', newText: 'REPLACED' }],
       });
-      assert.ok(result.includes('updated successfully'));
+      assert.ok(result.includes('Updated'));
       assert.ok((await fs.readFile(filePath, 'utf8')).includes('REPLACED'));
     } finally {
       await fs.rm(filePath, { force: true });
@@ -440,9 +441,9 @@ describe('Edit: shell metacharacter path resistance', () => {
     try {
       const result = await execute({
         path: filePath,
-        edits: [{ action: 'replace', old_text: 'original', new_text: 'REPLACED' }],
+        edits: [{ action: 'replace', oldText: 'original', newText: 'REPLACED' }],
       });
-      assert.ok(result.includes('updated successfully'));
+      assert.ok(result.includes('Updated'));
       assert.ok((await fs.readFile(filePath, 'utf8')).includes('REPLACED'));
       await fs.access(filePath);
     } finally {
@@ -455,9 +456,9 @@ describe('Edit: shell metacharacter path resistance', () => {
     try {
       const result = await execute({
         path: filePath,
-        edits: [{ action: 'replace', old_text: 'original', new_text: 'REPLACED' }],
+        edits: [{ action: 'replace', oldText: 'original', newText: 'REPLACED' }],
       });
-      assert.ok(result.includes('updated successfully'));
+      assert.ok(result.includes('Updated'));
       assert.ok((await fs.readFile(filePath, 'utf8')).includes('REPLACED'));
     } finally {
       await fs.rm(filePath, { force: true });
@@ -465,15 +466,15 @@ describe('Edit: shell metacharacter path resistance', () => {
   });
 });
 
-describe('Edit: fileState read-before-edit guard', () => {
+describe('editFile: fileState read-before-edit guard', () => {
   let execute;
   let hashContent;
   let tmpDir;
   let tmpFile;
 
   before(async () => {
-    execute = (await import('../../../src/tools/file/edit.js')).execute;
-    hashContent = (await import('../../../src/core/file-state.js')).hashContent;
+    execute = (await import('../../../src/tools/files/edit-file.js')).editFile.execute;
+    hashContent = (await import('../../../src/tools/files/file-state.js')).hashContent;
     const fsP = await import('node:fs/promises');
     const os = await import('node:os');
     tmpDir = await fsP.mkdtemp(path.join(os.tmpdir(), 'edit-state-test-'));
@@ -495,7 +496,7 @@ describe('Edit: fileState read-before-edit guard', () => {
   it('throws when no prior state exists for the path', async () => {
     const ctx = makeCtx(new Map());
     await assert.rejects(
-      () => execute({ path: tmpFile, edits: [{ action: 'replace', old_text: 'foo bar', new_text: 'X' }] }, ctx),
+      () => execute({ path: tmpFile, edits: [{ action: 'replace', oldText: 'foo bar', newText: 'X' }] }, ctx),
       /has not been read/,
     );
   });
@@ -506,10 +507,10 @@ describe('Edit: fileState read-before-edit guard', () => {
     state.set(tmpFile, { hash: hashContent(raw), lastReadTurn: 1, rangesRead: [[1, 5]], totalLines: 5 });
     const ctx = makeCtx(state);
     const result = await execute(
-      { path: tmpFile, edits: [{ action: 'replace', old_text: 'foo bar', new_text: 'X' }] },
+      { path: tmpFile, edits: [{ action: 'replace', oldText: 'foo bar', newText: 'X' }] },
       ctx,
     );
-    assert.ok(result.includes('updated successfully'));
+    assert.ok(result.includes('Updated'));
   });
 
   it('throws when file has been modified since last read (hash mismatch)', async () => {
@@ -517,7 +518,7 @@ describe('Edit: fileState read-before-edit guard', () => {
     state.set(tmpFile, { hash: 'deadbeef'.repeat(8), lastReadTurn: 1, rangesRead: [[1, 5]], totalLines: 5 });
     const ctx = makeCtx(state);
     await assert.rejects(
-      () => execute({ path: tmpFile, edits: [{ action: 'replace', old_text: 'foo bar', new_text: 'X' }] }, ctx),
+      () => execute({ path: tmpFile, edits: [{ action: 'replace', oldText: 'foo bar', newText: 'X' }] }, ctx),
       /modified since last read/,
     );
   });
@@ -528,7 +529,7 @@ describe('Edit: fileState read-before-edit guard', () => {
     const state = new Map();
     state.set(tmpFile, { hash: initialHash, lastReadTurn: 1, rangesRead: [[1, 5]], totalLines: 5 });
     const ctx = makeCtx(state);
-    await execute({ path: tmpFile, edits: [{ action: 'replace', old_text: 'foo bar', new_text: 'FOO BAR' }] }, ctx);
+    await execute({ path: tmpFile, edits: [{ action: 'replace', oldText: 'foo bar', newText: 'FOO BAR' }] }, ctx);
     const entry = state.get(tmpFile);
     const finalRaw = await fs.readFile(tmpFile, 'utf8');
     assert.equal(entry.hash, hashContent(finalRaw));
@@ -543,9 +544,9 @@ describe('Edit: fileState read-before-edit guard', () => {
     try {
       const result = await execute({
         path: legacyFile,
-        edits: [{ action: 'replace', old_text: 'foo bar', new_text: 'OK' }],
+        edits: [{ action: 'replace', oldText: 'foo bar', newText: 'OK' }],
       });
-      assert.ok(result.includes('updated successfully'));
+      assert.ok(result.includes('Updated'));
     } finally {
       await fs.rm(legacyFile, { force: true });
     }
@@ -557,7 +558,7 @@ describe('Edit: fileState read-before-edit guard', () => {
     state.set(tmpFile, { hash: hashContent(raw), lastReadTurn: 1, rangesRead: [[1, 2]], totalLines: 5 });
     const ctx = makeCtx(state);
     await assert.rejects(
-      () => execute({ path: tmpFile, edits: [{ action: 'replace', start_line: 4, end_line: 5, new_text: 'X' }] }, ctx),
+      () => execute({ path: tmpFile, edits: [{ action: 'replace', startLine: 4, endLine: 5, newText: 'X' }] }, ctx),
       /lines 4-5 have not been read/,
     );
     // an edit rejected by the guard must not touch the file
@@ -570,23 +571,23 @@ describe('Edit: fileState read-before-edit guard', () => {
     state.set(tmpFile, { hash: hashContent(raw), lastReadTurn: 1, rangesRead: [[1, 5]], totalLines: 5 });
     const ctx = makeCtx(state);
     const result = await execute(
-      { path: tmpFile, edits: [{ action: 'replace', start_line: 2, end_line: 2, new_text: 'Line two: CHANGED' }] },
+      { path: tmpFile, edits: [{ action: 'replace', startLine: 2, endLine: 2, newText: 'Line two: CHANGED' }] },
       ctx,
     );
-    assert.ok(result.includes('updated successfully'));
+    assert.ok(result.includes('Updated'));
   });
 
-  it('exempts old_text edits from the range check (content-anchored)', async () => {
+  it('exempts oldText edits from the range check (content-anchored)', async () => {
     const raw = await fs.readFile(tmpFile, 'utf8');
     const state = new Map();
-    // only line 1 read, but old_text targets line 2: still allowed
+    // only line 1 read, but oldText targets line 2: still allowed
     state.set(tmpFile, { hash: hashContent(raw), lastReadTurn: 1, rangesRead: [[1, 1]], totalLines: 5 });
     const ctx = makeCtx(state);
     const result = await execute(
-      { path: tmpFile, edits: [{ action: 'replace', old_text: 'foo bar', new_text: 'X' }] },
+      { path: tmpFile, edits: [{ action: 'replace', oldText: 'foo bar', newText: 'X' }] },
       ctx,
     );
-    assert.ok(result.includes('updated successfully'));
+    assert.ok(result.includes('Updated'));
   });
 
   it('rejects a line-anchored insert on an unread line', async () => {
@@ -595,8 +596,9 @@ describe('Edit: fileState read-before-edit guard', () => {
     state.set(tmpFile, { hash: hashContent(raw), lastReadTurn: 1, rangesRead: [[1, 2]], totalLines: 5 });
     const ctx = makeCtx(state);
     await assert.rejects(
-      () => execute({ path: tmpFile, edits: [{ action: 'insert', line: 5, position: 'after', text: 'NEW' }] }, ctx),
-      /lines 5-5 have not been read.*anchor_text/s,
+      () =>
+        execute({ path: tmpFile, edits: [{ action: 'insert', startLine: 5, position: 'after', newText: 'NEW' }] }, ctx),
+      /lines 5-5 have not been read.*anchorText/s,
     );
   });
 
@@ -606,19 +608,19 @@ describe('Edit: fileState read-before-edit guard', () => {
     // a genuinely partial range: it must NOT become [[1, totalLines]] after the edit
     state.set(tmpFile, { hash: hashContent(raw), lastReadTurn: 1, rangesRead: [[2, 3]], totalLines: 5 });
     const ctx = makeCtx(state);
-    await execute({ path: tmpFile, edits: [{ action: 'replace', old_text: 'foo bar', new_text: 'FOO' }] }, ctx);
+    await execute({ path: tmpFile, edits: [{ action: 'replace', oldText: 'foo bar', newText: 'FOO' }] }, ctx);
     const entry = state.get(tmpFile);
     assert.deepEqual(entry.rangesRead, [[2, 3]]);
   });
 });
 
-describe('Edit: CRLF line endings', () => {
+describe('editFile: CRLF line endings', () => {
   let execute;
   let crlfFile;
 
   before(async () => {
     await fs.mkdir(FIXTURES, { recursive: true });
-    execute = (await import('../../../src/tools/file/edit.js')).execute;
+    execute = (await import('../../../src/tools/files/edit-file.js')).editFile.execute;
     crlfFile = path.join(FIXTURES, 'edit-crlf.txt');
   });
 
@@ -629,23 +631,23 @@ describe('Edit: CRLF line endings', () => {
     await fs.writeFile(crlfFile, 'Line one: hello world\r\nLine two: foo bar\r\nLine three: baz qux\r\n', 'utf8');
   });
 
-  it('matches old_text with LF in a CRLF file', async () => {
+  it('matches oldText with LF in a CRLF file', async () => {
     const result = await execute({
       path: crlfFile,
-      edits: [{ action: 'replace', old_text: 'foo bar', new_text: 'FOO BAR' }],
+      edits: [{ action: 'replace', oldText: 'foo bar', newText: 'FOO BAR' }],
     });
-    assert.ok(result.includes('updated successfully'));
+    assert.ok(result.includes('Updated'));
     const content = await fs.readFile(crlfFile, 'utf8');
     assert.ok(content.includes('FOO BAR'));
     assert.ok(!content.includes('foo bar'));
   });
 
-  it('matches multi-line old_text with LF in a CRLF file', async () => {
+  it('matches multi-line oldText with LF in a CRLF file', async () => {
     const result = await execute({
       path: crlfFile,
-      edits: [{ action: 'replace', old_text: 'Line two: foo bar\nLine three: baz qux', new_text: 'REPLACED' }],
+      edits: [{ action: 'replace', oldText: 'Line two: foo bar\nLine three: baz qux', newText: 'REPLACED' }],
     });
-    assert.ok(result.includes('updated successfully'));
+    assert.ok(result.includes('Updated'));
     const content = await fs.readFile(crlfFile, 'utf8');
     assert.ok(content.includes('REPLACED'));
   });
@@ -653,20 +655,20 @@ describe('Edit: CRLF line endings', () => {
   it('preserves CRLF line endings in written output', async () => {
     await execute({
       path: crlfFile,
-      edits: [{ action: 'replace', old_text: 'foo bar', new_text: 'FOO BAR' }],
+      edits: [{ action: 'replace', oldText: 'foo bar', newText: 'FOO BAR' }],
     });
     const raw = await fs.readFile(crlfFile, 'utf8');
     assert.strictEqual(raw, 'Line one: hello world\r\nLine two: FOO BAR\r\nLine three: baz qux\r\n');
   });
 });
 
-describe('Edit: preserves untouched content', () => {
+describe('editFile: preserves untouched content', () => {
   let execute;
   let wsFile;
 
   before(async () => {
     await fs.mkdir(FIXTURES, { recursive: true });
-    execute = (await import('../../../src/tools/file/edit.js')).execute;
+    execute = (await import('../../../src/tools/files/edit-file.js')).editFile.execute;
     wsFile = path.join(FIXTURES, 'edit-whitespace.txt');
   });
 
@@ -680,53 +682,53 @@ describe('Edit: preserves untouched content', () => {
   it('keeps trailing whitespace on untouched lines', async () => {
     await execute({
       path: wsFile,
-      edits: [{ action: 'replace', old_text: 'target line', new_text: 'CHANGED line' }],
+      edits: [{ action: 'replace', oldText: 'target line', newText: 'CHANGED line' }],
     });
     const raw = await fs.readFile(wsFile, 'utf8');
     assert.strictEqual(raw, 'first line  \nmarkdown break  \nCHANGED line\nlast line\n');
   });
 
-  it('matches old_text that contains trailing whitespace', async () => {
+  it('matches oldText that contains trailing whitespace', async () => {
     const result = await execute({
       path: wsFile,
-      edits: [{ action: 'replace', old_text: 'markdown break  \n', new_text: 'plain break\n' }],
+      edits: [{ action: 'replace', oldText: 'markdown break  \n', newText: 'plain break\n' }],
     });
-    assert.ok(result.includes('updated successfully'));
+    assert.ok(result.includes('Updated'));
     const raw = await fs.readFile(wsFile, 'utf8');
     assert.ok(raw.includes('plain break\n'));
     assert.ok(raw.includes('first line  \n'), 'untouched trailing whitespace should survive');
   });
 });
 
-describe('Edit: error message quality', () => {
+describe('editFile: error message quality', () => {
   let execute;
   before(async () => {
     await fs.mkdir(FIXTURES, { recursive: true });
     await reset();
-    execute = (await import('../../../src/tools/file/edit.js')).execute;
+    execute = (await import('../../../src/tools/files/edit-file.js')).editFile.execute;
   });
   after(() => fs.rm(TEST_FILE, { force: true }));
   beforeEach(reset);
 
   it('not-found error includes snippet of searched text', async () => {
     await assert.rejects(
-      () => execute({ path: TEST_FILE, edits: [{ action: 'replace', old_text: 'NOTEXIST', new_text: 'x' }] }),
+      () => execute({ path: TEST_FILE, edits: [{ action: 'replace', oldText: 'NOTEXIST', newText: 'x' }] }),
       /Searched for: "NOTEXIST"/,
     );
   });
 
   it('not-found error includes whitespace tip', async () => {
     await assert.rejects(
-      () => execute({ path: TEST_FILE, edits: [{ action: 'replace', old_text: 'NOTEXIST', new_text: 'x' }] }),
+      () => execute({ path: TEST_FILE, edits: [{ action: 'replace', oldText: 'NOTEXIST', newText: 'x' }] }),
       /Tip: check for trailing whitespace/,
     );
   });
 
-  it('truncates old_text to 60 chars with ellipsis in not-found error', async () => {
+  it('truncates oldText to 60 chars with ellipsis in not-found error', async () => {
     const longText = 'A'.repeat(80);
     let caught;
     try {
-      await execute({ path: TEST_FILE, edits: [{ action: 'replace', old_text: longText, new_text: 'x' }] });
+      await execute({ path: TEST_FILE, edits: [{ action: 'replace', oldText: longText, newText: 'x' }] });
     } catch (e) {
       caught = e;
     }
@@ -739,38 +741,38 @@ describe('Edit: error message quality', () => {
   it('multiple-times error includes snippet', async () => {
     await fs.writeFile(TEST_FILE, 'dup\ndup\nother', 'utf8');
     await assert.rejects(
-      () => execute({ path: TEST_FILE, edits: [{ action: 'replace', old_text: 'dup', new_text: 'x' }] }),
+      () => execute({ path: TEST_FILE, edits: [{ action: 'replace', oldText: 'dup', newText: 'x' }] }),
       /Searched for: "dup"/,
     );
   });
 
   it('delete not-found error includes snippet and tip', async () => {
     await assert.rejects(
-      () => execute({ path: TEST_FILE, edits: [{ action: 'delete', old_text: 'NOTEXIST' }] }),
+      () => execute({ path: TEST_FILE, edits: [{ action: 'delete', oldText: 'NOTEXIST' }] }),
       /Searched for: "NOTEXIST"/,
     );
   });
 });
 
-describe('Edit: mixed content-anchored and line-based edits', () => {
+describe('editFile: mixed content-anchored and line-based edits', () => {
   let execute;
   before(async () => {
     await fs.mkdir(FIXTURES, { recursive: true });
     await reset();
-    execute = (await import('../../../src/tools/file/edit.js')).execute;
+    execute = (await import('../../../src/tools/files/edit-file.js')).editFile.execute;
   });
   after(() => fs.rm(TEST_FILE, { force: true }));
   beforeEach(reset);
 
-  it('line-based edit above an earlier old_text edit that added lines is not shifted', async () => {
-    // Regression: an old_text edit that adds a line (here, +1 line at line 4) must not
-    // shift a later start_line edit above it. A buggy global offset previously shifted
-    // the start_line=2 target down to line 3.
+  it('line-based edit above an earlier oldText edit that added lines is not shifted', async () => {
+    // Regression: an oldText edit that adds a line (here, +1 line at line 4) must not
+    // shift a later startLine edit above it. A buggy global offset previously shifted
+    // the startLine=2 target down to line 3.
     await execute({
       path: TEST_FILE,
       edits: [
-        { action: 'replace', old_text: 'Line four: lorem ipsum', new_text: 'Line four: lorem ipsum\nLine 4.5: EXTRA' },
-        { action: 'replace', start_line: 2, end_line: 2, new_text: 'TWO' },
+        { action: 'replace', oldText: 'Line four: lorem ipsum', newText: 'Line four: lorem ipsum\nLine 4.5: EXTRA' },
+        { action: 'replace', startLine: 2, endLine: 2, newText: 'TWO' },
       ],
     });
     const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');
@@ -784,12 +786,12 @@ describe('Edit: mixed content-anchored and line-based edits', () => {
     ]);
   });
 
-  it('line-based edit below an earlier old_text edit that added lines is shifted correctly', async () => {
+  it('line-based edit below an earlier oldText edit that added lines is shifted correctly', async () => {
     await execute({
       path: TEST_FILE,
       edits: [
-        { action: 'replace', old_text: 'Line two: foo bar', new_text: 'Line two: foo bar\nLine 2.5: EXTRA' },
-        { action: 'replace', start_line: 4, end_line: 4, new_text: 'FOUR' },
+        { action: 'replace', oldText: 'Line two: foo bar', newText: 'Line two: foo bar\nLine 2.5: EXTRA' },
+        { action: 'replace', startLine: 4, endLine: 4, newText: 'FOUR' },
       ],
     });
     const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');
@@ -803,24 +805,24 @@ describe('Edit: mixed content-anchored and line-based edits', () => {
     ]);
   });
 
-  it('line-based edit below an earlier old_text delete is shifted correctly', async () => {
+  it('line-based edit below an earlier oldText delete is shifted correctly', async () => {
     await execute({
       path: TEST_FILE,
       edits: [
-        { action: 'delete', old_text: 'Line two: foo bar\n' },
-        { action: 'replace', start_line: 4, end_line: 4, new_text: 'FOUR' },
+        { action: 'delete', oldText: 'Line two: foo bar\n' },
+        { action: 'replace', startLine: 4, endLine: 4, newText: 'FOUR' },
       ],
     });
     const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');
     assert.deepEqual(lines, ['Line one: hello world', 'Line three: baz qux', 'FOUR', 'Line five: dolor sit amet']);
   });
 
-  it('insert by line number below an earlier old_text edit is shifted correctly', async () => {
+  it('insert by line number below an earlier oldText edit is shifted correctly', async () => {
     await execute({
       path: TEST_FILE,
       edits: [
-        { action: 'replace', old_text: 'Line one: hello world', new_text: 'ONE\nONE-B' },
-        { action: 'insert', line: 3, position: 'after', text: 'INSERTED' },
+        { action: 'replace', oldText: 'Line one: hello world', newText: 'ONE\nONE-B' },
+        { action: 'insert', startLine: 3, position: 'after', newText: 'INSERTED' },
       ],
     });
     const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');
@@ -835,14 +837,14 @@ describe('Edit: mixed content-anchored and line-based edits', () => {
     ]);
   });
 
-  it('throws when a line-based edit targets a line rewritten by an earlier old_text edit', async () => {
+  it('throws when a line-based edit targets a line rewritten by an earlier oldText edit', async () => {
     await assert.rejects(
       () =>
         execute({
           path: TEST_FILE,
           edits: [
-            { action: 'replace', old_text: 'Line three: baz qux', new_text: 'X\nY' },
-            { action: 'replace', start_line: 3, end_line: 3, new_text: 'Z' },
+            { action: 'replace', oldText: 'Line three: baz qux', newText: 'X\nY' },
+            { action: 'replace', startLine: 3, endLine: 3, newText: 'Z' },
           ],
         }),
       /edit\[1\]: line 3 was changed by an earlier edit in this call/,
@@ -856,22 +858,22 @@ describe('Edit: mixed content-anchored and line-based edits', () => {
       () =>
         execute({
           path: TEST_FILE,
-          edits: [{ action: 'replace', start_line: 9, end_line: 9, new_text: 'X' }],
+          edits: [{ action: 'replace', startLine: 9, endLine: 9, newText: 'X' }],
         }),
       /edit\[0\]: line 9 is out of range \(file has 5 lines\)/,
     );
   });
 
-  it('line-based edit on the line immediately after an old_text delete-with-trailing-newline is not falsely invalidated', async () => {
-    // The over-nulling bug: old_text 'Line two: foo bar\n' has a trailing
+  it('line-based edit on the line immediately after an oldText delete-with-trailing-newline is not falsely invalidated', async () => {
+    // The over-nulling bug: oldText 'Line two: foo bar\n' has a trailing
     // newline, so its own split('\n').length (2) over-counts the whole-line
-    // span it actually touches (1 line: line 2). The buggy code nulled out
+    // span it actually touches (1 startLine: line 2). The buggy code nulled out
     // line 3 too, even though line 3's content never changed.
     await execute({
       path: TEST_FILE,
       edits: [
-        { action: 'delete', old_text: 'Line two: foo bar\n' },
-        { action: 'replace', start_line: 3, end_line: 3, new_text: 'THREE-REPLACED' },
+        { action: 'delete', oldText: 'Line two: foo bar\n' },
+        { action: 'replace', startLine: 3, endLine: 3, newText: 'THREE-REPLACED' },
       ],
     });
     const lines = (await fs.readFile(TEST_FILE, 'utf8')).split('\n');

@@ -4,11 +4,11 @@ import path from 'node:path';
 import { resolveSafePath } from '../../support/path-safety.js';
 import { LIMITS } from '../../support/payload.js';
 
-export const name = 'Find';
-export const description =
+const description =
   'Search for files by name or content within a directory.  Prioritize using this tool over using commands like `find -iname` or `grep -R` for portability reasons.';
-export const inputSchema = {
+const inputSchema = {
   type: 'object',
+  additionalProperties: false,
   properties: {
     path: { type: 'string', description: 'Directory to search in' },
     pattern: { type: 'string', description: 'Regex or text pattern' },
@@ -17,7 +17,6 @@ export const inputSchema = {
   required: ['pattern', 'mode'],
 };
 
-// Spawn command, capture stdout. find/rg non-zero exits are ok.
 function spawnCommand(args, signal) {
   return new Promise((resolve, reject) => {
     const output = [];
@@ -53,10 +52,7 @@ function spawnCommand(args, signal) {
       const err = Buffer.concat(errOutput).toString();
 
       const isPartialSuccess =
-        (args[0] === 'find' && out.length > 0) ||
-        // rg code=1: no matches, code=2: runtime error (e.g. permission denied on subdir)
-        // Accept both if we have stdout, so permission errors on unreadable dirs don't kill the whole search
-        (args[0] === 'rg' && (code === 1 || (code === 2 && out.length > 0)));
+        (args[0] === 'find' && out.length > 0) || (args[0] === 'rg' && (code === 1 || (code === 2 && out.length > 0)));
 
       if (code === 0 || isPartialSuccess) {
         resolve(out);
@@ -87,8 +83,6 @@ function makeToRelative(absPath, cwd) {
   };
 }
 
-// Native fallback: recursive Node.js walk
-
 async function nativeSearch({ absPath, pattern, mode, cwd, signal }) {
   const regex = new RegExp(pattern, 'i');
   const matches = [];
@@ -116,7 +110,6 @@ async function nativeSearch({ absPath, pattern, mode, cwd, signal }) {
           const stat = await fs.stat(fullPath);
           if (stat.size > LIMITS.maxSearchFileSize) continue;
 
-          // Check first 512 bytes for null bytes before reading entire file
           const handle = await fs.open(fullPath, 'r');
           let isBinary = false;
           try {
@@ -130,7 +123,6 @@ async function nativeSearch({ absPath, pattern, mode, cwd, signal }) {
           if (isBinary) continue;
 
           const content = await fs.readFile(fullPath, 'utf8');
-          // Fallback: reject files with high ratio of non-printable characters
           // eslint-disable-next-line no-control-regex -- intentionally matches control chars for binary detection
           const nonPrintable = (content.match(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g) || []).length;
           if (nonPrintable / content.length > 0.3) continue;
@@ -142,9 +134,7 @@ async function nativeSearch({ absPath, pattern, mode, cwd, signal }) {
               matches.push(`${rel}:${i + 1}: ${line.trim().slice(0, 100)}`);
             }
           });
-        } catch {
-          // read/stat failed: skip file
-        }
+        } catch {}
       }
 
       if (entry.isDirectory()) await walk(fullPath);
@@ -154,8 +144,6 @@ async function nativeSearch({ absPath, pattern, mode, cwd, signal }) {
   await walk(absPath);
   return matches.length ? matches.join('\n') : 'No matches found.';
 }
-
-// Shell-accelerated search
 
 function shellFindByRegex(absPath, pattern, cwd, signal) {
   const regex = new RegExp(pattern, 'i');
@@ -206,9 +194,7 @@ function shellRgSearch(absPath, pattern, cwd, signal) {
   });
 }
 
-// Main execute
-
-export const execute = async ({ path: dirPath = '.', pattern, mode }, ctx = {}) => {
+const execute = async ({ path: dirPath = '.', pattern, mode }, ctx = {}) => {
   const signal = ctx.signal;
 
   if (signal?.aborted) {
@@ -238,3 +224,5 @@ export const execute = async ({ path: dirPath = '.', pattern, mode }, ctx = {}) 
 
   return await nativeSearch({ absPath, pattern, mode, cwd, signal });
 };
+
+export const findFiles = { name: 'findFiles', description, inputSchema, execute };

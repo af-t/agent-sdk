@@ -3,11 +3,11 @@ import path from 'node:path';
 import { loadIgnoreFilter, resolveSafePath } from '../../support/path-safety.js';
 import { formatBytes } from '../../support/payload.js';
 
-export const name = 'List';
-export const description =
+const description =
   'List files and directories at a specified path, respecting .gitignore rules. Use this to explore the project structure and discover available files and folders.';
-export const inputSchema = {
+const inputSchema = {
   type: 'object',
+  additionalProperties: false,
   properties: {
     path: { type: 'string', description: 'Directory to list' },
     depth: { type: 'number', description: 'Recursion depth (default 1)' },
@@ -15,7 +15,7 @@ export const inputSchema = {
   required: ['path'],
 };
 
-export const execute = async ({ path: dirPath = '.', depth = 1 }, ctx = {}) => {
+const execute = async ({ path: dirPath = '.', depth = 1 }, ctx = {}) => {
   const absPath = resolveSafePath(dirPath, ctx.agent?.trustedPaths, { restricted: ctx.agent?.restricted !== false });
   const filter = await loadIgnoreFilter();
   const results = [];
@@ -49,7 +49,7 @@ export const execute = async ({ path: dirPath = '.', depth = 1 }, ctx = {}) => {
           const stats = await fs.stat(fullPath);
           suffix = ` (${formatBytes(stats.size)})`;
         } catch {
-          suffix = ''; // stat failed: skip size display silently
+          suffix = '';
         }
       }
 
@@ -64,3 +64,5 @@ export const execute = async ({ path: dirPath = '.', depth = 1 }, ctx = {}) => {
   await walk(absPath, 0);
   return results.join('\n') || '(Empty directory)';
 };
+
+export const listFiles = { name: 'listFiles', description, inputSchema, execute };

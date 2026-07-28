@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { hashContent, isRangeCovered, mergeRanges } from '../../src/core/file-state.js';
+import { hashContent, isRangeCovered, mergeRanges } from '../../../src/tools/files/file-state.js';
 
 describe('hashContent', () => {
   it('returns stable hex digest for the same input', () => {

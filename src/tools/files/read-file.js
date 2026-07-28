@@ -1,15 +1,15 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { resolveSafePath } from '../../support/path-safety.js';
-import { hashContent, mergeRanges } from '../../core/file-state.js';
-import { detectFileType, imageDimensions, hexPreview, humanSize, magicByteType } from '../../core/file-type.js';
-import { flattenNotebook } from '../../core/notebook.js';
+import { hashContent, mergeRanges } from './file-state.js';
+import { detectFileType, imageDimensions, hexPreview, humanSize, magicByteType } from './file-type.js';
+import { flattenNotebook } from './notebook.js';
 
-const MAX_READ_SIZE = 10 * 1024 * 1024; // 10MB
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
-const MAX_PDF_BYTES = 10 * 1024 * 1024; // 10MB
-const MAX_VIDEO_BYTES = 25 * 1024 * 1024; // 25MB
-const MAX_AUDIO_BYTES = 25 * 1024 * 1024; // 25MB
+const MAX_READ_SIZE = 10 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_PDF_BYTES = 10 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 25 * 1024 * 1024;
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 
 const AUDIO_FORMAT_MAP = {
   'audio/wav': 'wav',
@@ -21,21 +21,21 @@ const AUDIO_FORMAT_MAP = {
   'audio/aiff': 'aiff',
 };
 
-export const name = 'Read';
-export const description =
-  'Read the contents of a file with pagination and line numbers. Handles text, notebooks (.ipynb), images (PNG/JPEG/GIF/WebP), PDFs, audio, video, and binary files. Use pagination (start_line/end_line) for large files to avoid context overflow and ensure efficient reading. For images, PDFs, audio, and video files, the tool automatically loads and injects them as multimodal content blocks directly into your context, so you do not need to expect binary hex or run external tools like ffmpeg to inspect them.';
-export const inputSchema = {
+const description =
+  'Read the contents of a file with pagination and line numbers. Handles text, notebooks (.ipynb), images (PNG/JPEG/GIF/WebP), PDFs, audio, video, and binary files. Use pagination (startLine/endLine) for large files to avoid context overflow and ensure efficient reading. For images, PDFs, audio, and video files, the tool automatically loads and injects them as multimodal content blocks directly into your context, so you do not need to expect binary hex or run external tools like ffmpeg to inspect them.';
+const inputSchema = {
   type: 'object',
+  additionalProperties: false,
   properties: {
     path: { type: 'string', description: 'File path' },
-    start_line: { type: 'number', description: 'Line to start reading from' },
-    end_line: { type: 'number', description: 'Line to end reading at' },
-    max_lines: { type: 'number', description: 'Max lines to return (default 1500)' },
+    startLine: { type: 'number', description: 'Line to start reading from' },
+    endLine: { type: 'number', description: 'Line to end reading at' },
+    maxLines: { type: 'number', description: 'Max lines to return (default 1500)' },
   },
   required: ['path'],
 };
 
-async function readText(safePath, filePath, { start_line = 1, end_line = Infinity, max_lines = 1500 }, ctx = {}) {
+async function readText(safePath, filePath, { startLine = 1, endLine = Infinity, maxLines = 1500 }, ctx = {}) {
   const stat = await fs.stat(safePath);
   if (stat.size > MAX_READ_SIZE) {
     throw new Error(`File too large (${stat.size} bytes). Maximum readable size is ${MAX_READ_SIZE} bytes (10MB).`);
@@ -48,9 +48,9 @@ async function readText(safePath, filePath, { start_line = 1, end_line = Infinit
   }
 
   const totalLines = lines.length;
-  const start = Math.max(0, start_line - 1);
-  const end = Math.min(totalLines, end_line || totalLines);
-  const slice = lines.slice(start, end).slice(0, max_lines);
+  const start = Math.max(0, startLine - 1);
+  const end = Math.min(totalLines, endLine || totalLines);
+  const slice = lines.slice(start, end).slice(0, maxLines);
 
   const requestedStart = start + 1;
   const effectiveEnd = start + slice.length;
@@ -86,13 +86,13 @@ async function readText(safePath, filePath, { start_line = 1, end_line = Infinit
     })
     .join('\n');
 
-  if (totalLines > end || end - start > max_lines) {
+  if (totalLines > end || end - start > maxLines) {
     result += '\n[... truncated]';
   }
   return result;
 }
 
-export const execute = async ({ path: filePath, start_line = 1, end_line = Infinity, max_lines = 1500 }, ctx = {}) => {
+const execute = async ({ path: filePath, startLine = 1, endLine = Infinity, maxLines = 1500 }, ctx = {}) => {
   const safePath = resolveSafePath(filePath, ctx.agent?.trustedPaths, { restricted: ctx.agent?.restricted !== false });
 
   const stat = await fs.stat(safePath);
@@ -115,7 +115,7 @@ export const execute = async ({ path: filePath, start_line = 1, end_line = Infin
   const { category, mime } = detectFileType(sample, ext);
 
   if (category === 'text') {
-    return readText(safePath, filePath, { start_line, end_line, max_lines }, ctx);
+    return readText(safePath, filePath, { startLine, endLine, maxLines }, ctx);
   }
 
   if (category === 'notebook') {
@@ -192,3 +192,5 @@ export const execute = async ({ path: filePath, start_line = 1, end_line = Infin
   const previewLen = Math.min(sample.length, 64);
   return `[binary] ${baseName}: ${magicByteType(sample)}, ${humanSize(stat.size)}\nhex (first ${previewLen} bytes): ${hexPreview(sample, 64)}`;
 };
+
+export const readFile = { name: 'readFile', description, inputSchema, execute };

@@ -108,16 +108,16 @@ describe('createAgent', () => {
     assert.equal(closed, false);
   });
 
-  it('should load built-in tools (Read, Write, Edit, Find, List, Bash, etc.)', async () => {
+  it('should load built-in tools (readFile, writeFile, editFile, findFiles, listFiles, Bash, etc.)', async () => {
     const agent = await createAgent();
     const tools = agent.tools.listTools();
     const names = tools.map((t) => t.name);
 
-    assert(names.includes('Read'), 'Read tool should be loaded');
-    assert(names.includes('Write'), 'Write tool should be loaded');
-    assert(names.includes('Edit'), 'Edit tool should be loaded');
-    assert(names.includes('Find'), 'Find tool should be loaded');
-    assert(names.includes('List'), 'List tool should be loaded');
+    assert(names.includes('readFile'), 'readFile tool should be loaded');
+    assert(names.includes('writeFile'), 'writeFile tool should be loaded');
+    assert(names.includes('editFile'), 'editFile tool should be loaded');
+    assert(names.includes('findFiles'), 'findFiles tool should be loaded');
+    assert(names.includes('listFiles'), 'listFiles tool should be loaded');
     assert(names.includes('Bash'), 'Bash tool should be loaded');
     assert(names.includes('Delegate'), 'Delegate tool should be loaded');
     assert(names.includes('WebSearch'), 'WebSearch tool should be loaded');
@@ -188,16 +188,16 @@ describe('createAgent', () => {
     assert(agent1.tools !== agent2.tools, 'Each agent should have its own ToolRegistry');
   });
 
-  it('Read tool actually executes and returns file content', async () => {
+  it('readFile actually executes and returns file content', async () => {
     const agent = await createAgent();
-    const result = await agent.tools.execute('Read', { path: process.cwd() + '/package.json' }, { agent });
+    const result = await agent.tools.execute('readFile', { path: process.cwd() + '/package.json' }, { agent });
     assert.strictEqual(typeof result, 'string');
     assert.ok(result.includes('openrouter'), 'result should contain openrouter from package.json');
   });
 
-  it('List tool actually executes and returns directory listing', async () => {
+  it('listFiles actually executes and returns directory listing', async () => {
     const agent = await createAgent();
-    const result = await agent.tools.execute('List', { path: process.cwd() }, { agent });
+    const result = await agent.tools.execute('listFiles', { path: process.cwd() }, { agent });
     assert.strictEqual(typeof result, 'string');
     assert.ok(result.includes('package.json') || result.includes('src'), 'result should list project files');
   });

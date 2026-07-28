@@ -88,9 +88,9 @@ test('foreground Delegate writes a trace file with subagent activity', async (t)
   mock.method(Agent.prototype, 'run', async function (_prompt, notify) {
     await notify({ reasoning: 'planning' });
     await notify({ content: 'doing the work' });
-    await notify({ tool_calls: [{ id: 't1', function: { name: 'Read', arguments: '{}' } }] });
-    await notify({ tool_start: { tool_call_id: 't1', name: 'Read', input: { file_path: '/a' } } });
-    await notify({ tool_end: { tool_call_id: 't1', name: 'Read', duration_ms: 7, output: 'body' } });
+    await notify({ tool_calls: [{ id: 't1', function: { name: 'readFile', arguments: '{}' } }] });
+    await notify({ tool_start: { tool_call_id: 't1', name: 'readFile', input: { path: '/a' } } });
+    await notify({ tool_end: { tool_call_id: 't1', name: 'readFile', duration_ms: 7, output: 'body' } });
     return 'final report from subagent';
   });
   let parent;
@@ -107,7 +107,7 @@ test('foreground Delegate writes a trace file with subagent activity', async (t)
   const trace = fs.readFileSync(m[1], 'utf8');
   assert.match(trace, /=== turn 1 ===/);
   assert.match(trace, /\[reasoning\]\nplanning/);
-  assert.match(trace, /-> Read#t1 end \(7ms\): body/);
+  assert.match(trace, /-> readFile#t1 end \(7ms\): body/);
 });
 
 test('background Delegate streams a trace file and exit event carries traceLogPath', async (t) => {

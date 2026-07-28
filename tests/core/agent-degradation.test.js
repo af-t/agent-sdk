@@ -41,7 +41,7 @@ describe('Agent: multimodal degradation', () => {
       {
         role: 'assistant',
         content: null,
-        tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Read', arguments: '{}' } }],
+        tool_calls: [{ id: 'c1', type: 'function', function: { name: 'readFile', arguments: '{}' } }],
       },
       { ...multimodalToolMsg },
     ];
@@ -92,7 +92,7 @@ describe('Agent: multimodal degradation', () => {
       {
         role: 'assistant',
         content: null,
-        tool_calls: [{ id: 'c1', type: 'function', function: { name: 'Read', arguments: '{}' } }],
+        tool_calls: [{ id: 'c1', type: 'function', function: { name: 'readFile', arguments: '{}' } }],
       },
       { ...multimodalToolMsg },
     ];

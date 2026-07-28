@@ -1,6 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectFileType, imageDimensions, hexPreview, humanSize, magicByteType } from '../../src/core/file-type.js';
+import {
+  detectFileType,
+  imageDimensions,
+  hexPreview,
+  humanSize,
+  magicByteType,
+} from '../../../src/tools/files/file-type.js';
 
 // helpers to build minimal image buffers
 function makePng(width, height) {

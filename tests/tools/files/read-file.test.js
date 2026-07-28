@@ -8,7 +8,7 @@ import { createTestTempDir } from '../../support/temp.js';
 const FIXTURES = path.resolve('tests/fixtures');
 const TEST_FILE = path.join(FIXTURES, 'read-test.txt');
 
-describe('read.js execute', () => {
+describe('readFile execute', () => {
   before(async () => {
     await fs.mkdir(FIXTURES, { recursive: true });
     await fs.writeFile(TEST_FILE, Array.from({ length: 20 }, (_, i) => `Line ${i + 1}`).join('\n'), 'utf8');
@@ -19,39 +19,41 @@ describe('read.js execute', () => {
   });
 
   it('reads an existing file and returns numbered lines', async () => {
-    const mod = await import('../../../src/tools/file/read.js');
-    const result = await mod.execute({ path: TEST_FILE });
+    const mod = await import('../../../src/tools/files/read-file.js');
+    const result = await mod.readFile.execute({ path: TEST_FILE });
     assert.ok(result.includes('     1\tLine 1'));
     assert.ok(result.includes('    20\tLine 20'));
   });
 
   it('throws for a non-existent file within project root', async () => {
-    const mod = await import('../../../src/tools/file/read.js');
-    await assert.rejects(() => mod.execute({ path: 'tests/fixtures/nonexistent-file-xyz.txt' }), { code: 'ENOENT' });
+    const mod = await import('../../../src/tools/files/read-file.js');
+    await assert.rejects(() => mod.readFile.execute({ path: 'tests/fixtures/nonexistent-file-xyz.txt' }), {
+      code: 'ENOENT',
+    });
   });
 
-  it('supports pagination via start_line / end_line', async () => {
-    const mod = await import('../../../src/tools/file/read.js');
-    const result = await mod.execute({ path: TEST_FILE, start_line: 5, end_line: 10 });
+  it('supports pagination via startLine / endLine', async () => {
+    const mod = await import('../../../src/tools/files/read-file.js');
+    const result = await mod.readFile.execute({ path: TEST_FILE, startLine: 5, endLine: 10 });
     assert.ok(result.includes('     5\tLine 5'));
     assert.ok(result.includes('     9\tLine 9'));
     // line 10 is included since slice = lines[4:10) = lines 5 through 10
     assert.ok(result.includes('    10\tLine 10'));
-    // truncated indicator appears because not all lines were read (end_line < total)
+    // truncated indicator appears because not all lines were read (endLine < total)
     assert.ok(result.includes('[... truncated]'));
   });
 
-  it('respects max_lines limit', async () => {
-    const mod = await import('../../../src/tools/file/read.js');
-    const result = await mod.execute({ path: TEST_FILE, max_lines: 3 });
+  it('respects maxLines limit', async () => {
+    const mod = await import('../../../src/tools/files/read-file.js');
+    const result = await mod.readFile.execute({ path: TEST_FILE, maxLines: 3 });
     const lines = result.split('\n').filter((l) => l.trim() && !l.includes('[... truncated]'));
     assert.ok(lines.length <= 3);
   });
 
   it('shows truncated indicator when not reading entire file', async () => {
-    const mod = await import('../../../src/tools/file/read.js');
-    // 20 lines total, but reading start_line=1,end_line=5 means only first 5 lines
-    const result = await mod.execute({ path: TEST_FILE, start_line: 1, end_line: 5 });
+    const mod = await import('../../../src/tools/files/read-file.js');
+    // 20 lines total, but reading startLine=1,endLine=5 means only first 5 lines
+    const result = await mod.readFile.execute({ path: TEST_FILE, startLine: 1, endLine: 5 });
     assert.ok(result.includes('[... truncated]'));
   });
 
@@ -60,27 +62,30 @@ describe('read.js execute', () => {
     const file = path.join(tmpDir, 'external.txt');
     await fs.writeFile(file, 'external file content');
 
-    const mod = await import('../../../src/tools/file/read.js');
+    const mod = await import('../../../src/tools/files/read-file.js');
     const ctx = { agent: { trustedPaths: new Set([tmpDir]) } };
-    const result = await mod.execute({ path: file }, ctx);
+    const result = await mod.readFile.execute({ path: file }, ctx);
 
     assert.ok(result.includes('external file content'));
   });
 
   it('rejects file outside project root with empty trustedPaths', async () => {
-    const mod = await import('../../../src/tools/file/read.js');
-    await assert.rejects(() => mod.execute({ path: '/etc/hostname' }, { agent: { trustedPaths: new Set() } }), {
-      message: /outside project root/,
-    });
+    const mod = await import('../../../src/tools/files/read-file.js');
+    await assert.rejects(
+      () => mod.readFile.execute({ path: '/etc/hostname' }, { agent: { trustedPaths: new Set() } }),
+      {
+        message: /outside project root/,
+      },
+    );
   });
 });
 
-describe('read.js: CRLF line endings', () => {
+describe('readFile: CRLF line endings', () => {
   let mod;
   let crlfFile;
 
   before(async () => {
-    mod = await import('../../../src/tools/file/read.js');
+    mod = await import('../../../src/tools/files/read-file.js');
     await fs.mkdir(FIXTURES, { recursive: true });
     crlfFile = path.join(FIXTURES, 'read-crlf.txt');
     await fs.writeFile(crlfFile, 'Line one\r\nLine two\r\nLine three\r\n', 'utf8');
@@ -89,7 +94,7 @@ describe('read.js: CRLF line endings', () => {
   after(() => fs.rm(crlfFile, { force: true }));
 
   it('strips trailing CR so lines do not end with \\r', async () => {
-    const result = await mod.execute({ path: crlfFile });
+    const result = await mod.readFile.execute({ path: crlfFile });
     const lines = result.split('\n');
     for (const line of lines) {
       assert.ok(!line.endsWith('\r'), `line ends with \\r: ${JSON.stringify(line)}`);
@@ -97,14 +102,14 @@ describe('read.js: CRLF line endings', () => {
   });
 
   it('displays correct line content without carriage return', async () => {
-    const result = await mod.execute({ path: crlfFile });
+    const result = await mod.readFile.execute({ path: crlfFile });
     assert.ok(result.includes('     1\tLine one'));
     assert.ok(result.includes('     2\tLine two'));
     assert.ok(result.includes('     3\tLine three'));
   });
 });
 
-describe('read.js: notebook branch', () => {
+describe('readFile: notebook branch', () => {
   const NOTEBOOK_FILE = path.join(FIXTURES, 'test-notebook.ipynb');
 
   before(async () => {
@@ -126,15 +131,15 @@ describe('read.js: notebook branch', () => {
   });
 
   it('reads a .ipynb file and returns notebook content', async () => {
-    const mod = await import('../../../src/tools/file/read.js');
-    const result = await mod.execute({ path: NOTEBOOK_FILE });
+    const mod = await import('../../../src/tools/files/read-file.js');
+    const result = await mod.readFile.execute({ path: NOTEBOOK_FILE });
     assert.ok(typeof result === 'string', 'result should be a string');
     assert.ok(result.includes('[notebook]'), 'result should contain [notebook]');
     assert.ok(result.includes('# Cell 1'), 'result should contain # Cell 1');
   });
 });
 
-describe('read.js: image branch', () => {
+describe('readFile: image branch', () => {
   let tmpDir;
   let pngFile;
   let oversizedPngFile;
@@ -186,9 +191,9 @@ describe('read.js: image branch', () => {
   });
 
   it('returns an array with text and image_url for a small PNG', async () => {
-    const mod = await import('../../../src/tools/file/read.js');
+    const mod = await import('../../../src/tools/files/read-file.js');
     const ctx = { agent: { trustedPaths: new Set([tmpDir]) } };
-    const result = await mod.execute({ path: pngFile }, ctx);
+    const result = await mod.readFile.execute({ path: pngFile }, ctx);
     assert.ok(Array.isArray(result), 'result should be an array');
     assert.equal(result[0].type, 'text');
     assert.equal(result[1].type, 'image_url');
@@ -196,15 +201,15 @@ describe('read.js: image branch', () => {
   });
 
   it('returns a string for an oversized PNG', async () => {
-    const mod = await import('../../../src/tools/file/read.js');
+    const mod = await import('../../../src/tools/files/read-file.js');
     const ctx = { agent: { trustedPaths: new Set([tmpDir]) } };
-    const result = await mod.execute({ path: oversizedPngFile }, ctx);
+    const result = await mod.readFile.execute({ path: oversizedPngFile }, ctx);
     assert.ok(typeof result === 'string', 'result should be a string');
     assert.ok(result.includes('too large to inline'), 'result should mention too large to inline');
   });
 });
 
-describe('read.js: pdf branch', () => {
+describe('readFile: pdf branch', () => {
   let tmpDir;
   let pdfFile;
 
@@ -223,9 +228,9 @@ describe('read.js: pdf branch', () => {
   });
 
   it('returns an array with text and file for a small PDF', async () => {
-    const mod = await import('../../../src/tools/file/read.js');
+    const mod = await import('../../../src/tools/files/read-file.js');
     const ctx = { agent: { trustedPaths: new Set([tmpDir]) } };
-    const result = await mod.execute({ path: pdfFile }, ctx);
+    const result = await mod.readFile.execute({ path: pdfFile }, ctx);
     assert.ok(Array.isArray(result), 'result should be an array');
     assert.equal(result[0].type, 'text');
     assert.equal(result[1].type, 'file');
@@ -236,7 +241,7 @@ describe('read.js: pdf branch', () => {
   });
 });
 
-describe('read.js: binary branch', () => {
+describe('readFile: binary branch', () => {
   let tmpDir;
   let binaryFile;
 
@@ -255,22 +260,22 @@ describe('read.js: binary branch', () => {
   });
 
   it('returns a string starting with [binary] and containing hex', async () => {
-    const mod = await import('../../../src/tools/file/read.js');
+    const mod = await import('../../../src/tools/files/read-file.js');
     const ctx = { agent: { trustedPaths: new Set([tmpDir]) } };
-    const result = await mod.execute({ path: binaryFile }, ctx);
+    const result = await mod.readFile.execute({ path: binaryFile }, ctx);
     assert.ok(typeof result === 'string', 'result should be a string');
     assert.ok(result.startsWith('[binary]'), 'result should start with [binary]');
     assert.ok(result.includes('hex'), 'result should contain hex');
   });
 });
 
-describe('read.js: fileState caching', () => {
+describe('readFile: fileState caching', () => {
   let mod;
   let tmpDir;
   let tmpFile;
 
   before(async () => {
-    mod = await import('../../../src/tools/file/read.js');
+    mod = await import('../../../src/tools/files/read-file.js');
     const fsP = await import('node:fs/promises');
     const os = await import('node:os');
     tmpDir = await fsP.mkdtemp(path.join(os.tmpdir(), 'read-state-test-'));
@@ -288,7 +293,7 @@ describe('read.js: fileState caching', () => {
 
   it('first read populates fileState and returns numbered content', async () => {
     const ctx = makeCtx();
-    const result = await mod.execute({ path: tmpFile, start_line: 1, end_line: 5 }, ctx);
+    const result = await mod.readFile.execute({ path: tmpFile, startLine: 1, endLine: 5 }, ctx);
     assert.ok(result.includes('     1\tLine 1'));
     assert.ok(result.includes('     5\tLine 5'));
     assert.equal(ctx.agent.fileState.size, 1);
@@ -301,8 +306,8 @@ describe('read.js: fileState caching', () => {
 
   it('repeat read of the same range returns a cache-hit short message', async () => {
     const ctx = makeCtx({ turn: 5 });
-    await mod.execute({ path: tmpFile, start_line: 1, end_line: 5 }, ctx);
-    const result = await mod.execute({ path: tmpFile, start_line: 1, end_line: 5 }, ctx);
+    await mod.readFile.execute({ path: tmpFile, startLine: 1, endLine: 5 }, ctx);
+    const result = await mod.readFile.execute({ path: tmpFile, startLine: 1, endLine: 5 }, ctx);
     assert.ok(result.startsWith('[CACHED]'));
     assert.ok(result.includes('turn 5'));
     assert.ok(result.includes('Lines 1-5'));
@@ -311,8 +316,8 @@ describe('read.js: fileState caching', () => {
 
   it('disjoint subsequent read returns content and merges rangesRead', async () => {
     const ctx = makeCtx();
-    await mod.execute({ path: tmpFile, start_line: 1, end_line: 5 }, ctx);
-    const result = await mod.execute({ path: tmpFile, start_line: 10, end_line: 12 }, ctx);
+    await mod.readFile.execute({ path: tmpFile, startLine: 1, endLine: 5 }, ctx);
+    const result = await mod.readFile.execute({ path: tmpFile, startLine: 10, endLine: 12 }, ctx);
     assert.ok(!result.startsWith('[CACHED]'));
     assert.ok(result.includes('    10\tLine 10'));
     const entry = [...ctx.agent.fileState.values()][0];
@@ -324,13 +329,13 @@ describe('read.js: fileState caching', () => {
 
   it('external file modification invalidates cache and replaces ranges', async () => {
     const ctx = makeCtx();
-    await mod.execute({ path: tmpFile, start_line: 1, end_line: 5 }, ctx);
+    await mod.readFile.execute({ path: tmpFile, startLine: 1, endLine: 5 }, ctx);
     const entryBefore = [...ctx.agent.fileState.values()][0];
     const firstHash = entryBefore.hash;
 
     await fs.writeFile(tmpFile, Array.from({ length: 25 }, (_, i) => `New ${i + 1}`).join('\n'), 'utf8');
 
-    const result = await mod.execute({ path: tmpFile, start_line: 1, end_line: 5 }, ctx);
+    const result = await mod.readFile.execute({ path: tmpFile, startLine: 1, endLine: 5 }, ctx);
     assert.ok(!result.startsWith('[CACHED]'));
     assert.ok(result.includes('     1\tNew 1'));
     const entryAfter = [...ctx.agent.fileState.values()][0];
@@ -347,28 +352,28 @@ describe('read.js: fileState caching', () => {
     await fs.writeFile(tmpFile, originalContent, 'utf8');
 
     // 1. First read of the file should return the content normally
-    const res1 = await mod.execute({ path: tmpFile, start_line: 1, end_line: 10 }, ctx);
+    const res1 = await mod.readFile.execute({ path: tmpFile, startLine: 1, endLine: 10 }, ctx);
     assert.ok(!res1.startsWith('[CACHED]'), 'initial read should return content normally');
     assert.ok(res1.includes('     1\tLine 1'));
 
     // 2. Reading with a different offset returns content normally (even if it overlaps with a prior read)
-    const res2 = await mod.execute({ path: tmpFile, start_line: 2, end_line: 5 }, ctx);
+    const res2 = await mod.readFile.execute({ path: tmpFile, startLine: 2, endLine: 5 }, ctx);
     assert.ok(!res2.startsWith('[CACHED]'), 'read with a different offset should return content normally');
     assert.ok(res2.includes('     2\tLine 2'));
 
     // 3. Repeating the read with the exact same offset triggers the cache
-    const res3 = await mod.execute({ path: tmpFile, start_line: 2, end_line: 5 }, ctx);
+    const res3 = await mod.readFile.execute({ path: tmpFile, startLine: 2, endLine: 5 }, ctx);
     assert.ok(res3.startsWith('[CACHED]'), 'repeating the read with the identical offset should hit the cache');
 
     // 4. Repeating the initial read (lines 1-10) also hits the cache
-    const res4 = await mod.execute({ path: tmpFile, start_line: 1, end_line: 10 }, ctx);
+    const res4 = await mod.readFile.execute({ path: tmpFile, startLine: 1, endLine: 10 }, ctx);
     assert.ok(res4.startsWith('[CACHED]'), 'repeating the initial offset read should hit the cache');
 
     // 5. Reading after editing the file returns content normally
     try {
       await fs.writeFile(tmpFile, originalContent + '\nEdited line', 'utf8');
 
-      const res5 = await mod.execute({ path: tmpFile, start_line: 2, end_line: 5 }, ctx);
+      const res5 = await mod.readFile.execute({ path: tmpFile, startLine: 2, endLine: 5 }, ctx);
       assert.ok(!res5.startsWith('[CACHED]'), 'read after editing the file should return content normally');
       assert.ok(res5.includes('     2\tLine 2'));
     } finally {
@@ -381,7 +386,7 @@ describe('read.js: fileState caching', () => {
     const legacyFile = path.join(FIXTURES, 'read-state-legacy.txt');
     await fs.writeFile(legacyFile, 'a\nb\nc\n', 'utf8');
     try {
-      const result = await mod.execute({ path: legacyFile });
+      const result = await mod.readFile.execute({ path: legacyFile });
       assert.ok(result.includes('     1\ta'));
       assert.ok(result.includes('     3\tc'));
     } finally {
@@ -390,7 +395,7 @@ describe('read.js: fileState caching', () => {
   });
 });
 
-describe('read.js: video and audio branch', () => {
+describe('readFile: video and audio branch', () => {
   let tmpDir;
   let mp4File;
   let oversizedMp4File;
@@ -424,9 +429,9 @@ describe('read.js: video and audio branch', () => {
   });
 
   it('returns an array with text and video_url for a small MP4 video', async () => {
-    const mod = await import('../../../src/tools/file/read.js');
+    const mod = await import('../../../src/tools/files/read-file.js');
     const ctx = { agent: { trustedPaths: new Set([tmpDir]) } };
-    const result = await mod.execute({ path: mp4File }, ctx);
+    const result = await mod.readFile.execute({ path: mp4File }, ctx);
     assert.ok(Array.isArray(result), 'result should be an array');
     assert.equal(result[0].type, 'text');
     assert.ok(result[0].text.includes('video/mp4'));
@@ -435,17 +440,17 @@ describe('read.js: video and audio branch', () => {
   });
 
   it('returns a string for an oversized MP4', async () => {
-    const mod = await import('../../../src/tools/file/read.js');
+    const mod = await import('../../../src/tools/files/read-file.js');
     const ctx = { agent: { trustedPaths: new Set([tmpDir]) } };
-    const result = await mod.execute({ path: oversizedMp4File }, ctx);
+    const result = await mod.readFile.execute({ path: oversizedMp4File }, ctx);
     assert.ok(typeof result === 'string', 'result should be a string');
     assert.ok(result.includes('too large to inline'), 'result should mention too large to inline');
   });
 
   it('returns an array with text and input_audio for a small MP3 audio', async () => {
-    const mod = await import('../../../src/tools/file/read.js');
+    const mod = await import('../../../src/tools/files/read-file.js');
     const ctx = { agent: { trustedPaths: new Set([tmpDir]) } };
-    const result = await mod.execute({ path: mp3File }, ctx);
+    const result = await mod.readFile.execute({ path: mp3File }, ctx);
     assert.ok(Array.isArray(result), 'result should be an array');
     assert.equal(result[0].type, 'text');
     assert.ok(result[0].text.includes('audio/mpeg'));
@@ -458,24 +463,23 @@ describe('read.js: video and audio branch', () => {
     const oversizedMp3File = path.join(tmpDir, 'large.mp3');
     await fs.writeFile(oversizedMp3File, Buffer.alloc(8));
     await fs.truncate(oversizedMp3File, 25 * 1024 * 1024 + 1);
-    const mod = await import('../../../src/tools/file/read.js');
+    const mod = await import('../../../src/tools/files/read-file.js');
     const ctx = { agent: { trustedPaths: new Set([tmpDir]) } };
-    const result = await mod.execute({ path: oversizedMp3File }, ctx);
+    const result = await mod.readFile.execute({ path: oversizedMp3File }, ctx);
     assert.ok(typeof result === 'string');
     assert.ok(result.includes('too large to inline'));
   });
 });
 
-describe('read.js: oversized text file', () => {
-  it('throws when text file exceeds 10MB', async () => {
-    const os = await import('node:os');
-    const tmpDir = await fs.mkdtemp(path.join(os.default.tmpdir(), 'read-oversize-'));
+describe('readFile: oversized text file', () => {
+  it('throws when text file exceeds 10MB', async (t) => {
+    const tmpDir = createTestTempDir(t, 'read-oversize-');
     const bigFile = path.join(tmpDir, 'big.txt');
     try {
       await fs.writeFile(bigFile, Buffer.alloc(10 * 1024 * 1024 + 1, 0x61)); // 10MB+1 of 'a'
-      const mod = await import('../../../src/tools/file/read.js');
+      const mod = await import('../../../src/tools/files/read-file.js');
       const ctx = { agent: { trustedPaths: new Set([tmpDir]) } };
-      await assert.rejects(() => mod.execute({ path: bigFile }, ctx), /too large/i);
+      await assert.rejects(() => mod.readFile.execute({ path: bigFile }, ctx), /too large/i);
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
     }

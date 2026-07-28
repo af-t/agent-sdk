@@ -1,27 +1,26 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { resolveSafePath } from '../../support/path-safety.js';
-import { hashContent } from '../../core/file-state.js';
+import { hashContent } from './file-state.js';
 
-const MAX_WRITE_SIZE = 10 * 1024 * 1024; // 10MB limit to prevent disk exhaustion
+const MAX_WRITE_SIZE = 10 * 1024 * 1024;
 
-export const name = 'Write';
-export const description =
-  'Create a new file, or overwrite an existing one by passing overwrite=true. Prefer Edit for partial changes. This tool will automatically create any missing parent directories. Side effect: writes/overwrites the target file. Do not issue parallel Write or Edit calls against the same path.';
-export const inputSchema = {
+const description = 'Create a file or replace it when overwrite is true. Prefer editFile for partial changes.';
+const inputSchema = {
   type: 'object',
+  additionalProperties: false,
   properties: {
     path: { type: 'string', description: 'Destination path' },
     content: { type: 'string', description: 'Full content to write' },
     overwrite: {
       type: 'boolean',
-      description: 'Set true to intentionally overwrite an existing file. Prefer Edit for partial changes.',
+      description: 'Allow a full replacement of an existing file.',
     },
   },
   required: ['path', 'content'],
 };
 
-export const execute = async ({ path: filePath, content, overwrite = false }, ctx = {}) => {
+const execute = async ({ path: filePath, content, overwrite = false }, ctx = {}) => {
   const safePath = resolveSafePath(filePath, ctx.agent?.trustedPaths, { restricted: ctx.agent?.restricted !== false });
 
   const size = Buffer.byteLength(content, 'utf8');
@@ -38,7 +37,7 @@ export const execute = async ({ path: filePath, content, overwrite = false }, ct
   }
   if (exists && overwrite !== true) {
     throw new Error(
-      `File ${filePath} already exists. Use Edit for partial changes, or pass overwrite=true for an intentional full rewrite.`,
+      `File ${filePath} already exists. Use editFile for partial changes, or set overwrite to true for a full replacement.`,
     );
   }
 
@@ -57,10 +56,7 @@ export const execute = async ({ path: filePath, content, overwrite = false }, ct
     });
   }
 
-  return [
-    `**File written**`,
-    `  Absolute path  : ${safePath}`,
-    `  Relative path  : ${path.relative(process.cwd(), safePath)}`,
-    `  Bytes written  : ${Buffer.from(content).length}`,
-  ].join('\n');
+  return `Wrote ${filePath} (${size} bytes).`;
 };
+
+export const writeFile = { name: 'writeFile', description, inputSchema, execute };

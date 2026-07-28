@@ -7,7 +7,7 @@ description: Persistent file-based memory protocol: when to save, how to format,
 
 ## Overview
 
-This skill covers the persistent file-based memory system. Memory files are stored as markdown files with YAML-like frontmatter in the memory directory (see `<system-reminder>` for the exact path). The LLM uses standard **Write/Read/Edit** tools to manage memory files, and the **RecallMemory** tool to search memories by meaning. Nothing is auto-created; you create files on demand.
+This skill covers the persistent file-based memory system. Memory files are stored as markdown files with YAML-like frontmatter in the memory directory (see `<system-reminder>` for the exact path). The LLM uses `writeFile`, `readFile`, and `editFile` to manage memory files, and the **RecallMemory** tool to search memories by meaning. Nothing is auto-created; you create files on demand.
 
 Memory is injected into the LLM's context on every turn via the **injector system**: specifically the `memoryIndex` (first-turn) and `memoryHint` (first-turn) injectors. Their output is concatenated into a single `<system-reminder>…</system-reminder>` block that appears before the last user message content part. The `date` injector (per-turn) also adds the current timestamp.
 
@@ -19,12 +19,12 @@ Memory is injected into the LLM's context on every turn via the **injector syste
 |----------|-----------|
 | File-based (current) | Durable across sessions, inspectable by user, version-controlled with git |
 | Dedicated memory tools | Would bypass file-system safeguards like `resolveSafePath` |
-| LLM-managed (Write/Read/Edit) | Same tools as everything else: no special machinery |
+| LLM-managed (writeFile/readFile/editFile) | Same tools as everything else: no special machinery |
 
 ### How Memory Gets Into Context
 
 ```
-Write/Read/Edit (you)
+writeFile/readFile/editFile (you)
     ↓
 memory files on disk (<memoryDir>: see system-reminder for the current path)
     ↓
@@ -45,7 +45,7 @@ LLM sees index on the very first turn → reads relevant files on demand
 
 The memory directory is configured via the `storagePaths.memoryDir` option on the Agent constructor. The path is resolved to an absolute path at construction time, including `~` expansion. Default: **`.<appName>/memory/`** (where `appName` defaults to `agent-sdk`) relative to the project root. Do not rely on this literal: the `memoryHint` injector emits the actual resolved path at runtime; use that.
 
-The directory is read from `agent._memoryDir` and is always an absolute path. If the configured directory is outside the project root, it is registered in `agent.trustedPaths` so Read/Write/Edit tools can access it normally: you do not need to do anything special to read or write memory files there.
+The directory is read from `agent._memoryDir` and is always an absolute path. If the configured directory is outside the project root, it is registered in `agent.trustedPaths` so readFile, writeFile, and editFile can access it normally: you do not need to do anything special to read or write memory files there.
 
 Subagents inherit the parent's appName-derived default memory directory (or the parent's `storagePaths.memoryDir`). If a subagent needs a different memory dir, pass the path explicitly in the delegate prompt.
 
@@ -149,7 +149,7 @@ See [Setup](project_setup.md) for initial configuration steps.
 ## Stale Memory Guidance
 
 - **Before recommending from memory**: verify the information is still current. Check git log, file timestamps, or run a quick Bash command.
-- **If a memory is stale**: update it in-place (Edit tool) rather than creating a duplicate.
+- **If a memory is stale**: update it in-place (editFile) rather than creating a duplicate.
 - **If a memory is obsolete**: delete the file and remove its line from MEMORY.md.
 
 ## Workflow
@@ -158,7 +158,7 @@ See [Setup](project_setup.md) for initial configuration steps.
 
 ```markdown
 <!-- Pattern A: Save user preference -->
-Write `<memoryDir>/feedback_name_sayu.md`
+Use writeFile for `<memoryDir>/feedback_name_sayu.md`
 (The exact path is shown in the `<system-reminder>` block on the first turn)
 → name: feedback-name-sayu
 → type: feedback
@@ -170,7 +170,7 @@ Then update MEMORY.md:
 
 ```markdown
 <!-- Pattern B: Save a project decision -->
-Write `<memoryDir>/project_use-pnpm.md`
+Use writeFile for `<memoryDir>/project_use-pnpm.md`
 → name: project-use-pnpm
 → type: project
 → Body: "Project uses pnpm, not npm. Reason: workspace support."
@@ -189,13 +189,13 @@ Then update MEMORY.md:
 
 1. Check `<memoryDir>/MEMORY.md` index for relevant entries (already visible in first-turn context).
 2. If you need the full content of specific memories or want to search memories by meaning, call the `RecallMemory` tool with a descriptive query.
-3. Read specific memory files directly if you need to browse them, or rely on the tool's recalled bodies.
+3. Use readFile for specific memory files if you need to browse them, or rely on the tool's recalled bodies.
 4. Verify the information is still current before acting on it.
 
 ### Updating a Memory
 
-1. Read the existing memory file.
-2. Use Edit to update the body content.
+1. Use readFile for the existing memory file.
+2. Use editFile to update the body content.
 3. If the description changed, update both the frontmatter `description` and the MEMORY.md index line.
 
 ### Deleting a Memory
@@ -208,12 +208,12 @@ Then update MEMORY.md:
 1. **Keep descriptions under 80 characters**: They appear in the index and serve as quick-summary for relevance scanning.
 2. **One concern per file**: Don't mix user preferences with project decisions in the same file. Split into separate type/slug files.
 3. **Always update MEMORY.md immediately**: If you create/rename/delete a memory file but forget the index, the injector won't show it. Do it atomically.
-4. **Prefer Edit over Write for updates**: Use Edit to surgically update frontmatter or body. Only use Write for brand-new files.
+4. **Prefer editFile over writeFile for updates**: Use editFile to surgically update frontmatter or body. Only use writeFile for brand-new files.
 5. **Never store secrets**: API keys, tokens, passwords must never go into memory files. Use the env config or a dedicated `.env` file instead.
 6. **Clean up stale memories**: Outdated info is worse than no info. Review and delete obsolete files periodically.
 7. **Use consistent kebab-case slugs**: `user-preferred-editor`, not `userPreferredEditor` or `User Preferred Editor`.
 8. **Subagents don't inherit custom memory config**: If a subagent needs access to memory, it must use the default directory or you must pass the info explicitly in the delegate prompt.
-9. **File paths are validated by `resolveSafePath`**: For memory files within the project root, use relative paths. For files in a configured external `memoryDir`, use absolute paths: they are trusted via `trustedPaths` and accessible through Read/Write/Edit tools without any special handling.
+9. **File paths are validated by `resolveSafePath`**: For memory files within the project root, use relative paths. For files in a configured external `memoryDir`, use absolute paths: they are trusted via `trustedPaths` and accessible through readFile, writeFile, and editFile without any special handling.
 10. **The index is first-turn only**: MEMORY.md is only injected on the very first turn of a conversation. If you update memories mid-conversation, the LLM won't see the updated index until the next conversation start.
 
 ## How It Works (Technical Details)
@@ -273,4 +273,4 @@ Potential references to add:
 
 *(This directory can hold helper scripts, similar to other skills.)*
 
-No scripts are currently provided: the Write/Read/Edit tools are sufficient for all memory operations.
+No scripts are currently provided: writeFile, readFile, and editFile are sufficient for all memory operations.

@@ -1,8 +1,8 @@
-import * as editTool from './file/edit.js';
-import * as findTool from './file/find.js';
-import * as listTool from './file/list.js';
-import * as readTool from './file/read.js';
-import * as writeTool from './file/write.js';
+import { editFile } from './files/edit-file.js';
+import { findFiles } from './files/find-files.js';
+import { listFiles } from './files/list-files.js';
+import { readFile } from './files/read-file.js';
+import { writeFile } from './files/write-file.js';
 import * as recallMemoryTool from './general/recall-memory.js';
 import * as todoTool from './general/todo.js';
 import * as bashTool from './system/bash.js';
@@ -13,12 +13,9 @@ import * as wakeupTool from './system/wakeup.js';
 import * as fetchTool from './web/fetch.js';
 import * as searchTool from './web/search.js';
 
-const staticTools = [
-  editTool,
-  findTool,
-  listTool,
-  readTool,
-  writeTool,
+export const builtInTools = [readFile, writeFile, editFile, findFiles, listFiles];
+
+const otherStaticTools = [
   recallMemoryTool,
   todoTool,
   bashTool,
@@ -35,5 +32,5 @@ const staticTools = [
 }));
 
 export function createBuiltinTools(skillRegistry) {
-  return [...staticTools, skillTool.createSkillTool(skillRegistry)];
+  return [...builtInTools, ...otherStaticTools, skillTool.createSkillTool(skillRegistry)];
 }

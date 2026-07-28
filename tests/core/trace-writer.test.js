@@ -21,18 +21,18 @@ test('writes turn header, reasoning, assistant text, and tool entries', async (t
   const { close, logPath, writer: w } = createTestTraceWriter(t);
   await w.notify({ reasoning: 'thinking about the task' });
   await w.notify({ content: 'I will read the file' });
-  await w.notify({ tool_calls: [{ id: 'abc', function: { name: 'Read', arguments: '{}' } }] });
-  await w.notify({ tool_start: { tool_call_id: 'abc', name: 'Read', input: { file_path: '/x.txt' } } });
-  await w.notify({ tool_end: { tool_call_id: 'abc', name: 'Read', duration_ms: 12, output: 'file body' } });
+  await w.notify({ tool_calls: [{ id: 'abc', function: { name: 'readFile', arguments: '{}' } }] });
+  await w.notify({ tool_start: { tool_call_id: 'abc', name: 'readFile', input: { path: '/x.txt' } } });
+  await w.notify({ tool_end: { tool_call_id: 'abc', name: 'readFile', duration_ms: 12, output: 'file body' } });
   await close();
 
   const out = fs.readFileSync(logPath, 'utf8');
   assert.match(out, /=== turn 1 ===/);
   assert.match(out, /\[reasoning\]\nthinking about the task/);
   assert.match(out, /\[assistant\]\nI will read the file/);
-  assert.match(out, /\[tool_calls\] Read/);
-  assert.match(out, /-> Read#abc start: \{"file_path":"\/x.txt"\}/);
-  assert.match(out, /-> Read#abc end \(12ms\): file body/);
+  assert.match(out, /\[tool_calls\] readFile/);
+  assert.match(out, /-> readFile#abc start: \{"path":"\/x.txt"\}/);
+  assert.match(out, /-> readFile#abc end \(12ms\): file body/);
 });
 
 test('flushes a final turn with no tool_calls on close', async (t) => {
@@ -54,8 +54,8 @@ test('records tool errors and truncates oversized output', async (t) => {
   w = createTraceWriter(logPath, { toolOutputCap: 20 });
   await w.notify({ tool_calls: [{ id: 'e1', function: { name: 'Bash' } }] });
   await w.notify({ tool_end: { tool_call_id: 'e1', name: 'Bash', duration_ms: 5, error: 'boom' } });
-  await w.notify({ tool_calls: [{ id: 'big', function: { name: 'Read' } }] });
-  await w.notify({ tool_end: { tool_call_id: 'big', name: 'Read', duration_ms: 5, output: 'x'.repeat(500) } });
+  await w.notify({ tool_calls: [{ id: 'big', function: { name: 'readFile' } }] });
+  await w.notify({ tool_end: { tool_call_id: 'big', name: 'readFile', duration_ms: 5, output: 'x'.repeat(500) } });
   await close();
   const out = fs.readFileSync(logPath, 'utf8');
   assert.match(out, /-> Bash#e1 end \(5ms\): ERROR boom/);

@@ -29,8 +29,8 @@ Minimal SDK for building AI agents connected to the [OpenRouter API](https://ope
 - **Automatic Tool Execution Loop**: The agent automatically calls tools, receives results, and continues the conversation until a final answer is produced.
 - **MCP (Model Context Protocol) Support**: Connect your agent to external tools via stdio-based MCP servers.
 - **Skill Discovery System**: Discover and load skills from SKILL.md files across builtin (`src/skills/`) and plugin directories.
-- **Built-in Tools**: File operations (Read, Write, Edit, Find, List), shell command execution (Bash with optional **node-pty** support), web search (Tavily), web fetch (using **cheerio**), and subagent delegation.
-- **Safety & Validation**: Tool inputs are validated against their schema (type checks, required fields, enums). Path traversal protection on Read, Write, Edit, List, and Find tools; **.gitignore** filtering on List (and on Find when ripgrep is available): Read, Write, and Edit do _not_ consult .gitignore, so ignored files inside the project root (such as `.env`) remain accessible to the agent. Dangerous shell command detection.
+- **Built-in Tools**: File operations (readFile, writeFile, editFile, findFiles, listFiles), shell command execution (Bash with optional **node-pty** support), web search (Tavily), web fetch (using **cheerio**), and subagent delegation.
+- **Safety & Validation**: Tool inputs are validated against their schema (type checks, required fields, enums). Path traversal protection on readFile, writeFile, editFile, listFiles, and findFiles; **.gitignore** filtering on listFiles (and on findFiles when ripgrep is available): readFile, writeFile, and editFile do _not_ consult .gitignore, so ignored files inside the project root (such as `.env`) remain accessible to the agent. Dangerous shell command detection.
 - **Retry with Exponential Backoff**: Auto-retry with jitter to handle rate limits and transient errors.
 - **Abort Signal Support**: Cancel agent execution at any point.
 - **Ephemeral Caching**: Automatic `cache_control` on the system prompt and the final user or string tool-result message in each request.
@@ -432,11 +432,11 @@ await agent.tools.connectMcpServer({
 
 | Tool        | Category | Description                                                                           |
 | ----------- | -------- | ------------------------------------------------------------------------------------- |
-| `Read`      | File     | Read text, notebooks, images, PDFs & binary files                                     |
-| `Write`     | File     | Write a new file (overwrite)                                                          |
-| `Edit`      | File     | Edit a file with find-and-replace                                                     |
-| `Find`      | File     | Search for files by name or content                                                   |
-| `List`      | File     | List directory contents (ls alternative)                                              |
+| `readFile`  | File     | Read text, notebooks, images, PDFs & binary files                                     |
+| `writeFile` | File     | Write a new file (overwrite)                                                          |
+| `editFile`  | File     | Edit a file with find-and-replace                                                     |
+| `findFiles` | File     | Search for files by name or content                                                   |
+| `listFiles` | File     | List directory contents (ls alternative)                                              |
 | `Todo`      | General  | Manage a todo list (add, list, complete, delete, update, clear) with persistence      |
 | `RecallMemory` | General | Semantic search over stored memory files (embeddings, with lexical fallback)        |
 | `Bash`      | System   | Execute shell commands (pty with fallback to child_process); supports background mode |
@@ -449,7 +449,7 @@ await agent.tools.connectMcpServer({
 
 ### Reading non-text files
 
-`Read` classifies a file by its magic bytes (and the `.ipynb` extension) and adapts its output:
+`readFile` classifies a file by its magic bytes (and the `.ipynb` extension) and adapts its output:
 
 - **Text**: paginated, line-numbered output (unchanged behavior).
 - **Notebooks (`.ipynb`)**: the JSON is flattened into a readable transcript of cells, with code cell outputs (stdout, results, error tracebacks) inlined.
@@ -563,7 +563,7 @@ The hook returns a disposer. Hooks run in registration order and may be async.
 
 ## Persistent Memory
 
-The SDK ships a file-based memory protocol that lets the agent persist knowledge across sessions. There are **no dedicated memory tools**: the LLM reads, writes, and edits memory files using the standard `Read`, `Write`, and `Edit` tools, guided by the `using-memory` skill and the first-turn memory injectors.
+The SDK ships a file-based memory protocol that lets the agent persist knowledge across sessions. There are **no dedicated memory tools**: the LLM reads, writes, and edits memory files using `readFile`, `writeFile`, and `editFile`, guided by the `using-memory` skill and the first-turn memory injectors.
 
 ### Configurable Storage Paths
 
@@ -716,9 +716,10 @@ openrouter/
 │   │   ├── logger.js      # Colored console logger (debug/info/warn/error)
 │   │   ├── errors.js      # Custom error classes (ApiError, ToolError, ConfigError)
 │   │   ├── mcp.js         # MCP client (native stdio-based JSON-RPC)
-│   │   ├── file-type.js   # Magic-byte detection for the Read tool
+│   ├── tools/files/
+│   │   ├── file-type.js   # Magic-byte detection for readFile
 │   │   ├── file-state.js  # File content cache (line-number stability)
-│   │   └── notebook.js    # .ipynb flattener for the Read tool
+│   │   └── notebook.js    # .ipynb flattener for readFile
 │   ├── support/
 │   │   ├── path-safety.js # Canonical path containment and ignore filters
 │   │   ├── environment.js # Secret and child-environment filtering
@@ -729,7 +730,7 @@ openrouter/
 │   │   ├── tool.js        # ToolRegistry: register, execute, hooks, MCP
 │   │   └── skill.js       # SkillRegistry: discover & load SKILL.md
 │   └── tools/
-│       ├── file/          # Read, Write, Edit, Find, List
+│       ├── files/         # readFile, writeFile, editFile, findFiles, listFiles
 │       ├── general/       # Todo, RecallMemory
 │       ├── system/        # Bash, Delegate, Jobs, Skill, Wakeup
 │       └── web/           # Search (Tavily), Fetch
