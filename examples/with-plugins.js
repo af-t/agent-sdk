@@ -11,6 +11,7 @@
 // overrides it (here, the example folder).
 
 import path from 'node:path';
+import { realpathSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import createAgent from '../src/index.js';
 
@@ -44,6 +45,15 @@ export async function main() {
   console.log(agent.usage);
 }
 
-if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+function isDirectExecution() {
+  if (!process.argv[1]) return false;
+  try {
+    return pathToFileURL(realpathSync(path.resolve(process.argv[1]))).href === import.meta.url;
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectExecution()) {
   await main();
 }
