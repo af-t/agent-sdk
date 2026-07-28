@@ -2,9 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { ConfigError } from '../../src/support/errors.js';
 import { ToolRegistry } from '../../src/registries/tool-registry.js';
 import { SkillRegistry } from '../../src/registries/skill-registry.js';
 import { Recording } from '../../src/core/recording.js';
+import { createBuiltinTools } from '../../src/tools/index.js';
 import { createTestTempDir } from '../support/temp.js';
 
 const NO_INJECTORS = {
@@ -201,6 +203,7 @@ test('Agent.replay toolMode live re-executes tools against the provided registry
   const rec = await Recording.load(file);
 
   const registry = new ToolRegistry();
+  const skillRegistry = new SkillRegistry();
   let calls = 0;
   registry.register({
     name: 'Echo',
@@ -217,7 +220,7 @@ test('Agent.replay toolMode live re-executes tools against the provided registry
     throw new Error('replay must not touch the network');
   };
   try {
-    resource.agent = Agent.replay(rec, { tools: registry, toolMode: 'live' });
+    resource.agent = Agent.replay(rec, { tools: registry, skillRegistry, toolMode: 'live' });
     const { agent } = resource;
     const out = await agent.run();
     assert.equal(out, 'done');
@@ -229,7 +232,22 @@ test('Agent.replay toolMode live re-executes tools against the provided registry
   }
 });
 
-test('Agent.replay adopts the supplied SkillRegistry alongside supplied tools', async (t) => {
+test('Agent.replay requires tools and skillRegistry to be supplied together', async (t) => {
+  const Agent = (await import('../../src/core/agent.js')).default;
+  const { file } = writeFullFixture(t, fullFixtureLines());
+  const rec = await Recording.load(file);
+
+  for (const options of [{ tools: new ToolRegistry() }, { skillRegistry: new SkillRegistry() }]) {
+    assert.throws(
+      () => Agent.replay(rec, options),
+      (error) =>
+        error instanceof ConfigError &&
+        error.message === 'Agent.replay: tools and skillRegistry must be provided together',
+    );
+  }
+});
+
+test('Agent.replay uses the SkillRegistry bound to its supplied Skill tool', async (t) => {
   const Agent = (await import('../../src/core/agent.js')).default;
   const resource = { agent: undefined };
   t.after(() => resource.agent?.cleanup());
@@ -237,10 +255,17 @@ test('Agent.replay adopts the supplied SkillRegistry alongside supplied tools', 
   const rec = await Recording.load(file);
   const skillRegistry = new SkillRegistry();
   const tools = new ToolRegistry();
+  tools.registerMany(createBuiltinTools(skillRegistry));
 
   resource.agent = Agent.replay(rec, { tools, skillRegistry });
+  await skillRegistry._ensureDiscovered();
+  skillRegistry.skills.set('replay-marker', { description: 'shared marker', content: 'Replay marker body.' });
 
   assert.equal(resource.agent.skillRegistry, skillRegistry);
+  assert.match(
+    await resource.agent.tools.execute('Skill', { action: 'load', argument: 'replay-marker' }),
+    /Replay marker body/,
+  );
 });
 
 test('Agent.replay reproduces a recorded tool error', async (t) => {

@@ -461,6 +461,11 @@ class Agent {
     if (toolMode !== 'replay' && toolMode !== 'live') {
       throw new Error(`Agent.replay: unknown toolMode '${toolMode}' (expected 'replay' or 'live')`);
     }
+    const hasTools = tools !== undefined;
+    const hasSkillRegistry = skillRegistry !== undefined;
+    if (hasTools !== hasSkillRegistry || (hasTools && (!tools || !skillRegistry))) {
+      throw new ConfigError('Agent.replay: tools and skillRegistry must be provided together');
+    }
     const agent = new Agent({
       apiKey: 'replay',
       model: recording.model,

@@ -11,33 +11,39 @@
 // overrides it (here, the example folder).
 
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import createAgent from '../src/index.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const pluginsDir = path.join(__dirname, 'plugins');
+export async function main() {
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  const pluginsDir = path.join(__dirname, 'plugins');
 
-// The constructor configures the Agent-owned SkillRegistry for us.
-const agent = await createAgent({ storagePaths: { pluginsDir } });
+  // The constructor configures the Agent-owned SkillRegistry for us.
+  const agent = await createAgent({ storagePaths: { pluginsDir } });
 
-// Force discovery so we can inspect what the plugins contributed (no API call).
-await agent.skillRegistry._ensureDiscovered();
+  // Force discovery so we can inspect what the plugins contributed (no API call).
+  await agent.skillRegistry._ensureDiscovered();
 
-console.log('--- Skills discovered from plugins ---');
-for (const [name, skill] of agent.skillRegistry.skills) {
-  if (skill.scope !== 'plugin') continue;
-  console.log(`- ${name} (plugin: ${skill.plugin}): ${skill.description}`);
+  console.log('--- Skills discovered from plugins ---');
+  for (const [name, skill] of agent.skillRegistry.skills) {
+    if (skill.scope !== 'plugin') continue;
+    console.log(`- ${name} (plugin: ${skill.plugin}): ${skill.description}`);
+  }
+
+  console.log('\n--- Plugin instructions (injected as a first-turn system-reminder) ---');
+  for (const { plugin, content } of agent.skillRegistry.getPluginInstructions()) {
+    console.log(`### ${plugin}\n${content}`);
+  }
+
+  // The weather AGENTS.md should steer the model to load the forecast skill.
+  console.log('--- Agent reply ---');
+  const reply = await agent.run('I am in Jakarta. Should I bring an umbrella this afternoon?');
+  console.log(reply);
+
+  console.log('\n--- Usage ---');
+  console.log(agent.usage);
 }
 
-console.log('\n--- Plugin instructions (injected as a first-turn system-reminder) ---');
-for (const { plugin, content } of agent.skillRegistry.getPluginInstructions()) {
-  console.log(`### ${plugin}\n${content}`);
+if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+  await main();
 }
-
-// The weather AGENTS.md should steer the model to load the forecast skill.
-console.log('--- Agent reply ---');
-const reply = await agent.run('I am in Jakarta. Should I bring an umbrella this afternoon?');
-console.log(reply);
-
-console.log('\n--- Usage ---');
-console.log(agent.usage);
