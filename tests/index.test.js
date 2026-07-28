@@ -87,6 +87,27 @@ describe('createAgent', () => {
     assert.match(serialized, /REDACTED/);
   });
 
+  it('uses the caller logger for its per-Agent SkillRegistry without closing it', async () => {
+    const records = [];
+    let closed = false;
+    const logger = {
+      debug: (context, message) => records.push({ context, message }),
+      info() {},
+      warn() {},
+      error() {},
+      close() {
+        closed = true;
+      },
+    };
+    const agent = await createAgent({ logger, injectors: { date: false } });
+    await agent.skillRegistry.discover();
+    await agent.cleanup();
+    assert.ok(
+      records.some((record) => record.message === 'Discovered skills' && record.context.component === 'skillRegistry'),
+    );
+    assert.equal(closed, false);
+  });
+
   it('should load built-in tools (Read, Write, Edit, Find, List, Bash, etc.)', async () => {
     const agent = await createAgent();
     const tools = agent.tools.listTools();

@@ -703,13 +703,11 @@ describe('Agent: skillList first-turn injector', () => {
 
 describe('Agent: pluginInstructions first-turn injector', () => {
   let Agent;
-  let skillRegistry;
   let originalFetch;
   let pluginsDir;
 
   before(async () => {
     Agent = (await import('../../src/core/agent.js')).default;
-    skillRegistry = (await import('../../src/registries/skill-registry.js')).default;
     originalFetch = global.fetch;
 
     pluginsDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'agent-plugins-test-'));
@@ -723,8 +721,6 @@ describe('Agent: pluginInstructions first-turn injector', () => {
 
   after(async () => {
     global.fetch = originalFetch;
-    skillRegistry.configure({ pluginsDir: null });
-    skillRegistry.reset();
     await fs.promises.rm(pluginsDir, { recursive: true, force: true });
   });
 

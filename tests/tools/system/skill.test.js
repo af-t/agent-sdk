@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import os from 'node:os';
+import { SkillRegistry } from '../../../src/registries/skill-registry.js';
 
 describe('Skill tool module', () => {
   let mod;
@@ -32,21 +33,22 @@ describe('Skill tool module', () => {
     assert.ok(!mod.inputSchema.required.includes('argument'));
   });
 
-  it('should export execute as a function', () => {
-    assert.strictEqual(typeof mod.execute, 'function');
+  it('creates an execute function for an injected registry', () => {
+    assert.strictEqual(typeof mod.createSkillTool(new SkillRegistry()).execute, 'function');
   });
 });
 
 describe('Skill tool: execute()', () => {
   let mod;
   let registry;
+  let tool;
   const pluginsDir = path.join(os.tmpdir(), 'test-plugins-' + Date.now());
   const skillFilePath = path.join(pluginsDir, 'test-plugin', 'skills', 'my-custom-skill', 'SKILL.md');
 
   before(async () => {
     // Reset and configure registry to find our test skill
     mod = await import('../../../src/tools/system/skill.js');
-    registry = (await import('../../../src/registries/skill-registry.js')).default;
+    registry = new SkillRegistry();
     registry.reset();
 
     // Create a temporary SKILL.md file
@@ -71,6 +73,7 @@ describe('Skill tool: execute()', () => {
 
     registry.configure({ pluginsDir });
     await registry.refresh();
+    tool = mod.createSkillTool(registry);
   });
 
   after(async () => {
@@ -80,13 +83,13 @@ describe('Skill tool: execute()', () => {
   });
 
   it('execute("list") returns formatted list of skills', async () => {
-    const result = await mod.execute({ action: 'list' });
+    const result = await tool.execute({ action: 'list' });
     assert.ok(result.startsWith('# Available Skills'));
     assert.ok(result.includes('MyTestSkill'));
   });
 
   it('execute("load") returns skill content for existing skill', async () => {
-    const result = await mod.execute({ action: 'load', argument: 'MyTestSkill' });
+    const result = await tool.execute({ action: 'load', argument: 'MyTestSkill' });
     assert.ok(result.startsWith('# MyTestSkill'));
     assert.ok(result.includes('**description:**'));
     assert.ok(result.includes('A test skill for unit testing'));
@@ -94,27 +97,27 @@ describe('Skill tool: execute()', () => {
   });
 
   it('execute("load") returns error message for non-existent skill', async () => {
-    const result = await mod.execute({ action: 'load', argument: 'NonExistentSkill' });
+    const result = await tool.execute({ action: 'load', argument: 'NonExistentSkill' });
     assert.ok(result.includes('NonExistentSkill'));
     assert.ok(result.includes('not found'));
   });
 
   it('execute("search") returns matching skills', async () => {
-    const result = await mod.execute({ action: 'search', argument: 'test' });
+    const result = await tool.execute({ action: 'search', argument: 'test' });
     assert.ok(result.startsWith('# Skills matching'));
     assert.ok(result.includes('MyTestSkill'));
     assert.ok(result.includes('score:'));
   });
 
   it('execute("search") returns empty message for unmatched query', async () => {
-    const result = await mod.execute({ action: 'search', argument: 'xyznonexistent12345' });
+    const result = await tool.execute({ action: 'search', argument: 'xyznonexistent12345' });
     assert.ok(result.includes('xyznonexistent12345'));
     assert.ok(result.includes('not found') || result.includes('No skills found matching'));
   });
 
   it('execute throws validation error when load or search is called without argument', async () => {
-    await assert.rejects(() => mod.execute({ action: 'load' }), /Parameter "argument" is required/);
-    await assert.rejects(() => mod.execute({ action: 'load', argument: '   ' }), /Parameter "argument" is required/);
-    await assert.rejects(() => mod.execute({ action: 'search' }), /Parameter "argument" is required/);
+    await assert.rejects(() => tool.execute({ action: 'load' }), /Parameter "argument" is required/);
+    await assert.rejects(() => tool.execute({ action: 'load', argument: '   ' }), /Parameter "argument" is required/);
+    await assert.rejects(() => tool.execute({ action: 'search' }), /Parameter "argument" is required/);
   });
 });

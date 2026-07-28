@@ -1,5 +1,3 @@
-import registry from '../../registries/skill-registry.js';
-
 export const name = 'Skill';
 export const description =
   'Reusable instruction sets for specialized tasks like code review, debugging, testing, architecture planning, strategy, and more.';
@@ -21,57 +19,60 @@ export const inputSchema = {
   required: ['action'],
 };
 
-export const execute = async ({ action, argument }) => {
-  await registry._ensureDiscovered();
+export function createSkillTool(registry) {
+  async function execute({ action, argument }) {
+    await registry._ensureDiscovered();
 
-  if ((action === 'load' || action === 'search') && (!argument || !argument.trim())) {
-    throw new Error(`Parameter "argument" is required and cannot be empty for action "${action}".`);
-  }
-
-  switch (action) {
-    case 'list': {
-      const lists = registry.list();
-      if (!lists) {
-        return 'No skills found.';
-      }
-
-      return `# Available Skills (${registry.skills.size})\n\n` + lists;
+    if ((action === 'load' || action === 'search') && (!argument || !argument.trim())) {
+      throw new Error(`Parameter "argument" is required and cannot be empty for action "${action}".`);
     }
-    case 'load': {
-      const skill = registry.get(argument);
-      if (!skill) {
-        const lists = await execute({ action: 'list' });
-        return `Skill "${argument}" not found!\n\n${lists}`;
-      }
 
-      let output = `# ${argument}\n\n`;
-      for (const key of Object.keys(skill)) {
-        if (skill[key] && key !== 'content' && key !== 'raw') {
-          output += `**${key}:** ${skill[key]}\n`;
+    switch (action) {
+      case 'list': {
+        const lists = registry.list();
+        if (!lists) {
+          return 'No skills found.';
         }
-      }
-      output += '\n---\n\n';
-      output += skill.content;
 
-      return output;
-    }
-    case 'search': {
-      const results = registry.search(argument);
-      if (!results || results.length === 0) {
-        const lists = await execute({ action: 'list' });
-        return `No skills found matching "${argument}".\n\n${lists}`;
+        return `# Available Skills (${registry.skills.size})\n\n` + lists;
       }
-
-      let output = `# Skills matching "${argument}" (${results.length})\n\n`;
-      for (const skill of results) {
-        output += `- **${skill.name}** (${skill.scope}, score: ${skill.score})\n`;
-        if (skill.description) {
-          output += `  ${skill.description}\n`;
+      case 'load': {
+        const skill = registry.get(argument);
+        if (!skill) {
+          const lists = await execute({ action: 'list' });
+          return `Skill "${argument}" not found!\n\n${lists}`;
         }
-        output += '\n';
-      }
 
-      return output;
+        let output = `# ${argument}\n\n`;
+        for (const key of Object.keys(skill)) {
+          if (skill[key] && key !== 'content' && key !== 'raw') {
+            output += `**${key}:** ${skill[key]}\n`;
+          }
+        }
+        output += '\n---\n\n';
+        output += skill.content;
+
+        return output;
+      }
+      case 'search': {
+        const results = registry.search(argument);
+        if (!results || results.length === 0) {
+          const lists = await execute({ action: 'list' });
+          return `No skills found matching "${argument}".\n\n${lists}`;
+        }
+
+        let output = `# Skills matching "${argument}" (${results.length})\n\n`;
+        for (const skill of results) {
+          output += `- **${skill.name}** (${skill.scope}, score: ${skill.score})\n`;
+          if (skill.description) {
+            output += `  ${skill.description}\n`;
+          }
+          output += '\n';
+        }
+
+        return output;
+      }
     }
   }
-};
+  return { name, description, inputSchema, execute };
+}

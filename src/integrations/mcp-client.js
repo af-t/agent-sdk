@@ -4,6 +4,7 @@ import { createInterface } from 'node:readline';
 import { removeSecrets, sanitizeChildEnvironment } from '../support/environment.js';
 import { LIMITS } from '../support/payload.js';
 import { resolveLogger } from '../support/logger.js';
+import { createAbortError } from '../support/retry.js';
 
 export class McpNativeClient extends EventEmitter {
   constructor(config = {}) {
@@ -18,6 +19,7 @@ export class McpNativeClient extends EventEmitter {
     this.capabilities = null;
     this.serverInfo = null;
     this.defaultTimeout = config.timeout || LIMITS.mcpTimeoutMs;
+    this.closePromise = null;
   }
 
   async connect() {
@@ -37,10 +39,11 @@ export class McpNativeClient extends EventEmitter {
       const message = this.#parseMessage(line);
       if (message) this.#handleMessage(message);
     });
-    this.process.on('error', (error) => this.emit('error', error));
+    this.process.on('error', (error) => this.#handleTransportFailure(error));
     this.process.on('exit', (code) => {
       this.emit('exit', code);
       this.#cleanup();
+      if (!this.closePromise) this.process = null;
     });
 
     try {
@@ -59,40 +62,41 @@ export class McpNativeClient extends EventEmitter {
     }
   }
 
-  async request(method, params, timeout) {
-    const effectiveTimeout = timeout || this.defaultTimeout;
+  async request(method, params, { timeoutMs, signal } = {}) {
+    const effectiveTimeout = timeoutMs || this.defaultTimeout;
+    if (signal?.aborted) throw createAbortError('MCP request aborted');
     if (!this.process || this.process.killed) throw new Error('Process not running');
     const requestId = ++this.requestId;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const settle = (callback, value) => {
+        const pending = this.pendingRequests.get(requestId);
+        if (!pending) return;
         this.pendingRequests.delete(requestId);
-        reject(new Error(`Request ${method} timed out after ${effectiveTimeout}ms`));
-      }, effectiveTimeout);
-      this.pendingRequests.set(requestId, {
-        resolve: (value) => {
-          clearTimeout(timer);
-          resolve(value);
-        },
-        reject: (error) => {
-          clearTimeout(timer);
-          reject(error);
-        },
-      });
+        clearTimeout(pending.timer);
+        pending.signal?.removeEventListener('abort', pending.abortHandler);
+        callback(value);
+      };
+      const timer = setTimeout(
+        () => settle(reject, new Error(`Request ${method} timed out after ${effectiveTimeout}ms`)),
+        effectiveTimeout,
+      );
+      const abortHandler = () => settle(reject, createAbortError('MCP request aborted'));
+      this.pendingRequests.set(requestId, { resolve, reject, timer, signal, abortHandler });
+      signal?.addEventListener('abort', abortHandler, { once: true });
+      if (!this.pendingRequests.has(requestId)) return;
       try {
         this.process.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: requestId, method, params }) + '\n');
       } catch (error) {
-        this.pendingRequests.delete(requestId);
-        clearTimeout(timer);
-        reject(error);
+        settle(reject, error);
       }
     });
   }
 
-  async listTools() {
-    return this.request('tools/list', {});
+  async listTools(options) {
+    return this.request('tools/list', {}, options);
   }
-  async callTool(name, args) {
-    return this.request('tools/call', { name, arguments: args });
+  async callTool(name, args, options) {
+    return this.request('tools/call', { name, arguments: args }, options);
   }
   async listResources() {
     return this.request('resources/list', {});
@@ -117,25 +121,51 @@ export class McpNativeClient extends EventEmitter {
   }
 
   async close() {
+    if (this.closePromise) return this.closePromise;
     if (!this.process) return;
     const processToClose = this.process;
-    try {
-      processToClose.stdin.end();
-    } catch {}
-    this.#cleanup();
-    setTimeout(() => {
+    this.closePromise = new Promise((resolve) => {
+      const killTimer = setTimeout(() => {
+        try {
+          if (processToClose.exitCode === null) processToClose.kill('SIGKILL');
+        } catch {}
+      }, 1000);
+      const finish = () => {
+        clearTimeout(killTimer);
+        this.#cleanup();
+        this.process = null;
+        resolve();
+      };
+      processToClose.once('close', finish);
       try {
-        if (processToClose.exitCode === null) processToClose.kill();
+        processToClose.stdin.end();
       } catch {}
-    }, 1000).unref();
+      try {
+        if (processToClose.exitCode === null) processToClose.kill('SIGTERM');
+      } catch {}
+    });
+    return this.closePromise;
   }
 
   #cleanup() {
     this.rl?.close();
     this.rl = null;
-    this.process = null;
-    for (const { reject } of this.pendingRequests.values()) reject(new Error('Connection closed'));
-    this.pendingRequests.clear();
+    for (const [requestId, pending] of this.pendingRequests) {
+      this.pendingRequests.delete(requestId);
+      clearTimeout(pending.timer);
+      pending.signal?.removeEventListener('abort', pending.abortHandler);
+      pending.reject(new Error('Connection closed'));
+    }
+  }
+
+  #handleTransportFailure(error) {
+    this.logger.error({ server: this.config.server, error }, 'MCP transport failed');
+    for (const [requestId, pending] of this.pendingRequests) {
+      this.pendingRequests.delete(requestId);
+      clearTimeout(pending.timer);
+      pending.signal?.removeEventListener('abort', pending.abortHandler);
+      pending.reject(error);
+    }
   }
 
   #handleMessage(message) {
@@ -167,6 +197,8 @@ export class McpNativeClient extends EventEmitter {
       return;
     }
     this.pendingRequests.delete(message.id);
+    clearTimeout(pending.timer);
+    pending.signal?.removeEventListener('abort', pending.abortHandler);
     if (message.error) pending.reject(message.error);
     else pending.resolve(message.result);
   }
@@ -184,6 +216,7 @@ export class McpNativeClient extends EventEmitter {
 export class McpClientWrapper {
   constructor({ command, args, env, restricted = true, logger, server, timeout } = {}) {
     this.restricted = restricted !== false;
+    this.server = server;
     this.client = new McpNativeClient({ command, args, env, restricted: this.restricted, logger, server, timeout });
   }
 
@@ -193,8 +226,8 @@ export class McpClientWrapper {
     return response.tools || [];
   }
 
-  async executeTool(name, args) {
-    return this.client.callTool(name, args);
+  async executeTool(name, args, options) {
+    return this.client.callTool(name, args, options);
   }
   async close() {
     await this.client.close();

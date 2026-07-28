@@ -13,7 +13,7 @@ import * as wakeupTool from './system/wakeup.js';
 import * as fetchTool from './web/fetch.js';
 import * as searchTool from './web/search.js';
 
-export const builtinTools = [
+const staticTools = [
   editTool,
   findTool,
   listTool,
@@ -24,7 +24,6 @@ export const builtinTools = [
   bashTool,
   delegateTool,
   jobsTool,
-  skillTool,
   wakeupTool,
   fetchTool,
   searchTool,
@@ -34,3 +33,7 @@ export const builtinTools = [
   inputSchema: mod.inputSchema || mod.default?.inputSchema,
   execute: mod.execute || mod.default?.execute,
 }));
+
+export function createBuiltinTools(skillRegistry) {
+  return [...staticTools, skillTool.createSkillTool(skillRegistry)];
+}

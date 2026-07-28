@@ -3,97 +3,86 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import os from 'node:os';
+import { SkillRegistry } from '../../src/registries/skill-registry.js';
 
-describe('SkillRegistry (default singleton)', () => {
-  let skillModule;
+describe('SkillRegistry', () => {
+  let registry;
 
-  before(async () => {
-    skillModule = await import('../../src/registries/skill-registry.js');
+  before(() => {
+    registry = new SkillRegistry();
   });
 
-  it('exports a default object with expected methods', () => {
-    const singleton = skillModule.default;
-    assert.ok(singleton);
-    assert.equal(typeof singleton.configure, 'function');
-    assert.equal(typeof singleton.list, 'function');
-    assert.equal(typeof singleton.get, 'function');
-    assert.equal(typeof singleton.search, 'function');
-    assert.equal(typeof singleton.refresh, 'function');
-    assert.equal(typeof singleton.reset, 'function');
-    assert.equal(typeof singleton._ensureDiscovered, 'function');
-    assert.equal(typeof singleton.getPluginInstructions, 'function');
+  it('exposes instance methods', () => {
+    assert.equal(typeof registry.configure, 'function');
+    assert.equal(typeof registry.list, 'function');
+    assert.equal(typeof registry.get, 'function');
+    assert.equal(typeof registry.search, 'function');
+    assert.equal(typeof registry.refresh, 'function');
+    assert.equal(typeof registry.reset, 'function');
+    assert.equal(typeof registry._ensureDiscovered, 'function');
+    assert.equal(typeof registry.getPluginInstructions, 'function');
   });
 
   it('has skills Map and loaded flag', () => {
-    const singleton = skillModule.default;
-    assert.ok(singleton.skills instanceof Map);
-    assert.equal(singleton.loaded, false);
+    assert.ok(registry.skills instanceof Map);
+    assert.equal(registry.loaded, false);
   });
 
   it('reset clears the skills and sets loaded to false', () => {
-    const singleton = skillModule.default;
-    singleton.reset();
-    assert.equal(singleton.loaded, false);
-    assert.equal(singleton.skills.size, 0);
+    registry.reset();
+    assert.equal(registry.loaded, false);
+    assert.equal(registry.skills.size, 0);
   });
 
   it('getPluginInstructions returns an empty array before discovery', () => {
-    const singleton = skillModule.default;
-    singleton.reset();
-    assert.deepEqual(singleton.getPluginInstructions(), []);
+    registry.reset();
+    assert.deepEqual(registry.getPluginInstructions(), []);
   });
 
   it('configure sets pluginsDir without throwing', () => {
-    const singleton = skillModule.default;
-    singleton.configure({ pluginsDir: path.join(os.tmpdir(), 'my-plugins') });
+    registry.configure({ pluginsDir: path.join(os.tmpdir(), 'my-plugins') });
     assert.ok(true);
-    singleton.configure({ pluginsDir: null });
+    registry.configure({ pluginsDir: null });
   });
 
   it('configure with no pluginsDir key is a no-op', () => {
-    const singleton = skillModule.default;
-    singleton.configure({});
+    registry.configure({});
     assert.ok(true);
   });
 
   it('get() returns null for unknown skill', () => {
-    const singleton = skillModule.default;
-    singleton.reset();
-    assert.equal(singleton.get('nonexistent-skill'), null);
+    registry.reset();
+    assert.equal(registry.get('nonexistent-skill'), null);
   });
 
   it('search() returns empty array when no skills loaded', () => {
-    const singleton = skillModule.default;
-    singleton.reset();
-    const results = singleton.search('anything');
+    registry.reset();
+    const results = registry.search('anything');
     assert.ok(Array.isArray(results));
     assert.equal(results.length, 0);
   });
 
   it('list() returns empty string when no skills', () => {
-    const singleton = skillModule.default;
-    singleton.reset();
-    assert.equal(singleton.list(), '');
+    registry.reset();
+    assert.equal(registry.list(), '');
   });
 
   it('reset() lets the next _ensureDiscovered re-discover', async () => {
-    const singleton = skillModule.default;
-    singleton.configure({ pluginsDir: null });
-    singleton.reset();
-    await singleton._ensureDiscovered();
-    const countAfterFirst = singleton.skills.size;
+    registry.configure({ pluginsDir: null });
+    registry.reset();
+    await registry._ensureDiscovered();
+    const countAfterFirst = registry.skills.size;
     assert.ok(countAfterFirst > 0, 'builtin skills should be discovered');
-    singleton.reset();
-    assert.equal(singleton.skills.size, 0);
-    await singleton._ensureDiscovered();
-    assert.equal(singleton.skills.size, countAfterFirst);
-    singleton.reset();
+    registry.reset();
+    assert.equal(registry.skills.size, 0);
+    await registry._ensureDiscovered();
+    assert.equal(registry.skills.size, countAfterFirst);
+    registry.reset();
   });
 
   it('refresh calls discover and does not throw', async () => {
-    const singleton = skillModule.default;
-    singleton.reset();
-    await singleton.refresh();
+    registry.reset();
+    await registry.refresh();
     assert.ok(true);
   });
 });
@@ -103,8 +92,7 @@ describe('SkillRegistry: plugin discovery', () => {
   let pluginsDir;
 
   before(async () => {
-    const mod = await import('../../src/registries/skill-registry.js');
-    registry = mod.default;
+    registry = new SkillRegistry();
     pluginsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'plugins-test-'));
 
     // Plugin with both AGENTS.md and a skill
@@ -184,7 +172,7 @@ describe('SkillRegistry: missing plugins root', () => {
   let registry;
 
   before(async () => {
-    registry = (await import('../../src/registries/skill-registry.js')).default;
+    registry = new SkillRegistry();
     registry.reset();
     registry.configure({ pluginsDir: path.join(os.tmpdir(), 'does-not-exist-' + Date.now()) });
     await registry.refresh();

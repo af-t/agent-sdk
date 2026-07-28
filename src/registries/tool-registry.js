@@ -61,8 +61,8 @@ export class ToolRegistry {
   }
 
   register(tool) {
-    if (Object.hasOwn(tool || {}, 'input_schema')) throw new Error('input_schema is not supported; use inputSchema');
-    if (Object.hasOwn(tool || {}, 'output_limit')) throw new Error('output_limit is not supported; use outputLimit');
+    if (Object.hasOwn(tool || {}, 'input_schema')) throw new Error('Unsupported key: input_schema');
+    if (Object.hasOwn(tool || {}, 'output_limit')) throw new Error('Unsupported key: output_limit');
     const { name, description, inputSchema = DEFAULT_INPUT_SCHEMA, execute } = tool || {};
     if (typeof name !== 'string') throw new Error('Tool must have a name');
     if (typeof description !== 'string') throw new Error('Tool must have a description');
@@ -109,10 +109,9 @@ export class ToolRegistry {
   }
 
   async execute(name, input = {}, context = {}) {
-    if (Object.hasOwn(input, 'output_limit'))
-      throw new ToolError('output_limit is not supported; use outputLimit', { toolName: name });
     const tool = this.#tools.get(name);
     if (!tool) throw new ToolError(`Tool "${name}" is not registered`, { toolName: name });
+    if (Object.hasOwn(input, 'output_limit')) throw new ToolError('Unsupported key: output_limit', { toolName: name });
     const executionContext = {
       ...context,
       agent: context.agent || { restricted: this.restricted, trustedPaths: new Set() },
@@ -159,8 +158,8 @@ export class ToolRegistry {
           name: `${name}.${remoteTool.name}`,
           description: remoteTool.description || `Tool ${remoteTool.name} from ${name}`,
           inputSchema: remoteTool.inputSchema || DEFAULT_INPUT_SCHEMA,
-          execute: async (input) => {
-            const result = await client.executeTool(remoteTool.name, input);
+          execute: async (input, context) => {
+            const result = await client.executeTool(remoteTool.name, input, { signal: context.signal });
             if (result.isError) throw new Error(result.content.map((content) => content.text).join('\n'));
             return result.content
               .map((content) =>
@@ -190,7 +189,7 @@ export class ToolRegistry {
       try {
         await client.close();
       } catch (error) {
-        this.logger.warn({ error }, 'Failed to close MCP client');
+        this.logger.warn({ server: client.server, error }, 'Failed to close MCP client');
       }
     }
     this.#mcpClients = [];

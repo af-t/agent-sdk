@@ -136,46 +136,13 @@ export class SkillRegistry {
     this.loaded = false;
     this.#forceRefresh = false;
   }
-}
-
-const registry = new SkillRegistry();
-let discoveryPromise = null;
-
-export default {
-  configure(options = {}) {
-    if (options.pluginsDir !== undefined && (options.pluginsDir || null) !== registry.pluginsDir) {
-      registry.pluginsDir = options.pluginsDir || null;
-      registry.reset();
-      discoveryPromise = null;
+  configure({ pluginsDir } = {}) {
+    if (pluginsDir !== undefined && (pluginsDir || null) !== this.pluginsDir) {
+      this.pluginsDir = pluginsDir || null;
+      this.reset();
     }
-  },
+  }
   async _ensureDiscovered() {
-    if (!discoveryPromise) discoveryPromise = registry.discover();
-    await discoveryPromise;
-  },
-  getPluginInstructions() {
-    return registry.getPluginInstructions();
-  },
-  get skills() {
-    return registry.skills;
-  },
-  get loaded() {
-    return registry.loaded;
-  },
-  list() {
-    return registry.list();
-  },
-  get(name) {
-    return registry.get(name);
-  },
-  search(query) {
-    return registry.search(query);
-  },
-  refresh() {
-    return registry.refresh();
-  },
-  reset() {
-    registry.reset();
-    discoveryPromise = null;
-  },
-};
+    await this.discover();
+  }
+}

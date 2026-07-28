@@ -60,6 +60,16 @@ describe('McpNativeClient', () => {
     const client = new McpNativeClient({ command: 'echo' });
     await assert.rejects(() => client.notify('test', {}), { message: /Process not running/ });
   });
+
+  it('rejects a missing command without terminating a child probe', async () => {
+    const probe = path.join(fixturesDir, 'mcp-spawn-probe.fixture.js');
+    const child = spawn(process.execPath, [probe], { stdio: 'ignore' });
+    const exitCode = await new Promise((resolve, reject) => {
+      child.once('error', reject);
+      child.once('exit', resolve);
+    });
+    assert.equal(exitCode, 0);
+  });
 });
 
 describe('McpNativeClient: mock server connections', () => {
@@ -122,6 +132,49 @@ describe('McpNativeClient: mock server connections', () => {
   );
 
   it(
+    'rejects pre-aborted and in-flight requests with AbortError',
+    { skip: !nodeAvailable ? 'node not spawnable' : undefined },
+    async () => {
+      const client = new McpNativeClient({
+        command: process.execPath,
+        args: [path.join(fixturesDir, 'mock-mcp-hanging-call.js')],
+      });
+      await client.connect();
+      try {
+        const preAborted = new AbortController();
+        preAborted.abort();
+        await assert.rejects(
+          () => client.callTool('hang', {}, { signal: preAborted.signal }),
+          (error) => error?.code === 'ABORT_ERROR',
+        );
+
+        const controller = new AbortController();
+        const request = client.callTool('hang', {}, { signal: controller.signal });
+        controller.abort();
+        await assert.rejects(request, (error) => error?.code === 'ABORT_ERROR');
+        assert.equal(client.pendingRequests.size, 0);
+      } finally {
+        await client.close();
+      }
+    },
+  );
+
+  it(
+    'waits for the child process to exit before close resolves',
+    { skip: !nodeAvailable ? 'node not spawnable' : undefined },
+    async () => {
+      const client = new McpNativeClient({
+        command: process.execPath,
+        args: [path.join(fixturesDir, 'mock-mcp-hanging-call.js')],
+      });
+      await client.connect();
+      const processId = client.process.pid;
+      await client.close();
+      assert.throws(() => process.kill(processId, 0), { code: 'ESRCH' });
+    },
+  );
+
+  it(
     'handles malformed JSON responses from mock server',
     { skip: !nodeAvailable ? 'node not spawnable' : undefined },
     async () => {
@@ -170,9 +223,6 @@ describe('McpNativeClient: mock server connections', () => {
         assert.equal(client.initialized, true);
         assert.ok(client.serverInfo);
         assert.equal(client.serverInfo.name, 'mock-slow-server');
-      } catch (err) {
-        // On very slow systems, even 10s might not be enough; accept timeout
-        assert.ok(/timed out|closed/.test(err.message) || true);
       } finally {
         try {
           await client.close();
@@ -206,6 +256,35 @@ describe('McpNativeClient: mock server connections', () => {
           await client.close();
         } catch {}
       }
+    },
+  );
+
+  it(
+    'redacts MCP diagnostics before delivering structured logs',
+    { skip: !nodeAvailable ? 'node not spawnable' : undefined },
+    async () => {
+      const records = [];
+      const client = new McpNativeClient({
+        command: process.execPath,
+        args: [path.join(fixturesDir, 'mock-mcp-hanging-call.js')],
+        logger: {
+          debug() {},
+          info() {},
+          error() {},
+          warn(context, message) {
+            records.push({ context, message });
+          },
+        },
+      });
+      try {
+        await client.connect();
+      } finally {
+        await client.close();
+      }
+      const record = records.find((entry) => entry.message === 'MCP server stderr');
+      assert.equal(record?.context.server, undefined);
+      assert.doesNotMatch(JSON.stringify(record), /mcp-diagnostic-secret/);
+      assert.match(JSON.stringify(record), /REDACTED/);
     },
   );
 

@@ -23,13 +23,14 @@ test('registers canonical tools and validates their inputs', async () => {
   await assert.rejects(() => registry.execute('echoText', { text: 4 }), /Parameter "text" must be a string/);
 });
 
-test('rejects legacy snake_case tool keys', () => {
+test('rejects legacy snake_case tool keys', async () => {
   const registry = new ToolRegistry();
   assert.throws(
     () => registry.register({ ...echoTool, input_schema: echoTool.inputSchema }),
-    /input_schema is not supported/,
+    /Unsupported key: input_schema/,
   );
-  assert.throws(() => registry.register({ ...echoTool, output_limit: 12 }), /output_limit is not supported/);
+  assert.throws(() => registry.register({ ...echoTool, output_limit: 12 }), /Unsupported key: output_limit/);
+  await assert.rejects(() => registry.execute('missing', { output_limit: 12 }), /Tool "missing" is not registered/);
 });
 
 test('passes the logger and signal while stripping outputLimit', async () => {
@@ -104,4 +105,23 @@ test('maps MCP schemas and closes only owned clients', async () => {
   await registry.cleanup();
   assert.equal(client.closed, true);
   assert.equal(loggerClosed, false);
+});
+
+test('forwards the execution abort signal to remote MCP tools', async () => {
+  let receivedSignal;
+  const client = {
+    async connectAndGetTools() {
+      return [{ name: 'echo', description: 'Echo', inputSchema: echoTool.inputSchema }];
+    },
+    async executeTool(_name, _input, options) {
+      receivedSignal = options.signal;
+      return { content: [{ type: 'text', text: 'ok' }] };
+    },
+    async close() {},
+  };
+  const registry = new ToolRegistry({ mcpClientFactory: () => client });
+  await registry.connectMcpServer({ name: 'remote', command: 'unused' });
+  const controller = new AbortController();
+  await registry.execute('remote.echo', { text: 'hello' }, { signal: controller.signal });
+  assert.equal(receivedSignal, controller.signal);
 });

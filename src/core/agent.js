@@ -8,7 +8,7 @@ import { ToolRegistry } from '../registries/tool-registry.js';
 import { ApiError, ConfigError } from '../support/errors.js';
 import { createSessionRecorder } from './session-recorder.js';
 import { loadEnvironmentConfig } from '../config/environment.js';
-import skillRegistry from '../registries/skill-registry.js';
+import { SkillRegistry } from '../registries/skill-registry.js';
 import { resolveLogger } from '../support/logger.js';
 import crypto from 'node:crypto';
 import os from 'node:os';
@@ -153,9 +153,11 @@ class Agent {
       emptyTurnRecovery,
       sessionId,
       logger,
+      skillRegistry: suppliedSkillRegistry,
     } = options;
 
     this.logger = logger ?? resolveLogger(undefined, { debug: config.debug });
+    this.skillRegistry = suppliedSkillRegistry ?? new SkillRegistry({ logger: this.logger });
     this.restricted = restricted !== false;
     if (this.restricted === false) {
       this.logger.warn({ component: 'agent', restricted: false }, 'Agent constructed with security checks disabled');
@@ -356,7 +358,7 @@ class Agent {
       : path.resolve(`.${this.appName}/todos.json`);
 
     // plugins feed skills and injector
-    skillRegistry.configure({ pluginsDir: this._pluginsDir });
+    this.skillRegistry.configure({ pluginsDir: this._pluginsDir });
 
     const _projectRoot = path.resolve(process.cwd());
     this.trustedPaths = new Set();
@@ -396,10 +398,14 @@ class Agent {
     }
 
     if (injectors?.skillList !== false) {
-      this.registerInjector({ name: 'skillList', scope: 'first-turn', fn: skillListInjector });
+      this.registerInjector({ name: 'skillList', scope: 'first-turn', fn: skillListInjector(this.skillRegistry) });
     }
     if (injectors?.pluginInstructions !== false) {
-      this.registerInjector({ name: 'pluginInstructions', scope: 'first-turn', fn: pluginInstructionsInjector });
+      this.registerInjector({
+        name: 'pluginInstructions',
+        scope: 'first-turn',
+        fn: pluginInstructionsInjector(this.skillRegistry),
+      });
     }
   }
 
@@ -518,6 +524,7 @@ class Agent {
     }
     // forward read-only pluginsDir only
     // the fork does not inherit recording
+    const childLogger = this.logger.child({ component: 'agent', agent: 'fork' });
     const child = new Agent({
       apiKey: this.#apiKey,
       baseUrl: this.#baseUrl,
@@ -528,7 +535,8 @@ class Agent {
       maxTurns: this.maxTurns,
       appName: this.appName,
       storagePaths: { pluginsDir: this._pluginsDir },
-      logger: this.logger.child({ component: 'agent', agent: 'fork' }),
+      logger: childLogger,
+      skillRegistry: new SkillRegistry({ logger: childLogger }),
     });
     // keep in sync with sampling params in constructor
     const carry = [
@@ -2040,42 +2048,46 @@ function memoryHintInjector(memoryDirFn, memoryTypesFn) {
   };
 }
 
-async function skillListInjector({ logger }) {
-  try {
-    await skillRegistry._ensureDiscovered();
-  } catch (err) {
-    logger.warn({ component: 'agent', injector: 'skillList', error: err }, 'Skill discovery failed');
-    return '';
-  }
-  const skills = skillRegistry.skills;
-  if (!skills || skills.size === 0) return '';
-  const lines = [];
-  for (const [name, skill] of skills) {
-    const desc = (skill.description || '').trim();
-    const truncated = desc.length > 120 ? desc.slice(0, 117) + '...' : desc;
-    lines.push(`- ${name}: ${truncated}`);
-  }
-  if (lines.length === 0) return '';
-  return (
-    `## Available skills\n${lines.join('\n')}\n\n` +
-    'When a skill is relevant to your current task, you **MUST** load it via the Skill tool ' +
-    '(action="load", argument=<skill name>) and follow its instructions and conventions exactly. ' +
-    'Do not invent alternative approaches or formats when a skill provides authoritative guidance ' +
-    'for the task at hand. Skill bodies are the source of truth for their respective domains.'
-  );
+function skillListInjector(skillRegistry) {
+  return async ({ logger }) => {
+    try {
+      await skillRegistry._ensureDiscovered();
+    } catch (err) {
+      logger.warn({ component: 'agent', injector: 'skillList', error: err }, 'Skill discovery failed');
+      return '';
+    }
+    const skills = skillRegistry.skills;
+    if (!skills || skills.size === 0) return '';
+    const lines = [];
+    for (const [name, skill] of skills) {
+      const desc = (skill.description || '').trim();
+      const truncated = desc.length > 120 ? desc.slice(0, 117) + '...' : desc;
+      lines.push(`- ${name}: ${truncated}`);
+    }
+    if (lines.length === 0) return '';
+    return (
+      `## Available skills\n${lines.join('\n')}\n\n` +
+      'When a skill is relevant to your current task, you **MUST** load it via the Skill tool ' +
+      '(action="load", argument=<skill name>) and follow its instructions and conventions exactly. ' +
+      'Do not invent alternative approaches or formats when a skill provides authoritative guidance ' +
+      'for the task at hand. Skill bodies are the source of truth for their respective domains.'
+    );
+  };
 }
 
-async function pluginInstructionsInjector({ logger }) {
-  try {
-    await skillRegistry._ensureDiscovered();
-  } catch (err) {
-    logger.warn({ component: 'agent', injector: 'pluginInstructions', error: err }, 'Skill discovery failed');
-    return '';
-  }
-  const instructions = skillRegistry.getPluginInstructions();
-  if (!instructions || instructions.length === 0) return '';
-  const sections = instructions.map(({ plugin, content }) => `### ${plugin}\n${content}`);
-  return `## Plugin instructions\n\n${sections.join('\n\n')}`;
+function pluginInstructionsInjector(skillRegistry) {
+  return async ({ logger }) => {
+    try {
+      await skillRegistry._ensureDiscovered();
+    } catch (err) {
+      logger.warn({ component: 'agent', injector: 'pluginInstructions', error: err }, 'Skill discovery failed');
+      return '';
+    }
+    const instructions = skillRegistry.getPluginInstructions();
+    if (!instructions || instructions.length === 0) return '';
+    const sections = instructions.map(({ plugin, content }) => `### ${plugin}\n${content}`);
+    return `## Plugin instructions\n\n${sections.join('\n\n')}`;
+  };
 }
 
 export default Agent;
