@@ -9,14 +9,22 @@ const noopLogger = resolveLogger(
   Object.fromEntries(['debug', 'info', 'warn', 'error'].map((level) => [level, () => {}])),
 );
 
-function createFakeAgent(overrides = {}) {
+function createFakeAgent(t, overrides = {}) {
+  const subagents = new Map();
+  t.after(async () => {
+    await Promise.all([...subagents.values()].map((subagent) => subagent.cleanup()));
+    subagents.clear();
+  });
+  const tmpDir = createTestTempDir(t, 'delegate-fake-parent-');
+
   return {
     apiKey: 'sk-test-key',
     model: 'test-model',
     provider: {},
     tools: {},
     usage: { cost: 0, tokens: 0 },
-    subagents: new Map(),
+    subagents,
+    _storagePaths: { tmpDir },
     logger: noopLogger,
     ...overrides,
   };
@@ -76,10 +84,10 @@ describe('Delegate tool: execute()', () => {
     mock.reset();
   });
 
-  it('should spawn a sub-agent and return its result with ID prefix', async () => {
+  it('should spawn a sub-agent and return its result with ID prefix', async (t) => {
     mock.method(Agent.prototype, 'run', async () => 'Sub-agent report: done');
 
-    const fakeAgent = createFakeAgent({ maxCompletionTokens: undefined });
+    const fakeAgent = createFakeAgent(t, { maxCompletionTokens: undefined });
 
     const result = await mod.execute({ description: 'Test task', prompt: 'Do something useful' }, { agent: fakeAgent });
 
@@ -121,12 +129,12 @@ describe('Delegate tool: execute()', () => {
     assert.strictEqual(sub.maxCompletionTokens, 32000);
   });
 
-  it('should pass persona as systemPrompt to sub-agent', async () => {
+  it('should pass persona as systemPrompt to sub-agent', async (t) => {
     mock.method(Agent.prototype, 'run', async function () {
       return this.systemPrompt || 'no-prompt';
     });
 
-    const fakeAgent = createFakeAgent();
+    const fakeAgent = createFakeAgent(t);
 
     const result = await mod.execute(
       { description: 'Test', prompt: 'Work', persona: 'You are a code reviewer' },
@@ -136,19 +144,19 @@ describe('Delegate tool: execute()', () => {
     assert.ok(result.startsWith('You are a code reviewer'));
   });
 
-  it('propagates _delegateDepth to spawned subagents', async () => {
+  it('propagates _delegateDepth to spawned subagents', async (t) => {
     mock.method(Agent.prototype, 'run', async () => 'done');
 
-    const fakeAgent = createFakeAgent({ apiKey: 'k', model: 'm' });
+    const fakeAgent = createFakeAgent(t, { apiKey: 'k', model: 'm' });
 
     await mod.execute({ description: 'd', prompt: 'p', id: 'child' }, { agent: fakeAgent });
     assert.strictEqual(fakeAgent.subagents.get('child')._delegateDepth, 1);
   });
 
-  it('rejects nested delegation once the depth limit is reached', async () => {
+  it('rejects nested delegation once the depth limit is reached', async (t) => {
     mock.method(Agent.prototype, 'run', async () => 'done');
 
-    let parent = createFakeAgent({ apiKey: 'k', model: 'm' });
+    let parent = createFakeAgent(t, { apiKey: 'k', model: 'm' });
 
     // Walk delegation three levels deep via real spawned subagents
     for (let i = 0; i < 3; i++) {
@@ -163,8 +171,8 @@ describe('Delegate tool: execute()', () => {
     );
   });
 
-  it('should reject delegation when depth exceeds limit', async () => {
-    const fakeAgent = createFakeAgent({ _delegateDepth: 3 });
+  it('should reject delegation when depth exceeds limit', async (t) => {
+    const fakeAgent = createFakeAgent(t, { _delegateDepth: 3 });
 
     await assert.rejects(
       () => mod.execute({ description: 'Deep task', prompt: 'Do it' }, { agent: fakeAgent }),
@@ -172,12 +180,12 @@ describe('Delegate tool: execute()', () => {
     );
   });
 
-  it('should accumulate sub-agent usage into parent agent', async () => {
+  it('should accumulate sub-agent usage into parent agent', async (t) => {
     mock.method(Agent.prototype, 'run', async () => {
       return 'done';
     });
 
-    const fakeAgent = createFakeAgent();
+    const fakeAgent = createFakeAgent(t);
 
     await mod.execute({ description: 'Cost test', prompt: 'Do work' }, { agent: fakeAgent });
 
@@ -185,12 +193,12 @@ describe('Delegate tool: execute()', () => {
     assert.strictEqual(fakeAgent.usage.tokens, 0);
   });
 
-  it('should throw a wrapped error when sub-agent fails', async () => {
+  it('should throw a wrapped error when sub-agent fails', async (t) => {
     mock.method(Agent.prototype, 'run', async () => {
       throw new Error('Internal failure');
     });
 
-    const fakeAgent = createFakeAgent();
+    const fakeAgent = createFakeAgent(t);
 
     await assert.rejects(
       () => mod.execute({ description: 'Failing task', prompt: 'Do it' }, { agent: fakeAgent }),
@@ -198,7 +206,7 @@ describe('Delegate tool: execute()', () => {
     );
   });
 
-  it('should inherit parent tool registry including custom tools', async () => {
+  it('should inherit parent tool registry including custom tools', async (t) => {
     const { ToolRegistry } = await import('../../../src/registry/tool.js');
     const parentTools = new ToolRegistry();
     parentTools.register({
@@ -214,29 +222,29 @@ describe('Delegate tool: execute()', () => {
       return 'done';
     });
 
-    const fakeAgent = createFakeAgent({ tools: parentTools });
+    const fakeAgent = createFakeAgent(t, { tools: parentTools });
 
     await mod.execute({ description: 'Registry test', prompt: 'do it' }, { agent: fakeAgent });
     assert.ok(capturedToolNames.includes('CustomTestTool'));
   });
 
-  it('should set subagent maxTurns to 1000', async () => {
+  it('should set subagent maxTurns to 1000', async (t) => {
     let capturedMaxTurns;
     mock.method(Agent.prototype, 'run', async function () {
       capturedMaxTurns = this.maxTurns;
       return 'done';
     });
 
-    const fakeAgent = createFakeAgent();
+    const fakeAgent = createFakeAgent(t);
 
     await mod.execute({ description: 'MaxTurns test', prompt: 'do it' }, { agent: fakeAgent });
     assert.strictEqual(capturedMaxTurns, 1000);
   });
 
-  it('should store new subagent in agent.subagents with auto-generated id', async () => {
+  it('should store new subagent in agent.subagents with auto-generated id', async (t) => {
     mock.method(Agent.prototype, 'run', async () => 'done');
 
-    const fakeAgent = createFakeAgent({ apiKey: 'k', model: 'm' });
+    const fakeAgent = createFakeAgent(t, { apiKey: 'k', model: 'm' });
 
     const result = await mod.execute({ description: 'd', prompt: 'p' }, { agent: fakeAgent });
 
@@ -245,14 +253,14 @@ describe('Delegate tool: execute()', () => {
     assert.ok(result.includes(`Subagent ID: ${id} (new)`));
   });
 
-  it('should reuse existing subagent when id matches', async () => {
+  it('should reuse existing subagent when id matches', async (t) => {
     let callCount = 0;
     mock.method(Agent.prototype, 'run', async () => {
       callCount++;
       return `call-${callCount}`;
     });
 
-    const fakeAgent = createFakeAgent({ apiKey: 'k', model: 'm' });
+    const fakeAgent = createFakeAgent(t, { apiKey: 'k', model: 'm' });
 
     await mod.execute({ description: 'd', prompt: 'first', id: 'mybot' }, { agent: fakeAgent });
     const subagent = fakeAgent.subagents.get('mybot');
@@ -264,11 +272,11 @@ describe('Delegate tool: execute()', () => {
     assert.ok(result2.includes('Subagent ID: mybot (reused)'));
   });
 
-  it('should short-circuit when signal is pre-aborted', async () => {
+  it('should short-circuit when signal is pre-aborted', async (t) => {
     const controller = new AbortController();
     controller.abort();
 
-    const fakeAgent = createFakeAgent({ apiKey: 'k', model: 'm' });
+    const fakeAgent = createFakeAgent(t, { apiKey: 'k', model: 'm' });
 
     await assert.rejects(
       () => mod.execute({ description: 'd', prompt: 'p' }, { agent: fakeAgent, signal: controller.signal }),
@@ -279,7 +287,7 @@ describe('Delegate tool: execute()', () => {
     assert.strictEqual(fakeAgent.subagents.size, 0);
   });
 
-  it('should forward signal to subagent.run', async () => {
+  it('should forward signal to subagent.run', async (t) => {
     const controller = new AbortController();
     let capturedOpts;
 
@@ -288,7 +296,7 @@ describe('Delegate tool: execute()', () => {
       return 'done';
     });
 
-    const fakeAgent = createFakeAgent({ apiKey: 'k', model: 'm' });
+    const fakeAgent = createFakeAgent(t, { apiKey: 'k', model: 'm' });
 
     await mod.execute({ description: 'd', prompt: 'p' }, { agent: fakeAgent, signal: controller.signal });
 
@@ -296,7 +304,7 @@ describe('Delegate tool: execute()', () => {
     assert.strictEqual(capturedOpts.signal, controller.signal);
   });
 
-  it('should reject when parent signal aborts mid-run', async () => {
+  it('should reject when parent signal aborts mid-run', async (t) => {
     const controller = new AbortController();
 
     mock.method(Agent.prototype, 'run', async function (prompt, notify, opts) {
@@ -309,7 +317,7 @@ describe('Delegate tool: execute()', () => {
       return 'should not reach';
     });
 
-    const fakeAgent = createFakeAgent({ apiKey: 'k', model: 'm' });
+    const fakeAgent = createFakeAgent(t, { apiKey: 'k', model: 'm' });
 
     await assert.rejects(
       () => mod.execute({ description: 'd', prompt: 'p' }, { agent: fakeAgent, signal: controller.signal }),
@@ -317,14 +325,14 @@ describe('Delegate tool: execute()', () => {
     );
   });
 
-  it('should only accumulate delta usage on reuse', async () => {
+  it('should only accumulate delta usage on reuse', async (t) => {
     mock.method(Agent.prototype, 'run', async function () {
       this.usage.cost += 0.01;
       this.usage.tokens += 100;
       return 'done';
     });
 
-    const fakeAgent = createFakeAgent({ apiKey: 'k', model: 'm' });
+    const fakeAgent = createFakeAgent(t, { apiKey: 'k', model: 'm' });
 
     await mod.execute({ description: 'd', prompt: 'first', id: 'bot' }, { agent: fakeAgent });
     assert.ok(Math.abs(fakeAgent.usage.cost - 0.01) < 1e-9);
