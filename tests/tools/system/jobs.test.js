@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import Agent from '../../../src/core/agent.js';
 import createAgent from '../../../src/index.js';
 import { execute as jobsExecute, name, input_schema } from '../../../src/tools/system/jobs.js';
+import { createTestTempDir } from '../../support/temp.js';
 
 process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || 'sk-test-jobs';
 
@@ -151,8 +152,10 @@ describe('_killBackgroundJob helper', () => {
   });
 });
 
-test('cleanup aborts a running background Delegate controller', async () => {
-  const parent = await createAgent({ apiKey: 'x' });
+test('cleanup aborts a running background Delegate controller', async (t) => {
+  const tmpDir = createTestTempDir(t, 'delegate-parent-');
+  const parent = await createAgent({ apiKey: 'x', storagePaths: { tmpDir } });
+  t.after(() => parent.cleanup());
   const controller = new AbortController();
   parent.backgroundJobs.set('bg-clean', {
     id: 'bg-clean',
@@ -166,7 +169,7 @@ test('cleanup aborts a running background Delegate controller', async () => {
   assert.equal(controller.signal.aborted, true);
 });
 
-test('Jobs stop terminates a real background Delegate (status killed)', async () => {
+test('Jobs stop terminates a real background Delegate (status killed)', async (t) => {
   // Subagent run blocks until its signal aborts, then throws like the real run loop.
   mock.method(Agent.prototype, 'run', function (_prompt, _notify, opts) {
     return new Promise((_resolve, reject) => {
@@ -176,31 +179,29 @@ test('Jobs stop terminates a real background Delegate (status killed)', async ()
     });
   });
 
-  const parent = await createAgent({ apiKey: 'x' });
+  const tmpDir = createTestTempDir(t, 'delegate-parent-');
+  const parent = await createAgent({ apiKey: 'x', storagePaths: { tmpDir } });
+  t.after(() => parent.cleanup());
   let resolveExit;
   const exited = new Promise((r) => (resolveExit = r));
   const dispose = parent._onBackgroundExitRaw((e) => {
     if (e.kind === 'delegate') resolveExit(e);
   });
 
-  try {
-    const { execute: delegateExecute } = await import('../../../src/tools/system/delegate.js');
-    const out = await delegateExecute(
-      { prompt: 'long task', description: 'long task', background: true },
-      { agent: parent, signal: new AbortController().signal },
-    );
-    const jobId = out.match(/Job ID: (bg-\S+)/)[1];
-    const job = parent.backgroundJobs.get(jobId);
-    assert.equal(job.status, 'running');
+  t.after(dispose);
+  const { execute: delegateExecute } = await import('../../../src/tools/system/delegate.js');
+  const out = await delegateExecute(
+    { prompt: 'long task', description: 'long task', background: true },
+    { agent: parent, signal: new AbortController().signal },
+  );
+  const jobId = out.match(/Job ID: (bg-\S+)/)[1];
+  const job = parent.backgroundJobs.get(jobId);
+  assert.equal(job.status, 'running');
 
-    const stopOut = await jobsExecute({ action: 'stop', job_id: jobId }, { agent: parent });
-    assert.match(stopOut, new RegExp(jobId));
+  const stopOut = await jobsExecute({ action: 'stop', job_id: jobId }, { agent: parent });
+  assert.match(stopOut, new RegExp(jobId));
 
-    const event = await exited;
-    assert.equal(event.status, 'killed');
-    assert.equal(job.status, 'killed');
-  } finally {
-    dispose();
-    await parent.cleanup();
-  }
+  const event = await exited;
+  assert.equal(event.status, 'killed');
+  assert.equal(job.status, 'killed');
 });

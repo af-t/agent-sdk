@@ -1,6 +1,8 @@
 import { describe, it, before, after, mock } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { createTestTempDir } from '../../support/temp.js';
+
 describe('Delegate tool module', () => {
   let mod;
 
@@ -77,10 +79,12 @@ describe('Delegate tool: execute()', () => {
     assert.ok(fakeAgent.usage.cost >= 0);
   });
 
-  it('subagent inherits parent maxCompletionTokens (not the removed maxTokens)', async () => {
+  it('subagent inherits parent maxCompletionTokens (not the removed maxTokens)', async (t) => {
     mock.method(Agent.prototype, 'run', async () => 'done');
 
-    const parent = new Agent({ apiKey: 'sk-test-key', maxCompletionTokens: 4096 });
+    const tmpDir = createTestTempDir(t, 'delegate-parent-');
+    const parent = new Agent({ apiKey: 'sk-test-key', maxCompletionTokens: 4096, storagePaths: { tmpDir } });
+    t.after(() => parent.cleanup());
     await mod.execute({ description: 'Task', prompt: 'Work' }, { agent: parent });
 
     const sub = [...parent.subagents.values()][0];
@@ -88,10 +92,12 @@ describe('Delegate tool: execute()', () => {
     assert.strictEqual(sub.maxTokens, undefined);
   });
 
-  it('subagent defaults maxCompletionTokens to MAX_COMPLETION_TOKENS_SUBAGENT', async () => {
+  it('subagent defaults maxCompletionTokens to MAX_COMPLETION_TOKENS_SUBAGENT', async (t) => {
     mock.method(Agent.prototype, 'run', async () => 'done');
 
-    const parent = new Agent({ apiKey: 'sk-test-key' });
+    const tmpDir = createTestTempDir(t, 'delegate-parent-');
+    const parent = new Agent({ apiKey: 'sk-test-key', storagePaths: { tmpDir } });
+    t.after(() => parent.cleanup());
     // Pin the parent to no explicit limit so the subagent fallback is what gets tested:
     // otherwise the developer's .env (OPENROUTER_MAX_COMPLETION_TOKENS) leaks in via config
     // and the parent's value is inherited instead of the MAX_COMPLETION_TOKENS_SUBAGENT default.

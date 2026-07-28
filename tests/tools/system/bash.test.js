@@ -4,6 +4,7 @@ import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import Agent from '../../../src/core/agent.js';
+import { createTestTempDir } from '../../support/temp.js';
 
 describe('Bash tool module', () => {
   let mod;
@@ -501,12 +502,15 @@ describe('Bash tool: background hint message', () => {
     bash = await import('../../../src/tools/system/bash.js');
   });
 
-  it('background return message reflects automatic exit reporting', async () => {
-    const agent = new Agent({ apiKey: 'x' });
+  it('background return message reflects automatic exit reporting', async (t) => {
+    const tmpDir = createTestTempDir(t, 'bash-background-');
+    const agent = new Agent({ apiKey: 'x', storagePaths: { tmpDir } });
+    t.after(() => agent.cleanup());
     const out = await bash.execute({ command: 'true', background: true }, { agent });
     assert.match(out, /reported automatically/i);
     assert.doesNotMatch(out, /to wait\/peek/);
-    await agent.cleanup();
+    const job = agent.backgroundJobs.get(out.match(/Job ID: (bg-\S+)/)[1]);
+    while (job.status === 'running') await new Promise((resolve) => setTimeout(resolve, 10));
   });
 });
 

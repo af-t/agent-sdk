@@ -1,15 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import createAgent from '../../src/index.js';
+import { createTestTempDir } from '../support/temp.js';
 
-test('agent.backgroundJobs starts empty', async () => {
+test('agent.backgroundJobs starts empty', async (t) => {
   const agent = await createAgent({ apiKey: 'x' });
+  t.after(() => agent.cleanup());
   assert.ok(agent.backgroundJobs instanceof Map);
   assert.equal(agent.backgroundJobs.size, 0);
 });
 
-test('onBackgroundExit registers a listener and returns a disposer', async () => {
+test('onBackgroundExit registers a listener and returns a disposer', async (t) => {
   const agent = await createAgent({ apiKey: 'x' });
+  t.after(() => agent.cleanup());
   let called = 0;
   const dispose = agent.onBackgroundExit(() => {
     called += 1;
@@ -24,8 +27,9 @@ test('onBackgroundExit registers a listener and returns a disposer', async () =>
   assert.equal(called, 1, 'disposer should remove listener');
 });
 
-test('multiple listeners all fire on the same event', async () => {
+test('multiple listeners all fire on the same event', async (t) => {
   const agent = await createAgent({ apiKey: 'x' });
+  t.after(() => agent.cleanup());
   let a = 0;
   let b = 0;
   agent.onBackgroundExit(() => (a += 1));
@@ -35,34 +39,36 @@ test('multiple listeners all fire on the same event', async () => {
   assert.equal(b, 1);
 });
 
-test('onBackgroundExit throws on non-function', async () => {
+test('onBackgroundExit throws on non-function', async (t) => {
   const agent = await createAgent({ apiKey: 'x' });
+  t.after(() => agent.cleanup());
   assert.throws(() => agent.onBackgroundExit('not a fn'), TypeError);
 });
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 
-test('background log dir uses storagePaths.tmpDir when configured', async () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'or-bg-'));
+test('background log dir uses storagePaths.tmpDir when configured', async (t) => {
+  const tmp = createTestTempDir(t, 'or-bg-');
   const agent = await createAgent({ apiKey: 'x', storagePaths: { tmpDir: tmp } });
+  t.after(() => agent.cleanup());
   const dir = agent._resolveBackgroundLogDir();
   assert.equal(dir, fs.realpathSync(tmp));
-  fs.rmSync(tmp, { recursive: true });
 });
 
-test('background log dir falls back to os.tmpdir/<appName>-<pid> when unconfigured', async () => {
+test('background log dir falls back to os.tmpdir/<appName>-<pid> when unconfigured', async (t) => {
   const agent = await createAgent({ apiKey: 'x' });
+  t.after(() => agent.cleanup());
   const dir = agent._resolveBackgroundLogDir();
   const expected = path.join(os.tmpdir(), `agent-sdk-${process.pid}`);
   assert.equal(dir, fs.realpathSync(expected));
   assert.ok(fs.existsSync(dir));
   assert.ok(agent.trustedPaths.has(dir));
-  await agent.cleanup();
 });
 
-test('pending bg exits drain into messages as a system-reminder after tool group', async () => {
+test('pending bg exits drain into messages as a system-reminder after tool group', async (t) => {
   const agent = await createAgent({ apiKey: 'x' });
+  t.after(() => agent.cleanup());
   agent.use({
     name: 'noop',
     description: 'd',
@@ -114,8 +120,9 @@ test('pending bg exits drain into messages as a system-reminder after tool group
 
 import { spawn } from 'node:child_process';
 
-test('cleanup() kills running background jobs', async () => {
+test('cleanup() kills running background jobs', async (t) => {
   const agent = await createAgent({ apiKey: 'x' });
+  t.after(() => agent.cleanup());
   const child = spawn('bash', ['-c', 'sleep 30']);
   agent.backgroundJobs.set('bg-test', {
     id: 'bg-test',

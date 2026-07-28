@@ -3,6 +3,8 @@ import assert from 'node:assert';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { createTestTempDir } from '../../support/temp.js';
+
 const FIXTURES = path.resolve('tests/fixtures');
 const TEST_FILE = path.join(FIXTURES, 'read-test.txt');
 
@@ -53,20 +55,16 @@ describe('read.js execute', () => {
     assert.ok(result.includes('[... truncated]'));
   });
 
-  it('reads a file outside project root when in agent trustedPaths', async () => {
-    const fsP = await import('node:fs/promises');
-    const os = await import('node:os');
-    const pathMod = await import('node:path');
-    const tmpDir = await fsP.mkdtemp(pathMod.join(os.tmpdir(), 'read-tool-test-'));
-    const file = pathMod.join(tmpDir, 'external.txt');
-    await fsP.writeFile(file, 'external file content');
+  it('reads a file outside project root when in agent trustedPaths', async (t) => {
+    const tmpDir = createTestTempDir(t, 'read-tool-test-');
+    const file = path.join(tmpDir, 'external.txt');
+    await fs.writeFile(file, 'external file content');
 
     const mod = await import('../../../src/tools/file/read.js');
     const ctx = { agent: { trustedPaths: new Set([tmpDir]) } };
     const result = await mod.execute({ path: file }, ctx);
 
     assert.ok(result.includes('external file content'));
-    await fsP.rm(tmpDir, { recursive: true });
   });
 
   it('rejects file outside project root with empty trustedPaths', async () => {

@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import os from 'node:os';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createFileWatchSource } from '../../src/core/file-watch-source.js';
 import { logger } from '../../src/core/logger.js';
 import { createDaemon } from '../../src/core/daemon.js';
+import { createTestTempDir } from '../support/temp.js';
 
 // A fake backend captures onRaw so tests drive synthetic fs events.
 function fakeBackend() {
@@ -226,12 +226,13 @@ test('a second start warns and does not start the backend twice', () => {
   }
 });
 
-test('real fs.watch backend emits on a real file change, then stops cleanly', async () => {
-  const dir = mkdtempSync(join(os.tmpdir(), 'fws-'));
+test('real fs.watch backend emits on a real file change, then stops cleanly', async (t) => {
+  const dir = createTestTempDir(t, 'fws-');
   const file = join(dir, 'watched.txt');
   writeFileSync(file, 'init');
   const events = [];
   const src = createFileWatchSource({ paths: dir, debounceMs: 20 });
+  t.after(() => src.stop());
   src.start((e) => events.push(e));
   await tick(20);
   writeFileSync(file, 'changed');
@@ -244,7 +245,6 @@ test('real fs.watch backend emits on a real file change, then stops cleanly', as
   writeFileSync(file, 'after-stop');
   await tick(60);
   assert.equal(events.length, countAtStop, 'no events after stop');
-  rmSync(dir, { recursive: true, force: true });
 });
 
 // Minimal Agent-like double (mirrors daemon.test.js fakeAgent).

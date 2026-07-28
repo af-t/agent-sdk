@@ -4,6 +4,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 
+import { createTestTempDir } from '../../support/temp.js';
+
 describe('Todo Tool', () => {
   let tmpDir;
   let testFile;
@@ -468,11 +470,10 @@ describe('Todo Tool', () => {
     await assert.rejects(() => mod.execute({ action: 'invalid_action', todo_file: testFile }), /Unknown action/);
   });
 
-  it('uses ctx.agent._todoFile when no todo_file param is provided', async () => {
+  it('uses ctx.agent._todoFile when no todo_file param is provided', async (t) => {
     const fsP = await import('node:fs/promises');
-    const os_ = await import('node:os');
     const path_ = await import('node:path');
-    const tmpDir = await fsP.mkdtemp(path_.join(os_.tmpdir(), 'todo-agent-test-'));
+    const tmpDir = createTestTempDir(t, 'todo-agent-test-');
     const agentTodoFile = path_.join(tmpDir, 'todos-abc12.json');
 
     const mod = await import('../../../src/tools/general/todo.js');
@@ -491,7 +492,6 @@ describe('Todo Tool', () => {
     assert.strictEqual(todos.length, 1);
     assert.strictEqual(todos[0].text, 'Agent todo');
 
-    await fsP.rm(tmpDir, { recursive: true });
   });
 
   it('throws a clear error when neither todo_file nor ctx.agent._todoFile is provided', async () => {
@@ -499,11 +499,10 @@ describe('Todo Tool', () => {
     await assert.rejects(() => mod.execute({ action: 'list' }, {}), /configured storage path|todo_file/i);
   });
 
-  it('auto-creates the parent directory of _todoFile when writing', async () => {
+  it('auto-creates the parent directory of _todoFile when writing', async (t) => {
     const fsP = await import('node:fs/promises');
-    const os_ = await import('node:os');
     const path_ = await import('node:path');
-    const base = await fsP.mkdtemp(path_.join(os_.tmpdir(), 'todo-mkdir-'));
+    const base = createTestTempDir(t, 'todo-mkdir-');
     const nestedFile = path_.join(base, '.agent-sdk', 'todos.json');
 
     const mod = await import('../../../src/tools/general/todo.js');
@@ -515,14 +514,12 @@ describe('Todo Tool', () => {
     const raw = await fsP.readFile(nestedFile, 'utf8');
     assert.strictEqual(JSON.parse(raw).length, 1);
 
-    await fsP.rm(base, { recursive: true });
   });
 
-  it('todo_file param takes precedence over ctx.agent._todoFile', async () => {
+  it('todo_file param takes precedence over ctx.agent._todoFile', async (t) => {
     const fsP = await import('node:fs/promises');
-    const os_ = await import('node:os');
     const path_ = await import('node:path');
-    const tmpDir = await fsP.mkdtemp(path_.join(os_.tmpdir(), 'todo-agent-test-'));
+    const tmpDir = createTestTempDir(t, 'todo-agent-test-');
     const agentTodoFile = path_.join(tmpDir, 'agent.json');
     const explicitFile = path_.join(tmpDir, 'explicit.json');
 
@@ -540,6 +537,5 @@ describe('Todo Tool', () => {
     assert.ok(JSON.parse(raw).length === 1);
     await assert.rejects(() => fsP.stat(agentTodoFile), { code: 'ENOENT' });
 
-    await fsP.rm(tmpDir, { recursive: true });
   });
 });
