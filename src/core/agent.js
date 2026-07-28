@@ -1,11 +1,11 @@
 import { fileURLToPath } from 'node:url';
-import { buildRequestHeaders, resolveApiDialect } from '../support/http.js';
+import { resolveApiDialect } from '../support/http.js';
 import { resolveSafePath } from '../support/path-safety.js';
-import { degradePayload, hasMultimodalContent, LIMITS, sanitizeAppName } from '../support/payload.js';
-import { createAbortError, retry } from '../support/retry.js';
-import { mergeReasoningDelta, finalizeReasoningDetails, sanitizeAssistantReasoning } from './reasoning.js';
+import { degradePayload, LIMITS, sanitizeAppName } from '../support/payload.js';
+import { callerAbortError, normalizeModelResponse, RequestClient } from '../agent/request-client.js';
+import { sanitizeAssistantReasoning } from './reasoning.js';
 import { ToolRegistry } from '../registries/tool-registry.js';
-import { ApiError, ConfigError } from '../support/errors.js';
+import { ConfigError } from '../support/errors.js';
 import { createSessionRecorder } from './session-recorder.js';
 import { loadEnvironmentConfig } from '../config/environment.js';
 import { SkillRegistry } from '../registries/skill-registry.js';
@@ -28,42 +28,11 @@ function normalizePrompt(prompt) {
   return Array.isArray(prompt) ? prompt : [{ type: 'text', text: prompt }];
 }
 
-const REQUEST_TIMEOUT = 120_000; // 2 minutes idle threshold
-
-function makeIdleTimer(ms, controller) {
-  let timer = setTimeout(() => controller.abort(), ms);
-  return {
-    reset() {
-      clearTimeout(timer);
-      timer = setTimeout(() => controller.abort(), ms);
-    },
-    clear() {
-      clearTimeout(timer);
-    },
-  };
-}
-
-// Error for a request that failed because the caller aborted the run.
-// `.aborted = true` makes retry fail fast instead of retrying. `cause`
-// preserves the error that was in flight when the abort was observed (e.g. a
-// real ApiError) so it isn't silently discarded: inspect err.cause for it.
-function callerAbortError(cause) {
-  return createAbortError('Agent run aborted', cause);
-}
-
-// Compose the caller's signal with a per-request idle-timeout controller so
-// a caller abort cancels the in-flight fetch immediately.
-function composeFetchSignal(signal, controllerSignal) {
-  return signal ? AbortSignal.any([signal, controllerSignal]) : controllerSignal;
-}
-
-// Shared tail for request catch blocks: if the caller's signal is why this
-// failed, replace the error with a fast-failing, retry-skipping abort error
-// (keeping the original as .cause); otherwise rethrow it unchanged.
-function rethrowAsAbortIfCaller(err, signal) {
-  if (signal?.aborted) throw callerAbortError(err);
-  throw err;
-}
+// Intro line of the user message that carries rich tool output. It is also how
+// the degraded payload is recognised once the parts themselves are gone.
+const RICH_CONTENT_INTRO = 'Multimodal content from the previous tool results:';
+const RICH_CONTENT_DROPPED =
+  '[Multimodal content could not be displayed. This model does not support it. Do not describe or guess the content.]';
 
 const DEFAULT_MAX_TURNS = 25;
 const BG_KILL_GRACE_MS = 2000;
@@ -81,7 +50,6 @@ class Agent {
   #injectors = { 'first-turn': [], 'per-turn': [] };
   #beforeRequestHooks = [];
   #running = false;
-  #maxRetries;
   #pending = [];
   #activeRunPromise = null;
   #multimodalUnsupported = false;
@@ -113,7 +81,6 @@ class Agent {
 
   constructor(options = {}) {
     const config = loadEnvironmentConfig();
-    this.#maxRetries = config.maxRetries;
     const {
       apiKey,
       baseUrl,
@@ -171,6 +138,13 @@ class Agent {
     this.#baseUrl = baseUrl || config.baseUrl || 'https://openrouter.ai/api/v1';
     this.dialect = resolveApiDialect(this.#baseUrl);
     this.#sessionId = sessionId ?? crypto.randomUUID();
+    this.requestClient = new RequestClient({
+      apiKey: this.#apiKey,
+      baseUrl: this.#baseUrl,
+      model,
+      logger: this.logger,
+      retryOptions: { attempts: config.maxRetries },
+    });
 
     // Empty-turn recovery is a built-in stop hook (default on). It re-sends the
     // same payload (raw retry) then nudges, so a terminal turn that carried only
@@ -759,49 +733,6 @@ class Agent {
     await Promise.all(promises);
   }
 
-  async #request(payload, signal) {
-    const controller = new AbortController();
-    const idle = makeIdleTimer(REQUEST_TIMEOUT, controller);
-    const fetchSignal = composeFetchSignal(signal, controller.signal);
-    try {
-      const res = await fetch(`${this.#baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: buildRequestHeaders({ apiKey: this.#apiKey, dialect: this.dialect }),
-        body: JSON.stringify({ ...payload, stream: false }),
-        signal: fetchSignal,
-      });
-
-      // connection established: reset idle clock for body read
-      idle.reset();
-
-      let responseBody = await res.text();
-      try {
-        responseBody = JSON.parse(responseBody);
-      } catch {
-        if (!res.ok) {
-          throw new ApiError(`OpenRouter API error (${res.status})`, {
-            status: res.status,
-            body: responseBody.slice(0, 500),
-          });
-        }
-        throw new Error(`Failed to parse OpenRouter response as JSON: ${responseBody.slice(0, 500)}`);
-      }
-
-      if (!res.ok) {
-        throw new ApiError(responseBody?.error?.message || `OpenRouter API error (${res.status})`, {
-          status: res.status,
-          body: responseBody,
-        });
-      }
-
-      return responseBody;
-    } catch (err) {
-      rethrowAsAbortIfCaller(err, signal);
-    } finally {
-      idle.clear();
-    }
-  }
-
   // Run stop hooks in order (user hooks first, then the built-in recovery hook).
   // The first decision whose action is not 'stop' wins.
   async #runStopHooks(ctx) {
@@ -873,22 +804,13 @@ class Agent {
       // action === 'retry': re-send the identical payload.
       this.#stopAttempts++;
       try {
-        const retryResponse = await retry(
-          () => (isStreaming ? this.#sendStream(payload, signal) : this.#send(payload, signal)),
-          {
-            attempts: this.#maxRetries,
-            baseDelayMs: LIMITS.retryBaseDelayMs,
-            maxDelayMs: 60_000,
-            signal,
-            logger: this.logger,
-          },
-        );
-        const retryMessage = retryResponse.choices?.[0]?.message;
+        const retryResponse = await this.#sendModelRequest(payload, { isStreaming, signal });
+        const retryMessage = retryResponse.message;
         content = retryMessage?.content || null;
         reasoning = retryMessage?.reasoning || undefined;
         reasoning_details = retryMessage?.reasoning_details || undefined;
         tool_calls = retryMessage?.tool_calls || null;
-        finish_reason = retryResponse.choices?.[0]?.finish_reason;
+        finish_reason = retryResponse.finishReason;
         lastError = null;
       } catch (err) {
         // A failed raw retry (incl. a hard 4xx like a history-schema 400) leaves
@@ -1020,201 +942,49 @@ class Agent {
     return payload;
   }
 
+  // Test seam: `_sendForTest` stands in for the whole transport, so the run loop
+  // can be driven with recorded or scripted provider responses.
   async #sendTestStub(payload) {
-    const stub = await this._sendForTest(payload);
-    this.usage.cost += stub.usage?.cost || 0;
-    this.usage.tokens += stub.usage?.total_tokens || 0;
-    if (stub.usage?.prompt_tokens_details) {
-      this.usage.cachedTokens += stub.usage.prompt_tokens_details.cached_tokens || 0;
-      this.usage.cacheWriteTokens += stub.usage.prompt_tokens_details.cache_write_tokens || 0;
-    }
-    return stub;
-  }
-
-  async #send(payload, signal) {
-    if (typeof this._sendForTest === 'function') {
-      return this.#sendTestStub(payload);
-    }
-    this.logger.debug({ component: 'agent', model: this.model }, 'Sending request to LLM');
-    const response = await this.#request(payload, signal);
-    this.logger.debug({ component: 'agent', model: this.model }, 'Received response from LLM');
-
-    this.usage.cost += response.usage?.cost || 0;
-    this.usage.tokens += response.usage?.total_tokens || 0;
-    if (response.usage?.prompt_tokens_details) {
-      this.usage.cachedTokens += response.usage.prompt_tokens_details.cached_tokens || 0;
-      this.usage.cacheWriteTokens += response.usage.prompt_tokens_details.cache_write_tokens || 0;
-    }
-
+    const response = normalizeModelResponse(await this._sendForTest(payload));
+    this.#addUsage(response.usage);
     return response;
   }
 
-  async #sendStream(payload, signal) {
+  #addUsage(usage) {
+    this.usage.cost += usage.cost;
+    this.usage.tokens += usage.tokens;
+    this.usage.cachedTokens += usage.cachedTokens;
+    this.usage.cacheWriteTokens += usage.cacheWriteTokens;
+  }
+
+  // Send one turn's payload and account for what it cost. `onDegrade` is only
+  // supplied by the run loop, which is the only place that can mirror a dropped
+  // attachment back into the conversation.
+  async #sendModelRequest(payload, { isStreaming, signal, onDegrade }) {
     if (typeof this._sendForTest === 'function') {
       return this.#sendTestStub(payload);
     }
-    const controller = new AbortController();
-    const idle = makeIdleTimer(REQUEST_TIMEOUT, controller);
-    const fetchSignal = composeFetchSignal(signal, controller.signal);
 
-    let res;
-    try {
-      res = await fetch(`${this.#baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: buildRequestHeaders({ apiKey: this.#apiKey, dialect: this.dialect }),
-        // Request streamed usage so strict OpenAI-compatible servers report token usage.
-        body: JSON.stringify({ ...payload, stream: true, stream_options: { include_usage: true } }),
-        signal: fetchSignal,
-      });
-    } catch (err) {
-      idle.clear();
-      rethrowAsAbortIfCaller(err, signal);
+    const response = await this.requestClient.request(payload, {
+      signal,
+      stream: isStreaming,
+      onChunk: (chunk) =>
+        this.#broadcast({
+          content_delta: chunk.contentDelta || null,
+          content: chunk.content || null,
+          reasoning_delta: chunk.reasoningDelta || null,
+          reasoning: chunk.reasoning || null,
+        }),
+      onDegrade,
+    });
+    this.#addUsage(response.usage);
+
+    // Streaming assembles tool calls from many deltas, so announce them once the
+    // stream is whole. The non-streaming path has no partial state to report.
+    if (isStreaming && response.message?.tool_calls) {
+      await this.#broadcast({ tool_calls: response.message.tool_calls });
     }
-
-    // connection established: reset idle clock before stream begins
-    idle.reset();
-
-    if (!res.ok) {
-      idle.clear();
-      let body;
-      try {
-        body = await res.json();
-      } catch {
-        body = {};
-      }
-      const apiErr = new ApiError(body?.error?.message || `OpenRouter API error (${res.status})`, {
-        status: res.status,
-        body,
-      });
-      rethrowAsAbortIfCaller(apiErr, signal);
-    }
-
-    let content = '';
-    let reasoning = '';
-    let reasoningDetails = [];
-    let finishReason = null;
-    const tcMap = {};
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    const processChunk = (chunk) => {
-      this.usage.cost += chunk.usage?.cost || 0;
-      this.usage.tokens += chunk.usage?.total_tokens || 0;
-      if (chunk.usage?.prompt_tokens_details) {
-        this.usage.cachedTokens += chunk.usage.prompt_tokens_details.cached_tokens || 0;
-        this.usage.cacheWriteTokens += chunk.usage.prompt_tokens_details.cache_write_tokens || 0;
-      }
-
-      const delta = chunk.choices?.[0]?.delta;
-      if (!delta) return;
-
-      const fr = chunk.choices?.[0]?.finish_reason;
-      if (fr) finishReason = fr;
-
-      const cd = delta.content || '';
-      const rd = delta.reasoning || '';
-      if (cd) content += cd;
-      if (rd) reasoning += rd;
-
-      if (delta.reasoning_details) {
-        const detailsArray = Array.isArray(delta.reasoning_details)
-          ? delta.reasoning_details
-          : [delta.reasoning_details];
-        if (detailsArray.length) {
-          reasoningDetails = mergeReasoningDelta(reasoningDetails, detailsArray);
-        }
-      }
-
-      for (const tc of delta.tool_calls || []) {
-        if (!tcMap[tc.index]) {
-          tcMap[tc.index] = { id: tc.id, type: 'function', function: { name: '', arguments: '' } };
-        }
-        if (tc.function?.name) tcMap[tc.index].function.name += tc.function.name;
-        if (tc.function?.arguments) tcMap[tc.index].function.arguments += tc.function.arguments;
-      }
-    };
-
-    try {
-      outer: while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          if (buffer) {
-            const line = buffer.trim();
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6).trim();
-              if (data !== '[DONE]') {
-                try {
-                  const chunk = JSON.parse(data);
-                  processChunk(chunk);
-                } catch {}
-              }
-            }
-          }
-          break;
-        }
-        idle.reset(); // data arrived: reset idle clock
-        buffer += decoder.decode(value, { stream: true });
-
-        let newlineIdx;
-        while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
-          const line = buffer.slice(0, newlineIdx).trim();
-          buffer = buffer.slice(newlineIdx + 1);
-
-          if (!line.startsWith('data: ')) continue;
-          const data = line.slice(6).trim();
-          if (data === '[DONE]') break outer;
-
-          let chunk;
-          try {
-            chunk = JSON.parse(data);
-          } catch {
-            continue;
-          }
-
-          processChunk(chunk);
-
-          const delta = chunk.choices?.[0]?.delta;
-          if (delta) {
-            const cd = delta.content || '';
-            const rd = delta.reasoning || '';
-            if (cd || rd) {
-              await this.#broadcast({
-                content_delta: cd || null,
-                content: content || null,
-                reasoning_delta: rd || null,
-                reasoning: reasoning || null,
-              });
-            }
-          }
-        }
-      }
-    } catch (err) {
-      rethrowAsAbortIfCaller(err, signal);
-    } finally {
-      idle.clear();
-      reader.releaseLock();
-      controller.abort();
-    }
-
-    const tool_calls = Object.keys(tcMap).length ? Object.values(tcMap) : undefined;
-    if (tool_calls) {
-      await this.#broadcast({ tool_calls });
-    }
-
-    return {
-      choices: [
-        {
-          message: {
-            content: content || null,
-            reasoning: reasoning || null,
-            reasoning_details: finalizeReasoningDetails(reasoningDetails),
-            tool_calls,
-          },
-          finish_reason: finishReason,
-        },
-      ],
-    };
+    return response;
   }
 
   async #executeOneToolCall(tc, signal) {
@@ -1589,6 +1359,31 @@ class Agent {
     }
   }
 
+  // The provider refused the rich parts of a payload and the request client has
+  // stripped them. Mirror that loss in the conversation so later turns stay
+  // text-only and the model is told what it can no longer see.
+  #dropRichContent(payload) {
+    this.#multimodalUnsupported = true;
+    for (const msg of this.messages) {
+      if (msg.role === 'tool' && this.#pendingRichCallIds.has(msg.tool_call_id)) {
+        msg.content = (msg.content ? msg.content + '\n' : '') + RICH_CONTENT_DROPPED;
+      }
+    }
+    this.#pendingRichCallIds.clear();
+    if (this.#richUserMsgIdx >= 0) {
+      this.messages[this.#richUserMsgIdx] = { role: 'user', content: RICH_CONTENT_DROPPED };
+      this.#richUserMsgIdx = -1;
+    }
+    // Degrading left the rich user message as a bare intro line: say plainly
+    // that its attachments are gone instead of announcing content that isn't there.
+    for (const msg of payload.messages) {
+      if (msg.role === 'user' && msg.content === RICH_CONTENT_INTRO) {
+        msg.content = RICH_CONTENT_DROPPED;
+        break;
+      }
+    }
+  }
+
   async #runLoop(prompt, options = {}) {
     try {
       const { signal } = options;
@@ -1674,85 +1469,31 @@ class Agent {
         this.#recorder?.request(loopCount, payload);
         let response;
         try {
-          response = await retry(
-            () => (isStreaming ? this.#sendStream(payload, signal) : this.#send(payload, signal)),
-            {
-              attempts: this.#maxRetries,
-              baseDelayMs: LIMITS.retryBaseDelayMs,
-              maxDelayMs: 60_000,
-              signal,
-              logger: this.logger,
-            },
-          );
-          this.#pendingRichCallIds.clear();
-          this.#richUserMsgIdx = -1;
+          response = await this.#sendModelRequest(payload, {
+            isStreaming,
+            signal,
+            onDegrade: (degraded) => this.#dropRichContent(degraded),
+          });
         } catch (err) {
-          const errMsg = String(err.message).toLowerCase();
-          const isMultimodalError =
-            err instanceof ApiError &&
-            (err.status === 400 ||
-              err.status === 402 ||
-              errMsg.includes('balance') ||
-              errMsg.includes('file') ||
-              errMsg.includes('video'));
-
-          if (isMultimodalError && !this.#multimodalUnsupported && hasMultimodalContent(payload)) {
-            this.logger.warn(
-              { component: 'agent', status: err.status, error: err },
-              'Multimodal request rejected; degrading and retrying text-only fallback',
-            );
-            this.#multimodalUnsupported = true;
-            for (const msg of this.messages) {
-              if (msg.role === 'tool' && this.#pendingRichCallIds.has(msg.tool_call_id)) {
-                msg.content =
-                  (msg.content ? msg.content + '\n' : '') +
-                  '[Multimodal content could not be displayed. This model does not support it. Do not describe or guess this content.]';
-              }
-            }
-            this.#pendingRichCallIds.clear();
-            const richNotice =
-              '[Multimodal content could not be displayed. This model does not support it. Do not describe or guess the content.]';
-            if (this.#richUserMsgIdx >= 0) {
-              this.messages[this.#richUserMsgIdx] = { role: 'user', content: richNotice };
-              this.#richUserMsgIdx = -1;
-            }
-            degradePayload(payload);
-            // degradePayload collapses the rich user message to its text intro: replace with honest notice
-            for (const msg of payload.messages) {
-              if (msg.role === 'user' && msg.content === 'Multimodal content from the previous tool results:') {
-                msg.content = richNotice;
-                break;
-              }
-            }
-            response = await retry(
-              () => (isStreaming ? this.#sendStream(payload, signal) : this.#send(payload, signal)),
-              {
-                attempts: this.#maxRetries,
-                baseDelayMs: LIMITS.retryBaseDelayMs,
-                maxDelayMs: 60_000,
-                signal,
-                logger: this.logger,
-              },
-            );
-          } else {
-            this.#pendingRichCallIds.clear();
-            throw err;
-          }
+          this.#pendingRichCallIds.clear();
+          throw err;
         }
-        this.#recorder?.response(loopCount, response);
+        this.#pendingRichCallIds.clear();
+        this.#richUserMsgIdx = -1;
+        this.#recorder?.response(loopCount, response.raw);
         // Response landed after the caller aborted: don't commit or act on it.
         if (signal?.aborted) throw callerAbortError();
 
-        const message = response.choices?.[0]?.message;
+        const message = response.message;
         if (!message) {
           this.logger.warn({ component: 'agent' }, 'LLM returned no message; breaking loop');
           break;
         }
 
         let { content, tool_calls } = message;
-        let reasoning = message.reasoning || undefined;
-        let reasoning_details = message.reasoning_details || undefined;
-        let finish_reason = response.choices?.[0]?.finish_reason;
+        let reasoning = response.reasoning;
+        let reasoning_details = response.reasoningDetails;
+        let finish_reason = response.finishReason;
 
         // Stop hooks / empty-turn recovery run only on a terminal (no-tool_calls)
         // turn, BEFORE the assistant message is committed: so an empty turn never
@@ -1851,10 +1592,7 @@ class Agent {
           this.#richUserMsgIdx = this.messages.length;
           this.messages.push({
             role: 'user',
-            content: [
-              { type: 'text', text: 'Multimodal content from the previous tool results:' },
-              ...richPartsOrdered,
-            ],
+            content: [{ type: 'text', text: RICH_CONTENT_INTRO }, ...richPartsOrdered],
           });
           for (const id of richToolIds) this.#pendingRichCallIds.add(id);
         }
