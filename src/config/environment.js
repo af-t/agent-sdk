@@ -11,7 +11,11 @@ function readBoolean(env, name) {
 function readNumber(env, name) {
   const value = env[name];
   if (value === undefined || value === '') return undefined;
-  const number = Number(value);
+  const normalized = value.trim();
+  if (normalized === '') {
+    throw new ConfigError(`${name} must be a finite number`);
+  }
+  const number = Number(normalized);
   if (!Number.isFinite(number)) {
     throw new ConfigError(`${name} must be a finite number`);
   }

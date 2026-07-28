@@ -99,4 +99,11 @@ describe('loadEnvironmentConfig', () => {
       (error) => error instanceof ConfigError && /OPENROUTER_MAX_TURNS/.test(error.message),
     );
   });
+
+  it('rejects whitespace-only numeric environment values', () => {
+    assert.throws(
+      () => loadEnvironmentConfig({ OPENROUTER_MAX_TURNS: '   ' }),
+      (error) => error instanceof ConfigError && /OPENROUTER_MAX_TURNS/.test(error.message),
+    );
+  });
 });
