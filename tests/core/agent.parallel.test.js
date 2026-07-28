@@ -64,7 +64,7 @@ describe('Agent: parallel tool scheduler', () => {
     agent.use({
       name: 'SlowSafe',
       description: 'sleeps',
-      input_schema: { type: 'object', properties: { id: { type: 'number' } } },
+      inputSchema: { type: 'object', properties: { id: { type: 'number' } } },
       execute: async ({ id }) => {
         active++;
         maxActive = Math.max(maxActive, active);
@@ -92,7 +92,7 @@ describe('Agent: parallel tool scheduler', () => {
     agent.use({
       name: 'OrderedSafe',
       description: 'sleeps then returns label',
-      input_schema: {
+      inputSchema: {
         type: 'object',
         properties: { delay: { type: 'number' }, label: { type: 'string' } },
       },
@@ -130,7 +130,7 @@ describe('Agent: parallel tool scheduler', () => {
       await new Promise((r) => setTimeout(r, 50));
       active--;
     };
-    agent.use({ name: 'Sleeper', description: 'd', input_schema: {}, execute: sleep });
+    agent.use({ name: 'Sleeper', description: 'd', inputSchema: {}, execute: sleep });
 
     await agent.run('go');
     // Deterministic concurrency check instead of wall-clock timing (flaky under CPU load).
@@ -151,7 +151,7 @@ describe('Agent: parallel tool scheduler', () => {
     agent.use({
       name: 'MaybeThrow',
       description: 'maybe throws',
-      input_schema: { type: 'object', properties: { throw: { type: 'boolean' } } },
+      inputSchema: { type: 'object', properties: { throw: { type: 'boolean' } } },
       execute: async ({ throw: shouldThrow }) => {
         if (shouldThrow) throw new Error('boom');
         return 'fine';

@@ -360,7 +360,7 @@ const agent = await createAgent();
 agent.use({
   name: 'GetWeather',
   description: 'Get the current weather for a city',
-  input_schema: {
+  inputSchema: {
     type: 'object',
     properties: {
       city: { type: 'string', description: 'City name' },
@@ -400,7 +400,7 @@ Be concise and provide runnable code examples.
 
 ```javascript
 import Agent from './src/core/agent.js';
-import { ToolRegistry } from './src/registry/tool.js';
+import { ToolRegistry } from './src/registries/tool-registry.js';
 
 const tools = new ToolRegistry();
 tools.register(myCustomTool);
@@ -486,9 +486,9 @@ rl.on('line', (line) => {
 });
 ```
 
-> For a working MCP server implementation, see `src/core/mcp.js`. A full production-ready example (e.g., weather tool) is planned for a future release.
+> For a working MCP server implementation, see `src/integrations/mcp-client.js`. A full production-ready example (e.g., weather tool) is planned for a future release.
 
-See `src/core/mcp.js` for the full implementation.
+See `src/integrations/mcp-client.js` for the full implementation.
 
 ## Skill System
 

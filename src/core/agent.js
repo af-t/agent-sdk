@@ -4,11 +4,11 @@ import { resolveSafePath } from '../support/path-safety.js';
 import { degradePayload, hasMultimodalContent, LIMITS, sanitizeAppName } from '../support/payload.js';
 import { createAbortError, retry } from '../support/retry.js';
 import { mergeReasoningDelta, finalizeReasoningDetails, sanitizeAssistantReasoning } from './reasoning.js';
-import { ToolRegistry } from '../registry/tool.js';
+import { ToolRegistry } from '../registries/tool-registry.js';
 import { ApiError, ConfigError } from '../support/errors.js';
 import { createSessionRecorder } from './session-recorder.js';
 import { loadEnvironmentConfig } from '../config/environment.js';
-import skillRegistry from '../registry/skill.js';
+import skillRegistry from '../registries/skill-registry.js';
 import { resolveLogger } from '../support/logger.js';
 import crypto from 'node:crypto';
 import os from 'node:os';
@@ -218,7 +218,7 @@ class Agent {
     };
 
     this.messages = [];
-    this.tools = tools || new ToolRegistry({ restricted: this.restricted });
+    this.tools = tools || new ToolRegistry({ restricted: this.restricted, logger: this.logger });
 
     this.temperature =
       temperature !== undefined ? temperature : config.temperature !== undefined ? config.temperature : undefined;
@@ -493,7 +493,7 @@ class Agent {
           agent.tools.register({
             name: c.name,
             description: 'replay stub',
-            input_schema: { type: 'object', properties: {} },
+            inputSchema: { type: 'object', properties: {} },
             execute: async () => '',
           });
           known.add(c.name);
@@ -1224,7 +1224,13 @@ class Agent {
     let toolError;
     const richParts = [];
     try {
-      const result = await this.tools.execute(name, input, { agent: this, signal, tool_call_id });
+      const result = await this.tools.execute(name, input, {
+        agent: this,
+        logger: this.logger,
+        maxToolOutput: this.maxToolOutputChars,
+        signal,
+        tool_call_id,
+      });
       if (Array.isArray(result)) {
         // Extract any non-text parts (multimodal blocks like image_url, file)
         const textParts = [];

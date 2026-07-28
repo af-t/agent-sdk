@@ -35,7 +35,7 @@ describe('Agent', () => {
     const agentMod = await import('../../src/core/agent.js');
     Agent = agentMod.default;
     describeJob = agentMod.describeJob;
-    const registryMod = await import('../../src/registry/tool.js');
+    const registryMod = await import('../../src/registries/tool-registry.js');
     ToolRegistry = registryMod.ToolRegistry;
   });
 
@@ -156,7 +156,7 @@ describe('Agent', () => {
       const tool = {
         name: 'my_tool',
         description: 'My custom tool',
-        input_schema: { type: 'object', properties: {} },
+        inputSchema: { type: 'object', properties: {} },
         execute: async () => 'done',
       };
       agent.use(tool);
@@ -168,8 +168,8 @@ describe('Agent', () => {
     it('registers multiple tools from an array', () => {
       const agent = new Agent({ apiKey: 'sk-key' });
       const tools = [
-        { name: 'a', description: '', input_schema: {}, execute: async () => {} },
-        { name: 'b', description: '', input_schema: {}, execute: async () => {} },
+        { name: 'a', description: '', inputSchema: {}, execute: async () => {} },
+        { name: 'b', description: '', inputSchema: {}, execute: async () => {} },
       ];
       agent.use(tools);
       assert.equal(agent.tools.listTools().length, 2);
@@ -372,7 +372,7 @@ describe('run(): streaming (with notify)', () => {
     agent.use({
       name: 'Echo',
       description: 'echo the message',
-      input_schema: { type: 'object', properties: { msg: { type: 'string' } }, required: ['msg'] },
+      inputSchema: { type: 'object', properties: { msg: { type: 'string' } }, required: ['msg'] },
       execute: async ({ msg }) => msg,
     });
 
@@ -450,7 +450,7 @@ describe('run(): maxTurns enforcement', () => {
     agent.use({
       name: 'Loop',
       description: 'loops',
-      input_schema: { type: 'object', properties: {}, required: [] },
+      inputSchema: { type: 'object', properties: {}, required: [] },
       execute: async () => 'looped',
     });
 
@@ -532,7 +532,7 @@ describe('run(): cache_control placement', () => {
     agent.use({
       name: 'Probe',
       description: 'returns text',
-      input_schema: { type: 'object', properties: {}, required: [] },
+      inputSchema: { type: 'object', properties: {}, required: [] },
       execute: async () => 'tool result',
     });
 
@@ -856,7 +856,7 @@ describe('run(): tool_call id normalization', () => {
     agent.use({
       name: 'Probe',
       description: 'probe',
-      input_schema: { type: 'object', properties: {}, required: [] },
+      inputSchema: { type: 'object', properties: {}, required: [] },
       execute: async (input, ctx) => {
         ctxId = ctx.tool_call_id;
         return 'ok';
@@ -900,7 +900,7 @@ describe('run(): tool_call id normalization', () => {
     agent.use({
       name: 'Probe',
       description: 'probe',
-      input_schema: { type: 'object', properties: {}, required: [] },
+      inputSchema: { type: 'object', properties: {}, required: [] },
       execute: async () => 'ok',
     });
 
@@ -960,7 +960,7 @@ describe('run(): steering / pending requests', () => {
     agent.use({
       name: 'Probe',
       description: 'probe',
-      input_schema: { type: 'object', properties: {}, required: [] },
+      inputSchema: { type: 'object', properties: {}, required: [] },
       execute: async () => {
         observedRunning = agent.isRunning;
         observedSteer = agent.steer('mid-flight instruction');
@@ -1001,7 +1001,7 @@ describe('run(): steering / pending requests', () => {
     agent.use({
       name: 'Probe',
       description: 'probe',
-      input_schema: { type: 'object', properties: {}, required: [] },
+      inputSchema: { type: 'object', properties: {}, required: [] },
       execute: async () => {
         concurrent = agent.run('concurrent prompt');
         return 'ok';
@@ -1058,7 +1058,7 @@ describe('run(): steering applied in-loop', () => {
     agent.use({
       name: 'Probe',
       description: 'probe',
-      input_schema: { type: 'object', properties: {}, required: [] },
+      inputSchema: { type: 'object', properties: {}, required: [] },
       execute: async () => {
         agent.steer('steered instruction');
         return 'ok';
@@ -1087,7 +1087,7 @@ describe('run(): steering applied in-loop', () => {
     agent.use({
       name: 'Probe',
       description: 'probe',
-      input_schema: { type: 'object', properties: {}, required: [] },
+      inputSchema: { type: 'object', properties: {}, required: [] },
       execute: async () => {
         agent.steer('steered');
         return 'ok';
@@ -1158,7 +1158,7 @@ describe('run(): steering applied in-loop', () => {
     agent.use({
       name: 'RichTool',
       description: 'returns rich multimodal array',
-      input_schema: { type: 'object', properties: {} },
+      inputSchema: { type: 'object', properties: {} },
       execute: async () => [
         { type: 'text', text: 'image desc' },
         { type: 'image_url', image_url: { url: 'data:image/png;base64,abc' } },

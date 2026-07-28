@@ -8,7 +8,7 @@ describe('SkillRegistry (default singleton)', () => {
   let skillModule;
 
   before(async () => {
-    skillModule = await import('../../src/registry/skill.js');
+    skillModule = await import('../../src/registries/skill-registry.js');
   });
 
   it('exports a default object with expected methods', () => {
@@ -103,7 +103,7 @@ describe('SkillRegistry: plugin discovery', () => {
   let pluginsDir;
 
   before(async () => {
-    const mod = await import('../../src/registry/skill.js');
+    const mod = await import('../../src/registries/skill-registry.js');
     registry = mod.default;
     pluginsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'plugins-test-'));
 
@@ -184,7 +184,7 @@ describe('SkillRegistry: missing plugins root', () => {
   let registry;
 
   before(async () => {
-    registry = (await import('../../src/registry/skill.js')).default;
+    registry = (await import('../../src/registries/skill-registry.js')).default;
     registry.reset();
     registry.configure({ pluginsDir: path.join(os.tmpdir(), 'does-not-exist-' + Date.now()) });
     await registry.refresh();

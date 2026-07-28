@@ -709,7 +709,7 @@ describe('Agent: pluginInstructions first-turn injector', () => {
 
   before(async () => {
     Agent = (await import('../../src/core/agent.js')).default;
-    skillRegistry = (await import('../../src/registry/skill.js')).default;
+    skillRegistry = (await import('../../src/registries/skill-registry.js')).default;
     originalFetch = global.fetch;
 
     pluginsDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'agent-plugins-test-'));

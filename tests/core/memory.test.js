@@ -223,7 +223,7 @@ describe('Agent: memoryIndex injector', () => {
 
 describe('Agent: using-memory skill discovery', () => {
   it('using-memory is discoverable via SkillRegistry', async () => {
-    const registryMod = await import('../../src/registry/skill.js');
+    const registryMod = await import('../../src/registries/skill-registry.js');
     const registry = registryMod.default;
     await registry._ensureDiscovered();
     const skill = registry.get('using-memory');

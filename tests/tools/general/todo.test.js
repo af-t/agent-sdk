@@ -26,7 +26,7 @@ describe('Todo Tool', () => {
     const mod = await import('../../../src/tools/general/todo.js');
     assert.strictEqual(mod.name, 'Todo');
     assert.ok(mod.description);
-    assert.ok(mod.input_schema);
+    assert.ok(mod.inputSchema);
     assert.strictEqual(typeof mod.execute, 'function');
   });
 

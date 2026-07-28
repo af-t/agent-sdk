@@ -174,7 +174,7 @@ describe('Agent: stop hooks & empty-turn recovery', () => {
     agent.use({
       name: 'Probe',
       description: 'probe',
-      input_schema: { type: 'object', properties: {}, required: [] },
+      inputSchema: { type: 'object', properties: {}, required: [] },
       execute: async () => 'probed',
     });
     // empty -> retry -> empty -> nudge -> tool turn -> empty -> retry -> content

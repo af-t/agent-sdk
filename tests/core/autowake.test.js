@@ -145,7 +145,7 @@ test('Bug B: autoWakeNotify callback is invoked during auto-wake run', async () 
   agent.use({
     name: 'ack',
     description: 'ack',
-    input_schema: { type: 'object', properties: {} },
+    inputSchema: { type: 'object', properties: {} },
     execute: async () => 'ok',
   });
 
@@ -196,7 +196,7 @@ test('Bug B: autoWakeNotify can be set after construction', async () => {
   agent.use({
     name: 'ack',
     description: 'ack',
-    input_schema: { type: 'object', properties: {} },
+    inputSchema: { type: 'object', properties: {} },
     execute: async () => 'ok',
   });
 
@@ -270,7 +270,7 @@ test('events arriving while isRunning are drained during the run loop', async ()
   agent.use({
     name: 'trigger_exit',
     description: 'triggers a background exit',
-    input_schema: { type: 'object', properties: {} },
+    inputSchema: { type: 'object', properties: {} },
     execute: async () => {
       // Simulate bg exit during tool execution.
       agent._fireBackgroundExit({
@@ -340,7 +340,7 @@ test('onBackgroundExit listeners do NOT fire during active run (events queued)',
   agent.use({
     name: 'slow_tool',
     description: 'd',
-    input_schema: { type: 'object', properties: {} },
+    inputSchema: { type: 'object', properties: {} },
     execute: async () => {
       // During active run, listener should NOT be called.
       agent._fireBackgroundExit({
@@ -387,7 +387,7 @@ test('queued bg exit drains at run start, merged with the prompt (single reminde
   agent.use({
     name: 'noop',
     description: 'd',
-    input_schema: { type: 'object', properties: {} },
+    inputSchema: { type: 'object', properties: {} },
     execute: async () => 'ok',
   });
 

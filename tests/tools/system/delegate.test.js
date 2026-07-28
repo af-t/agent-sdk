@@ -46,24 +46,24 @@ describe('Delegate tool module', () => {
     assert.ok(mod.description.length > 0);
   });
 
-  it('should export input_schema', () => {
-    assert.ok(mod.input_schema);
-    assert.strictEqual(mod.input_schema.type, 'object');
-    assert.ok(mod.input_schema.properties);
-    assert.ok(mod.input_schema.properties.prompt);
-    assert.ok(mod.input_schema.properties.description);
-    assert.ok(mod.input_schema.required.includes('prompt'));
-    assert.ok(mod.input_schema.required.includes('description'));
+  it('should export inputSchema', () => {
+    assert.ok(mod.inputSchema);
+    assert.strictEqual(mod.inputSchema.type, 'object');
+    assert.ok(mod.inputSchema.properties);
+    assert.ok(mod.inputSchema.properties.prompt);
+    assert.ok(mod.inputSchema.properties.description);
+    assert.ok(mod.inputSchema.required.includes('prompt'));
+    assert.ok(mod.inputSchema.required.includes('description'));
   });
 
-  it('should not include context_files in input_schema', () => {
-    assert.strictEqual(mod.input_schema.properties.context_files, undefined);
+  it('should not include context_files in inputSchema', () => {
+    assert.strictEqual(mod.inputSchema.properties.context_files, undefined);
   });
 
-  it('should include id in input_schema as optional string', () => {
-    assert.ok(mod.input_schema.properties.id);
-    assert.strictEqual(mod.input_schema.properties.id.type, 'string');
-    assert.ok(!mod.input_schema.required.includes('id'));
+  it('should include id in inputSchema as optional string', () => {
+    assert.ok(mod.inputSchema.properties.id);
+    assert.strictEqual(mod.inputSchema.properties.id.type, 'string');
+    assert.ok(!mod.inputSchema.required.includes('id'));
   });
 
   it('should export execute as a function', () => {
@@ -207,12 +207,12 @@ describe('Delegate tool: execute()', () => {
   });
 
   it('should inherit parent tool registry including custom tools', async (t) => {
-    const { ToolRegistry } = await import('../../../src/registry/tool.js');
+    const { ToolRegistry } = await import('../../../src/registries/tool-registry.js');
     const parentTools = new ToolRegistry();
     parentTools.register({
       name: 'CustomTestTool',
       description: 'custom tool for testing',
-      input_schema: { type: 'object', properties: {}, required: [] },
+      inputSchema: { type: 'object', properties: {}, required: [] },
       execute: async () => 'ok',
     });
 

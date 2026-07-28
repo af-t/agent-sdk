@@ -1,7 +1,7 @@
 import Agent from './core/agent.js';
 import process from 'node:process';
 import { loadEnvironmentConfig } from './config/environment.js';
-import { ToolRegistry } from './registry/tool.js';
+import { ToolRegistry } from './registries/tool-registry.js';
 import { resolveLogger } from './support/logger.js';
 import { builtinTools } from './tools/index.js';
 
@@ -18,7 +18,7 @@ export async function createAgent(options = {}) {
   // Honor a caller-supplied registry; otherwise auto-discover builtins
   let tools = options.tools;
   if (!tools) {
-    tools = new ToolRegistry({ restricted });
+    tools = new ToolRegistry({ restricted, logger });
     for (const tool of builtinTools) {
       tools.register(tool);
     }
@@ -41,5 +41,6 @@ export { createFileWatchSource } from './core/file-watch-source.js';
 export { createHttpSource } from './core/http-source.js';
 export { recallMemories } from './core/memory-recall.js';
 export { Recording } from './core/recording.js';
-export { SkillRegistry } from './registry/skill.js';
-export { ToolRegistry } from './registry/tool.js';
+export { McpClientWrapper, McpNativeClient } from './integrations/mcp-client.js';
+export { SkillRegistry } from './registries/skill-registry.js';
+export { ToolRegistry } from './registries/tool-registry.js';

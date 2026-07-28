@@ -5,12 +5,12 @@ import * as wakeup from '../../src/tools/system/wakeup.js';
 
 test('Wakeup name and schema', () => {
   assert.equal(wakeup.name, 'Wakeup');
-  assert.ok(wakeup.input_schema.properties.delay_ms);
-  assert.ok(wakeup.input_schema.properties.at);
-  assert.ok(wakeup.input_schema.properties.watch);
-  assert.ok(wakeup.input_schema.properties.tail_bytes);
-  assert.ok(wakeup.input_schema.properties.reason);
-  assert.ok(wakeup.input_schema.properties.prompt);
+  assert.ok(wakeup.inputSchema.properties.delay_ms);
+  assert.ok(wakeup.inputSchema.properties.at);
+  assert.ok(wakeup.inputSchema.properties.watch);
+  assert.ok(wakeup.inputSchema.properties.tail_bytes);
+  assert.ok(wakeup.inputSchema.properties.reason);
+  assert.ok(wakeup.inputSchema.properties.prompt);
 });
 
 test('Wakeup rejects when neither delay_ms nor at is provided', async () => {

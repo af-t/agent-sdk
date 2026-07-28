@@ -7,7 +7,7 @@ import { LIMITS } from '../../support/payload.js';
 export const name = 'Find';
 export const description =
   'Search for files by name or content within a directory.  Prioritize using this tool over using commands like `find -iname` or `grep -R` for portability reasons.';
-export const input_schema = {
+export const inputSchema = {
   type: 'object',
   properties: {
     path: { type: 'string', description: 'Directory to search in' },

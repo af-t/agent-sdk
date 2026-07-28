@@ -21,7 +21,7 @@ describe('RecallMemory tool', () => {
   it('exports the required tool fields', () => {
     assert.equal(tool.name, 'RecallMemory');
     assert.ok(tool.description);
-    assert.ok(tool.input_schema);
+    assert.ok(tool.inputSchema);
     assert.equal(typeof tool.execute, 'function');
   });
 

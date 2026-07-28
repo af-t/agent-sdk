@@ -31,13 +31,13 @@ describe('WebSearch tool module', () => {
     assert.ok(mod.description.length > 0);
   });
 
-  it('should export input_schema', () => {
-    assert.ok(mod.input_schema);
-    assert.strictEqual(mod.input_schema.type, 'object');
-    assert.ok(mod.input_schema.properties);
-    assert.ok(mod.input_schema.properties.query);
-    assert.strictEqual(mod.input_schema.properties.query.type, 'string');
-    assert.ok(mod.input_schema.required.includes('query'));
+  it('should export inputSchema', () => {
+    assert.ok(mod.inputSchema);
+    assert.strictEqual(mod.inputSchema.type, 'object');
+    assert.ok(mod.inputSchema.properties);
+    assert.ok(mod.inputSchema.properties.query);
+    assert.strictEqual(mod.inputSchema.properties.query.type, 'string');
+    assert.ok(mod.inputSchema.required.includes('query'));
   });
 
   it('should export execute as a function', () => {

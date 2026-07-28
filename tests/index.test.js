@@ -15,7 +15,7 @@ describe('createAgent', () => {
     createAgent = indexMod.default;
     const agentMod = await import('../src/core/agent.js');
     Agent = agentMod.default;
-    const registryMod = await import('../src/registry/tool.js');
+    const registryMod = await import('../src/registries/tool-registry.js');
     ToolRegistry = registryMod.ToolRegistry;
   });
 
@@ -146,7 +146,7 @@ describe('createAgent', () => {
     registry.register({
       name: 'OnlyMine',
       description: 'custom tool',
-      input_schema: { type: 'object', properties: {}, required: [] },
+      inputSchema: { type: 'object', properties: {}, required: [] },
       execute: async () => 'mine',
     });
     const agent = await createAgent({ tools: registry });
@@ -186,7 +186,7 @@ describe('createAgent', () => {
     agent.use({
       name: 'PingTool',
       description: 'test tool',
-      input_schema: { type: 'object', properties: {}, required: [] },
+      inputSchema: { type: 'object', properties: {}, required: [] },
       execute: async () => 'pong',
     });
     const result = await agent.tools.execute('PingTool', {}, { agent });
@@ -198,7 +198,7 @@ describe('createAgent', () => {
     agent1.use({
       name: 'OnlyAgent1Tool',
       description: 'test',
-      input_schema: { type: 'object', properties: {}, required: [] },
+      inputSchema: { type: 'object', properties: {}, required: [] },
       execute: async () => 'ok',
     });
     const names1 = agent1.tools.listTools().map((t) => t.name);

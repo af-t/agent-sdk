@@ -31,6 +31,6 @@ export const builtinTools = [
 ].map((mod) => ({
   name: mod.name || mod.default?.name,
   description: mod.description || mod.default?.description,
-  input_schema: mod.input_schema || mod.default?.input_schema,
+  inputSchema: mod.inputSchema || mod.default?.inputSchema,
   execute: mod.execute || mod.default?.execute,
 }));

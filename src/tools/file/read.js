@@ -24,7 +24,7 @@ const AUDIO_FORMAT_MAP = {
 export const name = 'Read';
 export const description =
   'Read the contents of a file with pagination and line numbers. Handles text, notebooks (.ipynb), images (PNG/JPEG/GIF/WebP), PDFs, audio, video, and binary files. Use pagination (start_line/end_line) for large files to avoid context overflow and ensure efficient reading. For images, PDFs, audio, and video files, the tool automatically loads and injects them as multimodal content blocks directly into your context, so you do not need to expect binary hex or run external tools like ffmpeg to inspect them.';
-export const input_schema = {
+export const inputSchema = {
   type: 'object',
   properties: {
     path: { type: 'string', description: 'File path' },

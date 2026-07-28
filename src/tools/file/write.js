@@ -8,7 +8,7 @@ const MAX_WRITE_SIZE = 10 * 1024 * 1024; // 10MB limit to prevent disk exhaustio
 export const name = 'Write';
 export const description =
   'Create a new file, or overwrite an existing one by passing overwrite=true. Prefer Edit for partial changes. This tool will automatically create any missing parent directories. Side effect: writes/overwrites the target file. Do not issue parallel Write or Edit calls against the same path.';
-export const input_schema = {
+export const inputSchema = {
   type: 'object',
   properties: {
     path: { type: 'string', description: 'Destination path' },

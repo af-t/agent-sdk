@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 
 import Agent from '../../../src/core/agent.js';
 import createAgent from '../../../src/index.js';
-import { execute as jobsExecute, name, input_schema } from '../../../src/tools/system/jobs.js';
+import { execute as jobsExecute, name, inputSchema } from '../../../src/tools/system/jobs.js';
 import { createTestTempDir } from '../../support/temp.js';
 
 process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || 'sk-test-jobs';
@@ -16,8 +16,8 @@ function makeAgent() {
 describe('Jobs tool', () => {
   it('exports Jobs name and a flat schema requiring action', () => {
     assert.equal(name, 'Jobs');
-    assert.deepEqual(input_schema.required, ['action']);
-    assert.deepEqual(input_schema.properties.action.enum, ['list', 'stop']);
+    assert.deepEqual(inputSchema.required, ['action']);
+    assert.deepEqual(inputSchema.properties.action.enum, ['list', 'stop']);
   });
 
   it('requires ctx.agent', async () => {

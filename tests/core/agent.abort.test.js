@@ -48,7 +48,7 @@ describe('Agent: abort propagation', () => {
     agent.use({
       name: 'SeesSignal',
       description: 'd',
-      input_schema: {},
+      inputSchema: {},
       execute: async (_input, ctx) => {
         observed = ctx.signal;
         return 'ok';
@@ -88,7 +88,7 @@ describe('Agent: abort propagation', () => {
     agent.use({
       name: 'WaitForAbort',
       description: 'd',
-      input_schema: {},
+      inputSchema: {},
       execute: async (_input, ctx) =>
         new Promise((_, rej) => {
           const fail = () => rej(new Error('aborted by signal'));
@@ -134,7 +134,7 @@ describe('Agent: abort propagation', () => {
     agent.use({
       name: 'IgnoresSignal',
       description: 'd',
-      input_schema: {},
+      inputSchema: {},
       execute: async () => {
         await new Promise((r) => setTimeout(r, 100));
         return 'completed';

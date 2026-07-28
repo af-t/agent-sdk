@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ToolRegistry } from '../../src/registry/tool.js';
+import { ToolRegistry } from '../../src/registries/tool-registry.js';
 import { Recording } from '../../src/core/recording.js';
 import { createTestTempDir } from '../support/temp.js';
 
@@ -61,7 +61,7 @@ test('a full-level run records request/response and applies redact', async (t) =
     agent.use({
       name: 'Echo',
       description: 'echo',
-      input_schema: { type: 'object', properties: { msg: { type: 'string' } } },
+      inputSchema: { type: 'object', properties: { msg: { type: 'string' } } },
       execute: async ({ msg }) => msg,
     });
     await agent.run('go'); // no notify -> non-streaming #send path
@@ -92,7 +92,7 @@ test('agent threads tool_call_id into the tool ctx', async () => {
   agent.use({
     name: 'Echo',
     description: 'echo',
-    input_schema: { type: 'object', properties: {} },
+    inputSchema: { type: 'object', properties: {} },
     execute: async (_input, ctx) => {
       seenId = ctx.tool_call_id;
       return 'ok';
@@ -204,7 +204,7 @@ test('Agent.replay toolMode live re-executes tools against the provided registry
   registry.register({
     name: 'Echo',
     description: 'echo',
-    input_schema: { type: 'object', properties: { msg: { type: 'string' } } },
+    inputSchema: { type: 'object', properties: { msg: { type: 'string' } } },
     execute: async ({ msg }) => {
       calls++;
       return 'LIVE:' + msg;

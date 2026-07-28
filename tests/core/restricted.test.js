@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import createAgent from '../../src/index.js';
-import { ToolRegistry } from '../../src/registry/tool.js';
+import { ToolRegistry } from '../../src/registries/tool-registry.js';
 import { execute as bashExecute } from '../../src/tools/system/bash.js';
 
 test('agent.restricted defaults to true', async () => {
@@ -20,7 +20,7 @@ test('ctx.agent.restricted is exposed to tools at execute time', async () => {
   agent.use({
     name: 'probe_restricted',
     description: 'd',
-    input_schema: { type: 'object', properties: {} },
+    inputSchema: { type: 'object', properties: {} },
     execute: async (_input, ctx) => {
       seen = ctx.agent?.restricted;
       return 'ok';
@@ -96,7 +96,7 @@ test('Bash passes through env vars when restricted=false', async () => {
 });
 
 test('McpClientWrapper inherits process.env when restricted=false', async () => {
-  const { McpClientWrapper } = await import('../../src/core/mcp.js');
+  const { McpClientWrapper } = await import('../../src/integrations/mcp-client.js');
   process.env.OPENROUTER_LEAK_PROBE = 'leak';
   try {
     const w1 = new McpClientWrapper({ command: 'true', args: [], restricted: true });

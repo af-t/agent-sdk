@@ -43,7 +43,7 @@ describe('Agent: tool_start / tool_end notify events', () => {
     agent.use({
       name: 'Echo',
       description: 'echo',
-      input_schema: { type: 'object', properties: { msg: { type: 'string' } } },
+      inputSchema: { type: 'object', properties: { msg: { type: 'string' } } },
       execute: async ({ msg }) => msg,
     });
 
@@ -82,7 +82,7 @@ describe('Agent: tool_start / tool_end notify events', () => {
     agent.use({
       name: 'Boom',
       description: 'd',
-      input_schema: {},
+      inputSchema: {},
       execute: async () => {
         throw new Error('kaboom');
       },
@@ -113,7 +113,7 @@ describe('Agent: tool_start / tool_end notify events', () => {
     agent.use({
       name: 'Ok',
       description: 'd',
-      input_schema: {},
+      inputSchema: {},
       execute: async () => 'ok',
     });
 

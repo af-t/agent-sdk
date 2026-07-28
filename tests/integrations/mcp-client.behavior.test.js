@@ -12,7 +12,7 @@ describe('McpNativeClient', () => {
   let McpNativeClient;
 
   before(async () => {
-    const mod = await import('../../src/core/mcp.js');
+    const mod = await import('../../src/integrations/mcp-client.js');
     McpNativeClient = mod.McpNativeClient;
   });
 
@@ -66,7 +66,7 @@ describe('McpNativeClient: mock server connections', () => {
   let McpNativeClient;
 
   before(async () => {
-    const mod = await import('../../src/core/mcp.js');
+    const mod = await import('../../src/integrations/mcp-client.js');
     McpNativeClient = mod.McpNativeClient;
   });
 
@@ -234,7 +234,7 @@ describe('McpClientWrapper', () => {
   let McpNativeClient;
 
   before(async () => {
-    const mod = await import('../../src/core/mcp.js');
+    const mod = await import('../../src/integrations/mcp-client.js');
     McpClientWrapper = mod.McpClientWrapper;
     McpNativeClient = mod.McpNativeClient;
   });
@@ -271,7 +271,7 @@ describe('McpClientWrapper: functional', () => {
   const toolsScript = path.join(fixturesDir, 'mock-mcp-tools.js');
 
   before(async () => {
-    const mod = await import('../../src/core/mcp.js');
+    const mod = await import('../../src/integrations/mcp-client.js');
     McpClientWrapper = mod.McpClientWrapper;
     try {
       const proc = spawn(process.execPath, ['--version'], { stdio: 'pipe' });

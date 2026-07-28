@@ -22,8 +22,8 @@ describe('Bash tool module', () => {
     assert.strictEqual(typeof mod.description, 'string');
   });
 
-  it('should export input_schema', () => {
-    assert.strictEqual(typeof mod.input_schema, 'object');
+  it('should export inputSchema', () => {
+    assert.strictEqual(typeof mod.inputSchema, 'object');
   });
 
   it('should export execute as a function', () => {

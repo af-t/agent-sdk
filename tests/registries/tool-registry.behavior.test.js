@@ -1,6 +1,6 @@
 import { describe, it, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ToolRegistry } from '../../src/registry/tool.js';
+import { ToolRegistry } from '../../src/registries/tool-registry.js';
 
 describe('ToolRegistry', () => {
   it('register and getDefinitions', () => {
@@ -8,7 +8,7 @@ describe('ToolRegistry', () => {
     registry.register({
       name: 'test_tool',
       description: 'A test tool',
-      input_schema: { type: 'object', properties: { foo: { type: 'string' } } },
+      inputSchema: { type: 'object', properties: { foo: { type: 'string' } } },
       execute: async () => 'result',
     });
 
@@ -23,7 +23,7 @@ describe('ToolRegistry', () => {
     registry.register({
       name: 't1',
       description: 'd1',
-      input_schema: {},
+      inputSchema: {},
       execute: async () => 'r1',
     });
     const list = registry.listTools();
@@ -37,7 +37,7 @@ describe('ToolRegistry', () => {
     registry.register({
       name: 'call_me',
       description: 'd',
-      input_schema: {},
+      inputSchema: {},
       execute: async (input) => {
         called = true;
         assert.deepEqual(input, { x: 1 });
@@ -52,12 +52,12 @@ describe('ToolRegistry', () => {
 
   it('execute throws for unknown tool', async () => {
     const registry = new ToolRegistry();
-    await assert.rejects(() => registry.execute('nope', {}, {}), { message: /not found/ });
+    await assert.rejects(() => registry.execute('nope', {}, {}), { message: /not registered/ });
   });
 
   it('unregister removes a tool', () => {
     const registry = new ToolRegistry();
-    registry.register({ name: 't', description: 'd', input_schema: {}, execute: async () => 'r' });
+    registry.register({ name: 't', description: 'd', inputSchema: {}, execute: async () => 'r' });
     assert.equal(registry.listTools().length, 1);
     const removed = registry.unregister('t');
     assert.equal(removed, true);
@@ -72,7 +72,7 @@ describe('ToolRegistry', () => {
 
   it('clear resets everything', () => {
     const registry = new ToolRegistry();
-    registry.register({ name: 't', description: 'd', input_schema: {}, execute: async () => 'r' });
+    registry.register({ name: 't', description: 'd', inputSchema: {}, execute: async () => 'r' });
     registry.clear();
     assert.equal(registry.listTools().length, 0);
     assert.equal(registry.getDefinitions().length, 0);
@@ -81,19 +81,19 @@ describe('ToolRegistry', () => {
   it('register requires execute function', () => {
     const registry = new ToolRegistry();
     assert.throws(
-      () => registry.register({ name: 't', description: 'd', input_schema: {} }),
+      () => registry.register({ name: 't', description: 'd', inputSchema: {} }),
       /must have an execute function/,
     );
   });
 
   it('register throws if name is missing', () => {
     const registry = new ToolRegistry();
-    assert.throws(() => registry.register({ description: 'd', input_schema: {}, execute: async () => {} }), /name/);
+    assert.throws(() => registry.register({ description: 'd', inputSchema: {}, execute: async () => {} }), /name/);
   });
 
   it('register throws if description is missing', () => {
     const registry = new ToolRegistry();
-    assert.throws(() => registry.register({ name: 't', input_schema: {}, execute: async () => {} }), /description/);
+    assert.throws(() => registry.register({ name: 't', inputSchema: {}, execute: async () => {} }), /description/);
   });
 
   it('onBeforeExecute hook runs before tool execution', async () => {
@@ -108,7 +108,7 @@ describe('ToolRegistry', () => {
     registry.register({
       name: 'test',
       description: 'd',
-      input_schema: {},
+      inputSchema: {},
       execute: async () => 'result',
     });
 
@@ -121,7 +121,7 @@ describe('ToolRegistry', () => {
     registry.onBeforeExecute(() => {
       throw new Error('ABORTED');
     });
-    registry.register({ name: 't', description: 'd', input_schema: {}, execute: async () => 'r' });
+    registry.register({ name: 't', description: 'd', inputSchema: {}, execute: async () => 'r' });
 
     await assert.rejects(() => registry.execute('t', {}, {}), { message: 'ABORTED' });
   });
@@ -136,7 +136,7 @@ describe('ToolRegistry', () => {
     registry.register({
       name: 't',
       description: 'd',
-      input_schema: {},
+      inputSchema: {},
       execute: async () => 'success',
     });
 
@@ -150,7 +150,7 @@ describe('ToolRegistry', () => {
     const dispose = registry.onBeforeExecute(() => {
       count++;
     });
-    registry.register({ name: 't', description: 'd', input_schema: {}, execute: async () => 'r' });
+    registry.register({ name: 't', description: 'd', inputSchema: {}, execute: async () => 'r' });
 
     await registry.execute('t', {}, {});
     assert.equal(count, 1);
@@ -166,7 +166,7 @@ describe('ToolRegistry', () => {
     const dispose = registry.onAfterExecute(() => {
       count++;
     });
-    registry.register({ name: 't', description: 'd', input_schema: {}, execute: async () => 'r' });
+    registry.register({ name: 't', description: 'd', inputSchema: {}, execute: async () => 'r' });
 
     await registry.execute('t', {}, {});
     dispose();
@@ -179,11 +179,11 @@ describe('ToolRegistry', () => {
     registry.register({
       name: 'req',
       description: 'd',
-      input_schema: { type: 'object', required: ['p1'], properties: { p1: { type: 'string' } } },
+      inputSchema: { type: 'object', required: ['p1'], properties: { p1: { type: 'string' } } },
       execute: async () => 'ok',
     });
 
-    await assert.rejects(() => registry.execute('req', {}, {}), { message: /requires parameter 'p1'/ });
+    await assert.rejects(() => registry.execute('req', {}, {}), { message: /Parameter "p1" is required/ });
   });
 
   it('validate parameter type: number', async () => {
@@ -191,7 +191,7 @@ describe('ToolRegistry', () => {
     registry.register({
       name: 't',
       description: 'd',
-      input_schema: { type: 'object', properties: { p: { type: 'number' } } },
+      inputSchema: { type: 'object', properties: { p: { type: 'number' } } },
       execute: async () => 'ok',
     });
     await assert.rejects(() => registry.execute('t', { p: '123' }, {}), { message: /must be a number/ });
@@ -203,7 +203,7 @@ describe('ToolRegistry', () => {
     registry.register({
       name: 't',
       description: 'd',
-      input_schema: { type: 'object', properties: { p: { type: 'string' } } },
+      inputSchema: { type: 'object', properties: { p: { type: 'string' } } },
       execute: async () => 'ok',
     });
     await assert.rejects(() => registry.execute('t', { p: 123 }, {}), { message: /must be a string/ });
@@ -214,7 +214,7 @@ describe('ToolRegistry', () => {
     registry.register({
       name: 't',
       description: 'd',
-      input_schema: { type: 'object', properties: { p: { type: 'boolean' } } },
+      inputSchema: { type: 'object', properties: { p: { type: 'boolean' } } },
       execute: async () => 'ok',
     });
     await assert.rejects(() => registry.execute('t', { p: 'true' }, {}), { message: /must be a boolean/ });
@@ -225,7 +225,7 @@ describe('ToolRegistry', () => {
     registry.register({
       name: 't',
       description: 'd',
-      input_schema: { type: 'object', properties: { p: { type: 'array' } } },
+      inputSchema: { type: 'object', properties: { p: { type: 'array' } } },
       execute: async () => 'ok',
     });
     await assert.rejects(() => registry.execute('t', { p: {} }, {}), { message: /must be an array/ });
@@ -236,7 +236,7 @@ describe('ToolRegistry', () => {
     registry.register({
       name: 't',
       description: 'd',
-      input_schema: { type: 'object', properties: { p: { type: 'object' } } },
+      inputSchema: { type: 'object', properties: { p: { type: 'object' } } },
       execute: async () => 'ok',
     });
     await assert.rejects(() => registry.execute('t', { p: [] }, {}), { message: /must be an object/ });
@@ -247,7 +247,7 @@ describe('ToolRegistry', () => {
     registry.register({
       name: 't',
       description: 'd',
-      input_schema: { type: 'object', properties: { p: { enum: ['a', 'b'] } } },
+      inputSchema: { type: 'object', properties: { p: { enum: ['a', 'b'] } } },
       execute: async () => 'ok',
     });
     await assert.rejects(() => registry.execute('t', { p: 'c' }, {}), { message: /must be one of \[a, b\]/ });
@@ -261,7 +261,7 @@ describe('ToolRegistry', () => {
     registry.register({
       name: 'concurrent',
       description: 'sleep and return',
-      input_schema: { type: 'object', properties: { id: { type: 'number' } } },
+      inputSchema: { type: 'object', properties: { id: { type: 'number' } } },
       execute: async ({ id }) => {
         callCount++;
         // Simulate async work
@@ -290,17 +290,17 @@ describe('ToolRegistry', () => {
     assert.equal(defs[0].function.name, 'concurrent');
   });
 
-  it('getDefinitions injects output_limit into every tool schema', () => {
+  it('getDefinitions injects outputLimit into every tool schema', () => {
     const registry = new ToolRegistry();
     registry.register({
       name: 'my_tool',
       description: 'd',
-      input_schema: { type: 'object', properties: { x: { type: 'string' } } },
+      inputSchema: { type: 'object', properties: { x: { type: 'string' } } },
       execute: async () => 'ok',
     });
     const [def] = registry.getDefinitions();
-    assert.ok(def.function.parameters.properties.output_limit, 'output_limit should be injected');
-    assert.strictEqual(def.function.parameters.properties.output_limit.type, 'number');
+    assert.ok(def.function.parameters.properties.outputLimit, 'outputLimit should be injected');
+    assert.strictEqual(def.function.parameters.properties.outputLimit.type, 'number');
     assert.ok(def.function.parameters.properties.x);
   });
 
@@ -309,7 +309,7 @@ describe('ToolRegistry', () => {
     registry.register({
       name: 'big',
       description: 'd',
-      input_schema: { type: 'object', properties: {} },
+      inputSchema: { type: 'object', properties: {} },
       execute: async () => 'x'.repeat(200),
     });
     const fakeAgent = { maxToolOutputChars: 50 };
@@ -318,34 +318,34 @@ describe('ToolRegistry', () => {
     assert.ok(result.includes('[... truncated:'));
   });
 
-  it('execute respects output_limit from input over agent default', async () => {
+  it('execute respects outputLimit from input over agent default', async () => {
     const registry = new ToolRegistry();
     registry.register({
       name: 'sized',
       description: 'd',
-      input_schema: { type: 'object', properties: {} },
+      inputSchema: { type: 'object', properties: {} },
       execute: async () => 'y'.repeat(300),
     });
     const fakeAgent = { maxToolOutputChars: 200 };
-    const result = await registry.execute('sized', { output_limit: 100 }, { agent: fakeAgent });
+    const result = await registry.execute('sized', { outputLimit: 100 }, { agent: fakeAgent });
     assert.ok(result.startsWith('y'.repeat(100)));
     assert.ok(result.includes('[... truncated:'));
   });
 
-  it('execute does not pass output_limit to the tool function', async () => {
+  it('execute does not pass outputLimit to the tool function', async () => {
     const registry = new ToolRegistry();
     let receivedInput;
     registry.register({
       name: 'spy',
       description: 'd',
-      input_schema: { type: 'object', properties: {} },
+      inputSchema: { type: 'object', properties: {} },
       execute: async (input) => {
         receivedInput = input;
         return 'ok';
       },
     });
-    await registry.execute('spy', { output_limit: 100, foo: 'bar' }, {});
-    assert.strictEqual(receivedInput.output_limit, undefined);
+    await registry.execute('spy', { outputLimit: 100, foo: 'bar' }, {});
+    assert.strictEqual(receivedInput.outputLimit, undefined);
     assert.strictEqual(receivedInput.foo, 'bar');
   });
 
@@ -355,10 +355,10 @@ describe('ToolRegistry', () => {
     registry.register({
       name: 'objt',
       description: 'd',
-      input_schema: { type: 'object', properties: {} },
+      inputSchema: { type: 'object', properties: {} },
       execute: async () => obj,
     });
-    const result = await registry.execute('objt', { output_limit: 1 }, {});
+    const result = await registry.execute('objt', { outputLimit: 1 }, {});
     assert.deepEqual(result, obj);
   });
 
@@ -370,7 +370,7 @@ describe('ToolRegistry', () => {
     registry.register({
       name: 'tool_a',
       description: 'A',
-      input_schema: { type: 'object', properties: {} },
+      inputSchema: { type: 'object', properties: {} },
       execute: async () => 'a',
     });
 
@@ -380,7 +380,7 @@ describe('ToolRegistry', () => {
     registry.register({
       name: 'tool_b',
       description: 'B',
-      input_schema: { type: 'object', properties: {} },
+      inputSchema: { type: 'object', properties: {} },
       execute: async () => 'b',
     });
 
@@ -401,7 +401,7 @@ describe('ToolRegistry', () => {
     registry.onAfterExecute(({ context }) => {
       afterCtx = context;
     });
-    registry.register({ name: 't', description: 'd', input_schema: {}, execute: async () => 'r' });
+    registry.register({ name: 't', description: 'd', inputSchema: {}, execute: async () => 'r' });
 
     const controller = new AbortController();
     await registry.execute('t', {}, { signal: controller.signal });
@@ -415,7 +415,7 @@ describe('ToolRegistry', () => {
     registry.register({
       name: 't',
       description: 'd',
-      input_schema: {},
+      inputSchema: {},
       execute: async (_input, ctx) => {
         toolSignal = ctx.signal;
         return 'ok';
@@ -434,7 +434,7 @@ describe('ToolRegistry', () => {
     registry.register({
       name: 'real',
       description: 'd',
-      input_schema: { type: 'object', properties: {} },
+      inputSchema: { type: 'object', properties: {} },
       execute: async () => {
         executed = true;
         return 'real-result';
@@ -446,12 +446,12 @@ describe('ToolRegistry', () => {
     assert.equal(executed, false, 'tool.execute must not run when overridden');
   });
 
-  it('override respects output_limit truncation', async () => {
+  it('override respects outputLimit truncation', async () => {
     const registry = new ToolRegistry();
     registry.onBeforeExecute(() => ({ override: 'abcdefghij' }));
-    registry.register({ name: 't', description: 'd', input_schema: {}, execute: async () => 'x' });
-    const out = await registry.execute('t', { output_limit: 4 }, {});
-    assert.ok(out.startsWith('abcd'), 'override output should be truncated to output_limit');
+    registry.register({ name: 't', description: 'd', inputSchema: {}, execute: async () => 'x' });
+    const out = await registry.execute('t', { outputLimit: 4 }, {});
+    assert.ok(out.startsWith('abcd'), 'override output should be truncated to outputLimit');
     assert.match(out, /truncated/, 'override goes through the shared truncateOutput');
   });
 
@@ -462,7 +462,7 @@ describe('ToolRegistry', () => {
     registry.onAfterExecute(() => {
       afterRan = true;
     });
-    registry.register({ name: 't', description: 'd', input_schema: {}, execute: async () => 'r' });
+    registry.register({ name: 't', description: 'd', inputSchema: {}, execute: async () => 'r' });
     await registry.execute('t', {}, {});
     assert.equal(afterRan, false, 'after-execute hooks should not run on an overridden call');
   });
@@ -478,7 +478,7 @@ test('register() ignores legacy parallelSafe field without throwing', () => {
   reg.register({
     name: 'noop',
     description: 'd',
-    input_schema: { type: 'object', properties: {} },
+    inputSchema: { type: 'object', properties: {} },
     execute: async () => 'ok',
     parallelSafe: false,
   });

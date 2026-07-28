@@ -513,7 +513,7 @@ function runWithPtyBackground(command, cwd, env, signal, agent) {
 export const name = 'Bash';
 export const description =
   'Execute a shell command. Use this for system operations that do not have a specialized tool, such as running tests, performing builds, or using complex CLI utilities. Side effect: executes arbitrary shell commands. The agent may issue multiple tool calls in one turn that run concurrently: do not request parallel calls that mutate the same files or processes.';
-export const input_schema = {
+export const inputSchema = {
   type: 'object',
   properties: {
     command: { type: 'string', description: 'Shell command to execute' },

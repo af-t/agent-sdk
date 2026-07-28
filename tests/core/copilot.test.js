@@ -357,7 +357,7 @@ test('end-to-end: real Agent run, tool error triggers a steer', async () => {
     primary.use({
       name: 'Boom',
       description: 'always throws. Side effect: none',
-      input_schema: { type: 'object', properties: {} },
+      inputSchema: { type: 'object', properties: {} },
       execute: async () => {
         throw new Error('kaboom');
       },

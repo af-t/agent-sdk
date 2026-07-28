@@ -6,7 +6,7 @@ export const description =
   'Use this when the memory index hints at a memory whose details you need, or when the ' +
   'user references past context that is not in your current window. Returns memory bodies ' +
   'ranked by relevance to your query. Read-only: it does not modify any memory file.';
-export const input_schema = {
+export const inputSchema = {
   type: 'object',
   properties: {
     query: { type: 'string', description: 'What to search your memories for, in natural language.' },

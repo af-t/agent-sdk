@@ -20,16 +20,16 @@ describe('Skill tool module', () => {
     assert.ok(mod.description.length > 0);
   });
 
-  it('should export input_schema', () => {
-    assert.ok(mod.input_schema);
-    assert.strictEqual(mod.input_schema.type, 'object');
-    assert.ok(mod.input_schema.properties);
-    assert.ok(mod.input_schema.properties.action);
-    assert.strictEqual(mod.input_schema.properties.action.type, 'string');
-    assert.deepStrictEqual(mod.input_schema.properties.action.enum, ['list', 'load', 'search']);
-    assert.ok(mod.input_schema.properties.argument);
-    assert.ok(mod.input_schema.required.includes('action'));
-    assert.ok(!mod.input_schema.required.includes('argument'));
+  it('should export inputSchema', () => {
+    assert.ok(mod.inputSchema);
+    assert.strictEqual(mod.inputSchema.type, 'object');
+    assert.ok(mod.inputSchema.properties);
+    assert.ok(mod.inputSchema.properties.action);
+    assert.strictEqual(mod.inputSchema.properties.action.type, 'string');
+    assert.deepStrictEqual(mod.inputSchema.properties.action.enum, ['list', 'load', 'search']);
+    assert.ok(mod.inputSchema.properties.argument);
+    assert.ok(mod.inputSchema.required.includes('action'));
+    assert.ok(!mod.inputSchema.required.includes('argument'));
   });
 
   it('should export execute as a function', () => {
@@ -46,7 +46,7 @@ describe('Skill tool: execute()', () => {
   before(async () => {
     // Reset and configure registry to find our test skill
     mod = await import('../../../src/tools/system/skill.js');
-    registry = (await import('../../../src/registry/skill.js')).default;
+    registry = (await import('../../../src/registries/skill-registry.js')).default;
     registry.reset();
 
     // Create a temporary SKILL.md file

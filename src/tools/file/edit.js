@@ -177,7 +177,7 @@ export const description =
   'use old_text for it, or split into separate Edit calls. ' +
   'Line-based edits must be specified in top-to-bottom order (ascending start_line). Side effect: mutates the target file. Do not issue parallel Edit/Write calls against the same path.';
 
-export const input_schema = {
+export const inputSchema = {
   type: 'object',
   properties: {
     path: { type: 'string', description: 'File to update' },

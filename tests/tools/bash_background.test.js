@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import createAgent from '../../src/index.js';
-import { execute as bashExecute, input_schema as bashSchema } from '../../src/tools/system/bash.js';
+import { execute as bashExecute, inputSchema as bashSchema } from '../../src/tools/system/bash.js';
 
 test('Bash schema no longer exposes the on_timeout parameter', () => {
   assert.strictEqual(bashSchema.properties.on_timeout, undefined);

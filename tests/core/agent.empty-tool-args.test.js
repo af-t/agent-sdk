@@ -61,7 +61,7 @@ describe('Agent: empty tool arguments (zero-parameter tools)', () => {
       agent.use({
         name: 'NoArgs',
         description: 'takes no arguments',
-        input_schema: { type: 'object', properties: {}, required: [] },
+        inputSchema: { type: 'object', properties: {}, required: [] },
         execute: async (input) => {
           executed = true;
           receivedInput = input;

@@ -39,7 +39,7 @@ test('a tool-using run writes events and a turn snapshot to a session file', asy
     agent.use({
       name: 'Echo',
       description: 'echo',
-      input_schema: { type: 'object', properties: { msg: { type: 'string' } } },
+      inputSchema: { type: 'object', properties: { msg: { type: 'string' } } },
       execute: async ({ msg }) => msg,
     });
     await agent.run('go', () => {});
@@ -110,7 +110,7 @@ test('non-streaming run (no notify) still records assistant and tool_calls', asy
     agent.use({
       name: 'Echo',
       description: 'echo',
-      input_schema: { type: 'object', properties: { msg: { type: 'string' } } },
+      inputSchema: { type: 'object', properties: { msg: { type: 'string' } } },
       execute: async ({ msg }) => msg,
     });
     // no notify callback -> non-streaming #send path

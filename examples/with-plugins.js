@@ -13,7 +13,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import createAgent from '../src/index.js';
-import skillRegistry from '../src/registry/skill.js';
+import skillRegistry from '../src/registries/skill-registry.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pluginsDir = path.join(__dirname, 'plugins');

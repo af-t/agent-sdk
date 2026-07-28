@@ -1,10 +1,10 @@
-import registry from '../../registry/skill.js';
+import registry from '../../registries/skill-registry.js';
 
 export const name = 'Skill';
 export const description =
   'Reusable instruction sets for specialized tasks like code review, debugging, testing, architecture planning, strategy, and more.';
 
-export const input_schema = {
+export const inputSchema = {
   type: 'object',
   properties: {
     action: {

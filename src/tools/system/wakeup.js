@@ -4,7 +4,7 @@ const DEFAULT_TAIL = 4096;
 export const name = 'Wakeup';
 export const description =
   'Schedule a non-blocking wakeup timer. Registers a background timer and returns immediately; when it fires, the agent receives a notification (the custom `prompt` if given, otherwise a generic exit notice; plus, if `watch` is set, a tail of those job logs). Use for timed check-ins or pacing without blocking the run loop.';
-export const input_schema = {
+export const inputSchema = {
   type: 'object',
   properties: {
     delay_ms: { type: 'number', description: 'Milliseconds until the timer fires. Mutually exclusive with `at`.' },

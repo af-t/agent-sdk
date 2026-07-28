@@ -215,7 +215,7 @@ export function _setTransport(fn) {
 export const name = 'WebFetch';
 export const description =
   'Fetch and analyze content from a URL. Use this to retrieve documentation, research technical topics, or read raw code from the web. It automatically cleans HTML for readability.';
-export const input_schema = {
+export const inputSchema = {
   type: 'object',
   properties: {
     url: { type: 'string', description: 'Target URL' },

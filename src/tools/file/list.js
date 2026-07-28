@@ -6,7 +6,7 @@ import { formatBytes } from '../../support/payload.js';
 export const name = 'List';
 export const description =
   'List files and directories at a specified path, respecting .gitignore rules. Use this to explore the project structure and discover available files and folders.';
-export const input_schema = {
+export const inputSchema = {
   type: 'object',
   properties: {
     path: { type: 'string', description: 'Directory to list' },

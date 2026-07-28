@@ -61,7 +61,7 @@ test('forkAt seeds a new independent Agent from the snapshot', async (t) => {
   parent.use({
     name: 'Echo',
     description: 'echo',
-    input_schema: { type: 'object', properties: {} },
+    inputSchema: { type: 'object', properties: {} },
     execute: async () => 'x',
   });
 

@@ -41,7 +41,7 @@ function makeAgent(execute) {
   agent.use({
     name: 'T',
     description: 't',
-    input_schema: { type: 'object', properties: {} },
+    inputSchema: { type: 'object', properties: {} },
     execute,
   });
   return agent;
