@@ -47,7 +47,7 @@ const inputSchema = {
   required: ['query'],
 };
 
-async function ddgJsonSearch(query, maxResults, signal) {
+export async function ddgJsonSearch(query, maxResults, signal) {
   const { controller, timer } = createAbortTimer(signal, LIMITS.fetchTimeoutMs);
 
   try {
@@ -79,7 +79,7 @@ async function ddgJsonSearch(query, maxResults, signal) {
   }
 }
 
-async function ddgHtmlSearch(query, maxResults, signal) {
+export async function ddgHtmlSearch(query, maxResults, signal) {
   const { controller, timer } = createAbortTimer(signal, LIMITS.fetchTimeoutMs);
 
   try {
@@ -120,7 +120,7 @@ async function ddgHtmlSearch(query, maxResults, signal) {
   }
 }
 
-async function ddgSearch(query, maxResults, signal) {
+export async function ddgSearch(query, maxResults, signal) {
   try {
     const results = await ddgJsonSearch(query, maxResults, signal);
     if (results.length > 0) return results;
@@ -130,7 +130,7 @@ async function ddgSearch(query, maxResults, signal) {
   return ddgHtmlSearch(query, maxResults, signal);
 }
 
-function formatDdgResults(query, results) {
+export function formatDdgResults(query, results) {
   if (results.length === 0) return 'No results found.';
   let output = `## Search Results for: "${query}" [via DuckDuckGo]\n\n`;
   results.forEach((r, i) => {
@@ -223,7 +223,4 @@ const execute = async (
   }
 };
 
-export const searchWeb = Object.assign(
-  { name: 'searchWeb', description, inputSchema, execute },
-  { ddgJsonSearch, ddgHtmlSearch, ddgSearch, formatDdgResults },
-);
+export const searchWeb = { name: 'searchWeb', description, inputSchema, execute };

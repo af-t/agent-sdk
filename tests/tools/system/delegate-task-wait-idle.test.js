@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import createAgent from '../../../src/index.js';
 import Agent from '../../../src/core/agent.js';
 
-test('foreground Delegate waits for subagent background jobs to finish', async () => {
+test('foreground delegateTask waits for subagent background jobs to finish', async () => {
   const parent = await createAgent({ apiKey: 'x' });
 
   // When subagent runs, it simulates returning a report but leaving a running job

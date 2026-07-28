@@ -30,7 +30,7 @@ describe('manageTodos tool', () => {
     assert.strictEqual(typeof mod.execute, 'function');
   });
 
-  it('should add a new todo', async () => {
+  it('adds a new todo', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     const result = await mod.execute({
@@ -38,7 +38,7 @@ describe('manageTodos tool', () => {
       text: 'Learn Unit Testing',
       priority: 'high',
       category: 'development',
-      todo_file: testFile,
+      todoFile: testFile,
     });
 
     assert.ok(result.includes('Todo added'));
@@ -47,37 +47,37 @@ describe('manageTodos tool', () => {
     assert.ok(result.includes('Category: development'));
   });
 
-  it('should reject add without text', async () => {
+  it('rejects add without text', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await assert.rejects(
       () =>
         mod.execute({
           action: 'add',
-          todo_file: testFile,
+          todoFile: testFile,
         }),
       /Parameter "text" is required/,
     );
   });
 
-  it('should list todos', async () => {
+  it('lists todos', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await mod.execute({
       action: 'add',
       text: 'Task 1',
-      todo_file: testFile,
+      todoFile: testFile,
     });
     await mod.execute({
       action: 'add',
       text: 'Task 2',
       priority: 'high',
-      todo_file: testFile,
+      todoFile: testFile,
     });
 
     const result = await mod.execute({
       action: 'list',
-      todo_file: testFile,
+      todoFile: testFile,
     });
 
     assert.ok(result.includes('Task List'));
@@ -86,35 +86,35 @@ describe('manageTodos tool', () => {
     assert.ok(result.includes('Total: 2'));
   });
 
-  it('should list empty message when no todos', async () => {
+  it('reports an empty list when there are no todos', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     const result = await mod.execute({
       action: 'list',
-      todo_file: testFile,
+      todoFile: testFile,
     });
 
     assert.ok(result.includes('No tasks'));
   });
 
-  it('should filter pending todos', async () => {
+  it('filters pending todos', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await mod.execute({ action: 'add', text: 'Pending Task', todo_file: testFile });
-    await mod.execute({ action: 'add', text: 'Completed Task', todo_file: testFile });
+    await mod.execute({ action: 'add', text: 'Pending Task', todoFile: testFile });
+    await mod.execute({ action: 'add', text: 'Completed Task', todoFile: testFile });
 
     // Complete the second task (created last, appears first in default sort)
-    const listResult = await mod.execute({ action: 'list', todo_file: testFile });
+    const listResult = await mod.execute({ action: 'list', todoFile: testFile });
     const ids = [...listResult.matchAll(/ID: (\w+)/g)].map((m) => m[1]);
     const completedId = ids[0];
 
-    await mod.execute({ action: 'complete', id: completedId, todo_file: testFile });
+    await mod.execute({ action: 'complete', id: completedId, todoFile: testFile });
 
     // Check pending filter: should only show Pending Task
     const pendingResult = await mod.execute({
       action: 'list',
       filter: 'pending',
-      todo_file: testFile,
+      todoFile: testFile,
     });
 
     assert.ok(pendingResult.includes('pending'));
@@ -122,119 +122,116 @@ describe('manageTodos tool', () => {
     assert.ok(!pendingResult.includes('Completed Task'));
   });
 
-  it('should filter completed todos', async () => {
+  it('filters completed todos', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await mod.execute({ action: 'add', text: 'Task to complete', todo_file: testFile });
+    await mod.execute({ action: 'add', text: 'Task to complete', todoFile: testFile });
 
-    const listResult = await mod.execute({ action: 'list', todo_file: testFile });
+    const listResult = await mod.execute({ action: 'list', todoFile: testFile });
     const idMatch = listResult.match(/ID: (\w+)/);
     const firstId = idMatch[1];
 
-    await mod.execute({ action: 'complete', id: firstId, todo_file: testFile });
+    await mod.execute({ action: 'complete', id: firstId, todoFile: testFile });
 
     const completedResult = await mod.execute({
       action: 'list',
       filter: 'completed',
-      todo_file: testFile,
+      todoFile: testFile,
     });
 
     assert.ok(completedResult.includes('completed'));
     assert.ok(completedResult.includes('Task to complete'));
   });
 
-  it('should complete a todo', async () => {
+  it('completes a todo', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await mod.execute({ action: 'add', text: 'Task to be completed', todo_file: testFile });
+    await mod.execute({ action: 'add', text: 'Task to be completed', todoFile: testFile });
 
-    const listResult = await mod.execute({ action: 'list', todo_file: testFile });
+    const listResult = await mod.execute({ action: 'list', todoFile: testFile });
     const idMatch = listResult.match(/ID: (\w+)/);
     const firstId = idMatch[1];
 
     const result = await mod.execute({
       action: 'complete',
       id: firstId,
-      todo_file: testFile,
+      todoFile: testFile,
     });
 
     assert.ok(result.includes('Todo completed'));
     assert.ok(result.includes('Task to be completed'));
 
     // Verify in list
-    const listAfter = await mod.execute({ action: 'list', filter: 'completed', todo_file: testFile });
+    const listAfter = await mod.execute({ action: 'list', filter: 'completed', todoFile: testFile });
     assert.ok(listAfter.includes('Task to be completed'));
   });
 
-  it('should reject complete without id', async () => {
+  it('rejects complete without an id', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await assert.rejects(() => mod.execute({ action: 'complete', todo_file: testFile }), /Parameter "id" is required/);
+    await assert.rejects(() => mod.execute({ action: 'complete', todoFile: testFile }), /Parameter "id" is required/);
   });
 
-  it('should reject complete with non-existent id', async () => {
+  it('rejects complete with a non-existent id', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await assert.rejects(
-      () => mod.execute({ action: 'complete', id: 'nonexistent', todo_file: testFile }),
-      /not found/,
-    );
+    await assert.rejects(() => mod.execute({ action: 'complete', id: 'nonexistent', todoFile: testFile }), /not found/);
   });
 
-  it('should reject complete already completed todo', async () => {
+  it('reports an already completed todo instead of completing it twice', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await mod.execute({ action: 'add', text: 'Task', todo_file: testFile });
-    const listResult = await mod.execute({ action: 'list', todo_file: testFile });
+    await mod.execute({ action: 'add', text: 'Task', todoFile: testFile });
+    const listResult = await mod.execute({ action: 'list', todoFile: testFile });
     const idMatch = listResult.match(/ID: (\w+)/);
     const firstId = idMatch[1];
 
-    await mod.execute({ action: 'complete', id: firstId, todo_file: testFile });
+    await mod.execute({ action: 'complete', id: firstId, todoFile: testFile });
 
-    const result = await mod.execute({ action: 'complete', id: firstId, todo_file: testFile });
+    const result = await mod.execute({ action: 'complete', id: firstId, todoFile: testFile });
     assert.ok(result.includes('already completed'));
   });
 
-  it('should delete a todo', async () => {
+  it('deletes a todo', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await mod.execute({ action: 'add', text: 'Task to delete', todo_file: testFile });
+    await mod.execute({ action: 'add', text: 'Task to delete', todoFile: testFile });
 
-    const listResult = await mod.execute({ action: 'list', todo_file: testFile });
+    const listResult = await mod.execute({ action: 'list', todoFile: testFile });
     const idMatch = listResult.match(/ID: (\w+)/);
     const firstId = idMatch[1];
 
     const result = await mod.execute({
       action: 'delete',
       id: firstId,
-      todo_file: testFile,
+      todoFile: testFile,
     });
 
     assert.ok(result.includes('Todo deleted'));
     assert.ok(result.includes('Task to delete'));
 
     // Verify list is empty
-    const listAfter = await mod.execute({ action: 'list', todo_file: testFile });
+    const listAfter = await mod.execute({ action: 'list', todoFile: testFile });
     assert.ok(listAfter.includes('No tasks'));
   });
 
-  it('should reject delete without id', async () => {
+  it('rejects delete without an id', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await assert.rejects(() => mod.execute({ action: 'delete', todo_file: testFile }), /Parameter "id" is required/);
+    await assert.rejects(() => mod.execute({ action: 'delete', todoFile: testFile }), /Parameter "id" is required/);
   });
 
-  it('should reject delete with non-existent id', async () => {
+  it('rejects delete with a non-existent id', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await assert.rejects(() => mod.execute({ action: 'delete', id: 'nonexistent', todo_file: testFile }), /not found/);
+    await assert.rejects(() => mod.execute({ action: 'delete', id: 'nonexistent', todoFile: testFile }), /not found/);
   });
 
-  it('should update todo text', async () => {
+  it('updates todo text', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await mod.execute({ action: 'add', text: 'Old task', todo_file: testFile });
-    const listResult = await mod.execute({ action: 'list', todo_file: testFile });
+    await mod.execute({ action: 'add', text: 'Old task', todoFile: testFile });
+    const listResult = await mod.execute({ action: 'list', todoFile: testFile });
     const idMatch = listResult.match(/ID: (\w+)/);
     const firstId = idMatch[1];
 
@@ -242,7 +239,7 @@ describe('manageTodos tool', () => {
       action: 'update',
       id: firstId,
       text: 'New task',
-      todo_file: testFile,
+      todoFile: testFile,
     });
 
     assert.ok(result.includes('Todo updated'));
@@ -250,11 +247,11 @@ describe('manageTodos tool', () => {
     assert.ok(result.includes('Changed: text'));
   });
 
-  it('should update todo priority', async () => {
+  it('updates todo priority', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await mod.execute({ action: 'add', text: 'Task', todo_file: testFile });
-    const listResult = await mod.execute({ action: 'list', todo_file: testFile });
+    await mod.execute({ action: 'add', text: 'Task', todoFile: testFile });
+    const listResult = await mod.execute({ action: 'list', todoFile: testFile });
     const idMatch = listResult.match(/ID: (\w+)/);
     const firstId = idMatch[1];
 
@@ -262,7 +259,7 @@ describe('manageTodos tool', () => {
       action: 'update',
       id: firstId,
       priority: 'high',
-      todo_file: testFile,
+      todoFile: testFile,
     });
 
     assert.ok(result.includes('Priority:'));
@@ -270,11 +267,11 @@ describe('manageTodos tool', () => {
     assert.ok(result.includes('Changed: priority'));
   });
 
-  it('should update todo status (mark as complete)', async () => {
+  it('updates todo status to completed', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await mod.execute({ action: 'add', text: 'Task', todo_file: testFile });
-    const listResult = await mod.execute({ action: 'list', todo_file: testFile });
+    await mod.execute({ action: 'add', text: 'Task', todoFile: testFile });
+    const listResult = await mod.execute({ action: 'list', todoFile: testFile });
     const idMatch = listResult.match(/ID: (\w+)/);
     const firstId = idMatch[1];
 
@@ -282,7 +279,7 @@ describe('manageTodos tool', () => {
       action: 'update',
       id: firstId,
       completed: true,
-      todo_file: testFile,
+      todoFile: testFile,
     });
 
     assert.ok(result.includes('Changed:'));
@@ -290,12 +287,12 @@ describe('manageTodos tool', () => {
     assert.ok(result.includes('Completed'));
   });
 
-  it('should not change priority when updating other fields (regression)', async () => {
+  it('keeps priority unchanged when updating other fields', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await mod.execute({ action: 'add', text: 'Important task', priority: 'high', todo_file: testFile });
+    await mod.execute({ action: 'add', text: 'Important task', priority: 'high', todoFile: testFile });
 
-    const listResult = await mod.execute({ action: 'list', todo_file: testFile });
+    const listResult = await mod.execute({ action: 'list', todoFile: testFile });
     const idMatch = listResult.match(/ID: (\w+)/);
     const firstId = idMatch[1];
 
@@ -304,7 +301,7 @@ describe('manageTodos tool', () => {
       action: 'update',
       id: firstId,
       text: 'Updated important task',
-      todo_file: testFile,
+      todoFile: testFile,
     });
 
     // Should only have changed text, not priority
@@ -313,17 +310,17 @@ describe('manageTodos tool', () => {
     assert.ok(result.includes('Priority: [high] HIGH'));
   });
 
-  it('should sort by priority', async () => {
+  it('sorts by priority', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await mod.execute({ action: 'add', text: 'Task Low', priority: 'low', todo_file: testFile });
-    await mod.execute({ action: 'add', text: 'Task High', priority: 'high', todo_file: testFile });
-    await mod.execute({ action: 'add', text: 'Task Medium', priority: 'medium', todo_file: testFile });
+    await mod.execute({ action: 'add', text: 'Task Low', priority: 'low', todoFile: testFile });
+    await mod.execute({ action: 'add', text: 'Task High', priority: 'high', todoFile: testFile });
+    await mod.execute({ action: 'add', text: 'Task Medium', priority: 'medium', todoFile: testFile });
 
     const result = await mod.execute({
       action: 'list',
-      sort_by: 'priority',
-      todo_file: testFile,
+      sortBy: 'priority',
+      todoFile: testFile,
     });
 
     // High should appear before Low
@@ -332,27 +329,27 @@ describe('manageTodos tool', () => {
     assert.ok(highIndex < lowIndex);
   });
 
-  it('should clear all todos', async () => {
+  it('clears all todos', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await mod.execute({ action: 'add', text: 'Task 1', todo_file: testFile });
-    await mod.execute({ action: 'add', text: 'Task 2', todo_file: testFile });
+    await mod.execute({ action: 'add', text: 'Task 1', todoFile: testFile });
+    await mod.execute({ action: 'add', text: 'Task 2', todoFile: testFile });
 
-    const result = await mod.execute({ action: 'clear', todo_file: testFile });
+    const result = await mod.execute({ action: 'clear', todoFile: testFile });
     assert.ok(result.includes('Cleared 2 todos'));
 
-    const listResult = await mod.execute({ action: 'list', todo_file: testFile });
+    const listResult = await mod.execute({ action: 'list', todoFile: testFile });
     assert.ok(listResult.includes('No tasks'));
   });
 
-  it('should handle clear on empty list', async () => {
+  it('reports an already empty list on clear', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    const result = await mod.execute({ action: 'clear', todo_file: testFile });
+    const result = await mod.execute({ action: 'clear', todoFile: testFile });
     assert.ok(result.includes('already empty'));
   });
 
-  it('should reject when MAX_TODOS limit is reached', async () => {
+  it('rejects add once the todo limit is reached', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     // Write 1000 todos directly to avoid slow loop
@@ -362,115 +359,115 @@ describe('manageTodos tool', () => {
       priority: 'medium',
       category: 'general',
       completed: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      due_date: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      dueDate: null,
     }));
     await fs.writeFile(testFile, JSON.stringify(todos), 'utf8');
 
     await assert.rejects(
-      () => mod.execute({ action: 'add', text: 'One more', todo_file: testFile }),
+      () => mod.execute({ action: 'add', text: 'One more', todoFile: testFile }),
       /Maximum todo limit reached/,
     );
   });
 
-  it('should sort by due_date', async () => {
+  it('sorts by dueDate', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await mod.execute({ action: 'add', text: 'Later task', due_date: '2030-12-31T00:00:00Z', todo_file: testFile });
-    await mod.execute({ action: 'add', text: 'Earlier task', due_date: '2025-01-01T00:00:00Z', todo_file: testFile });
-    await mod.execute({ action: 'add', text: 'No due date task', todo_file: testFile });
+    await mod.execute({ action: 'add', text: 'Later task', dueDate: '2030-12-31T00:00:00Z', todoFile: testFile });
+    await mod.execute({ action: 'add', text: 'Earlier task', dueDate: '2025-01-01T00:00:00Z', todoFile: testFile });
+    await mod.execute({ action: 'add', text: 'No due date task', todoFile: testFile });
 
-    const result = await mod.execute({ action: 'list', sort_by: 'due_date', todo_file: testFile });
+    const result = await mod.execute({ action: 'list', sortBy: 'dueDate', todoFile: testFile });
     const earlierIdx = result.indexOf('Earlier task');
     const laterIdx = result.indexOf('Later task');
     assert.ok(earlierIdx < laterIdx, 'earlier due date should appear first');
   });
 
-  it('should display due_date info when listing todos with due_date', async () => {
+  it('shows dueDate details when listing todos', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await mod.execute({
       action: 'add',
       text: 'Task with due date',
-      due_date: '2030-06-15T00:00:00Z',
-      todo_file: testFile,
+      dueDate: '2030-06-15T00:00:00Z',
+      todoFile: testFile,
     });
 
-    const result = await mod.execute({ action: 'list', todo_file: testFile });
+    const result = await mod.execute({ action: 'list', todoFile: testFile });
     assert.ok(result.includes('6/15/2030') || result.includes('2030'), 'should display due date');
   });
 
-  it('should reject update without id', async () => {
+  it('rejects update without an id', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await assert.rejects(
-      () => mod.execute({ action: 'update', text: 'New text', todo_file: testFile }),
+      () => mod.execute({ action: 'update', text: 'New text', todoFile: testFile }),
       /Parameter "id" is required/,
     );
   });
 
-  it('should reject update with non-existent id', async () => {
+  it('rejects update with a non-existent id', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
     await assert.rejects(
-      () => mod.execute({ action: 'update', id: 'nonexistent', text: 'New text', todo_file: testFile }),
+      () => mod.execute({ action: 'update', id: 'nonexistent', text: 'New text', todoFile: testFile }),
       /not found/,
     );
   });
 
-  it('should update todo category', async () => {
+  it('updates todo category', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await mod.execute({ action: 'add', text: 'Task', todo_file: testFile });
-    const listResult = await mod.execute({ action: 'list', todo_file: testFile });
+    await mod.execute({ action: 'add', text: 'Task', todoFile: testFile });
+    const listResult = await mod.execute({ action: 'list', todoFile: testFile });
     const id = listResult.match(/ID: (\w+)/)[1];
 
-    const result = await mod.execute({ action: 'update', id, category: 'testing', todo_file: testFile });
+    const result = await mod.execute({ action: 'update', id, category: 'testing', todoFile: testFile });
     assert.ok(result.includes('Changed: category'));
     assert.ok(result.includes('TESTING'));
   });
 
-  it('should update todo due_date', async () => {
+  it('updates todo dueDate', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await mod.execute({ action: 'add', text: 'Task', todo_file: testFile });
-    const listResult = await mod.execute({ action: 'list', todo_file: testFile });
+    await mod.execute({ action: 'add', text: 'Task', todoFile: testFile });
+    const listResult = await mod.execute({ action: 'list', todoFile: testFile });
     const id = listResult.match(/ID: (\w+)/)[1];
 
-    const result = await mod.execute({ action: 'update', id, due_date: '2030-12-31T00:00:00Z', todo_file: testFile });
+    const result = await mod.execute({ action: 'update', id, dueDate: '2030-12-31T00:00:00Z', todoFile: testFile });
     assert.ok(result.includes('Changed: due date'));
   });
 
-  it('should return no-changes message when update has no fields', async () => {
+  it('reports no changes when update carries no fields', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await mod.execute({ action: 'add', text: 'Task', todo_file: testFile });
-    const listResult = await mod.execute({ action: 'list', todo_file: testFile });
+    await mod.execute({ action: 'add', text: 'Task', todoFile: testFile });
+    const listResult = await mod.execute({ action: 'list', todoFile: testFile });
     const id = listResult.match(/ID: (\w+)/)[1];
 
-    const result = await mod.execute({ action: 'update', id, todo_file: testFile });
+    const result = await mod.execute({ action: 'update', id, todoFile: testFile });
     assert.ok(result.includes('No changes applied'));
   });
 
-  it('should display due_date info in update output', async () => {
+  it('shows dueDate details in the update output', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await mod.execute({ action: 'add', text: 'Task', due_date: '2030-06-15T00:00:00Z', todo_file: testFile });
-    const listResult = await mod.execute({ action: 'list', todo_file: testFile });
+    await mod.execute({ action: 'add', text: 'Task', dueDate: '2030-06-15T00:00:00Z', todoFile: testFile });
+    const listResult = await mod.execute({ action: 'list', todoFile: testFile });
     const id = listResult.match(/ID: (\w+)/)[1];
 
-    const result = await mod.execute({ action: 'update', id, text: 'Updated task', todo_file: testFile });
+    const result = await mod.execute({ action: 'update', id, text: 'Updated task', todoFile: testFile });
     assert.ok(result.includes('2030') || result.includes('6/15'), 'due date should appear in update output');
   });
 
-  it('should throw for unknown action', async () => {
+  it('rejects an unknown action', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await assert.rejects(() => mod.execute({ action: 'invalid_action', todo_file: testFile }), /Unknown action/);
+    await assert.rejects(() => mod.execute({ action: 'invalid_action', todoFile: testFile }), /Unknown action/);
   });
 
-  it('uses ctx.agent._todoFile when no todo_file param is provided', async (t) => {
+  it('uses ctx.agent._todoFile when no todoFile param is provided', async (t) => {
     const fsP = await import('node:fs/promises');
     const path_ = await import('node:path');
     const tmpDir = createTestTempDir(t, 'todo-agent-test-');
@@ -493,9 +490,9 @@ describe('manageTodos tool', () => {
     assert.strictEqual(todos[0].text, 'Agent todo');
   });
 
-  it('throws a clear error when neither todo_file nor ctx.agent._todoFile is provided', async () => {
+  it('throws a clear error when neither todoFile nor ctx.agent._todoFile is provided', async () => {
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    await assert.rejects(() => mod.execute({ action: 'list' }, {}), /configured storage path|todo_file/i);
+    await assert.rejects(() => mod.execute({ action: 'list' }, {}), /configured storage path|todoFile/i);
   });
 
   it('auto-creates the parent directory of _todoFile when writing', async (t) => {
@@ -514,7 +511,7 @@ describe('manageTodos tool', () => {
     assert.strictEqual(JSON.parse(raw).length, 1);
   });
 
-  it('todo_file param takes precedence over ctx.agent._todoFile', async (t) => {
+  it('todoFile param takes precedence over ctx.agent._todoFile', async (t) => {
     const fsP = await import('node:fs/promises');
     const path_ = await import('node:path');
     const tmpDir = createTestTempDir(t, 'todo-agent-test-');
@@ -529,7 +526,7 @@ describe('manageTodos tool', () => {
       },
     };
 
-    await mod.execute({ action: 'add', text: 'Explicit', todo_file: explicitFile }, ctx);
+    await mod.execute({ action: 'add', text: 'Explicit', todoFile: explicitFile }, ctx);
 
     const raw = await fsP.readFile(explicitFile, 'utf8');
     assert.ok(JSON.parse(raw).length === 1);

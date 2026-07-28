@@ -7,7 +7,7 @@ import createAgent from '../../../src/index.js';
 import Agent from '../../../src/core/agent.js';
 import { createTestTempDir } from '../../support/temp.js';
 
-test('Delegate-spawned subagent inherits parent.restricted', async (t) => {
+test('a delegateTask subagent inherits parent.restricted', async (t) => {
   mock.method(Agent.prototype, 'run', async () => 'subagent report');
   let parent;
   t.after(() => parent?.cleanup());
@@ -26,7 +26,7 @@ test('Delegate-spawned subagent inherits parent.restricted', async (t) => {
   assert.equal(child.restricted, false);
 });
 
-test('Delegate-spawned subagent shares parent storagePaths.tmpDir', async (t) => {
+test('a delegateTask subagent shares parent storagePaths.tmpDir', async (t) => {
   mock.method(Agent.prototype, 'run', async () => 'r');
   let parent;
   t.after(() => parent?.cleanup());
@@ -46,7 +46,7 @@ test('Delegate-spawned subagent shares parent storagePaths.tmpDir', async (t) =>
   assert.equal(child._storagePaths?.tmpDir, tmpDir);
 });
 
-test('Delegate background:true returns immediately with job id', async (t) => {
+test('delegateTask background:true returns immediately with a job id', async (t) => {
   let parent;
   t.after(() => parent?.cleanup());
   const tmpDir = createTestTempDir(t, 'delegate-parent-');
@@ -89,7 +89,7 @@ test('Delegate background:true returns immediately with job id', async (t) => {
   assert.match(content, /final report from subagent/);
 });
 
-test('foreground Delegate writes a trace file with subagent activity', async (t) => {
+test('foreground delegateTask writes a trace file with subagent activity', async (t) => {
   // run() receives the notify callback as its 2nd arg; emit synthetic events through it.
   mock.method(Agent.prototype, 'run', async function (_prompt, notify) {
     await notify({ reasoning: 'planning' });
@@ -118,13 +118,13 @@ test('foreground Delegate writes a trace file with subagent activity', async (t)
   assert.match(trace, /-> readFile#t1 end \(7ms\): body/);
 });
 
-test('background Delegate streams a trace file and exit event carries traceLogPath', async (t) => {
+test('background delegateTask streams a trace file and its exit event carries traceLogPath', async (t) => {
   let resolveDone;
   const done = new Promise((r) => (resolveDone = r));
   mock.method(Agent.prototype, 'run', async function (_prompt, notify) {
     await notify({ content: 'bg work' });
-    await notify({ tool_calls: [{ id: 'b1', function: { name: 'Bash' } }] });
-    await notify({ tool_end: { tool_call_id: 'b1', name: 'Bash', duration_ms: 3, output: 'ok' } });
+    await notify({ tool_calls: [{ id: 'b1', function: { name: 'runShell' } }] });
+    await notify({ tool_end: { tool_call_id: 'b1', name: 'runShell', duration_ms: 3, output: 'ok' } });
     return 'bg final report';
   });
   let parent;
@@ -155,5 +155,5 @@ test('background Delegate streams a trace file and exit event carries traceLogPa
   assert.ok(event.traceLogPath, 'exit event should carry traceLogPath');
   const trace = fs.readFileSync(event.traceLogPath, 'utf8');
   assert.match(trace, /\[assistant\]\nbg work/);
-  assert.match(trace, /-> Bash#b1 end \(3ms\): ok/);
+  assert.match(trace, /-> runShell#b1 end \(3ms\): ok/);
 });

@@ -3,16 +3,16 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import createAgent from '../../../src/index.js';
 import { runShell } from '../../../src/tools/system/run-shell.js';
-const { execute: bashExecute, inputSchema: bashSchema } = runShell;
+const { execute: runShellExecute, inputSchema: runShellSchema } = runShell;
 
-test('Bash schema no longer exposes the on_timeout parameter', () => {
-  assert.strictEqual(bashSchema.properties.on_timeout, undefined);
+test('the runShell schema no longer exposes the on_timeout parameter', () => {
+  assert.strictEqual(runShellSchema.properties.on_timeout, undefined);
 });
 
-test('Bash detaches a timed-out command into the background by default', async () => {
+test('runShell detaches a timed-out command into the background by default', async () => {
   const agent = await createAgent({ apiKey: 'x' });
   try {
-    const out = await bashExecute({ command: 'echo start; sleep 5; echo done', timeout: 200 }, { agent });
+    const out = await runShellExecute({ command: 'echo start; sleep 5; echo done', timeout: 200 }, { agent });
     assert.match(out, /exceeded timeout/);
     assert.match(out, /transitioned to background/);
     assert.match(out, /Job ID: bg-/);
@@ -37,14 +37,14 @@ test('Bash detaches a timed-out command into the background by default', async (
   }
 });
 
-test('Bash timeout without an agent kills and rejects (background not possible)', async () => {
-  await assert.rejects(bashExecute({ command: 'sleep 5', timeout: 200 }, {}), /timed out/i);
+test('runShell kills and rejects on timeout when no agent can adopt the job', async () => {
+  await assert.rejects(runShellExecute({ command: 'sleep 5', timeout: 200 }, {}), /timed out/i);
 });
 
-test('Bash background:true returns immediately with job id and log path', async () => {
+test('runShell background:true returns immediately with a job id and log path', async () => {
   const agent = await createAgent({ apiKey: 'x' });
   try {
-    const out = await bashExecute({ command: 'echo hello; sleep 0.5; echo done', background: true }, { agent });
+    const out = await runShellExecute({ command: 'echo hello; sleep 0.5; echo done', background: true }, { agent });
     assert.match(out, /Started in background/);
     assert.match(out, /Job ID: bg-/);
     const m = out.match(/Log: (\S+)/);

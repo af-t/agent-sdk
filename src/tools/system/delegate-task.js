@@ -73,7 +73,7 @@ const execute = async ({ description, prompt, persona, id, background = false },
     if (typeof agent._sendForTest === 'function') {
       subagent._sendForTest = agent._sendForTest;
     }
-    // Propagate depth so nested Delegate hits the limit
+    // Propagate depth so a nested delegateTask hits the limit
     subagent._delegateDepth = depth;
     agent.subagents.set(resolvedId, subagent);
   } else {
@@ -84,7 +84,7 @@ const execute = async ({ description, prompt, persona, id, background = false },
 
   if (background) {
     if (!agent) {
-      throw new Error('Delegate background mode requires ctx.agent (an Agent instance).');
+      throw new Error('delegateTask background mode requires ctx.agent (an Agent instance).');
     }
     const bgId = 'bg-' + crypto.randomBytes(4).toString('hex').slice(0, 5);
     const dir = agent._resolveBackgroundLogDir();
@@ -97,7 +97,7 @@ const execute = async ({ description, prompt, persona, id, background = false },
       tokens: subagent.usage.tokens,
     };
 
-    // Per-job controller so Jobs/cleanup can stop this subagent; keep parent abort cascading.
+    // Per-job controller so manageJobs/cleanup can stop this subagent; keep parent abort cascading.
     const jobController = new AbortController();
     if (signal) {
       if (signal.aborted) jobController.abort();
@@ -172,7 +172,7 @@ const execute = async ({ description, prompt, persona, id, background = false },
       `Subagent ID: ${resolvedId} (${isNew ? 'new' : 'reused'})\n` +
       `Log: ${logPath}\n` +
       `Trace (live): ${traceLogPath}\n` +
-      `Use scheduleWakeup({ delay_ms, watch: ['${bgId}'] }) to wait or peek, or use readFile for the log.`
+      `Use scheduleWakeup({ delayMs, watch: ['${bgId}'] }) to wait or peek, or use readFile for the log.`
     );
   }
 

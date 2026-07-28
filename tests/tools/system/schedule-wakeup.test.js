@@ -6,36 +6,36 @@ import { scheduleWakeup } from '../../../src/tools/system/schedule-wakeup.js';
 test('scheduleWakeup exposes its strict timer schema', () => {
   assert.equal(scheduleWakeup.name, 'scheduleWakeup');
   assert.equal(scheduleWakeup.inputSchema.additionalProperties, false);
-  assert.ok(scheduleWakeup.inputSchema.properties.delay_ms);
+  assert.ok(scheduleWakeup.inputSchema.properties.delayMs);
   assert.ok(scheduleWakeup.inputSchema.properties.at);
   assert.ok(scheduleWakeup.inputSchema.properties.watch);
-  assert.ok(scheduleWakeup.inputSchema.properties.tail_bytes);
+  assert.ok(scheduleWakeup.inputSchema.properties.tailBytes);
   assert.ok(scheduleWakeup.inputSchema.properties.reason);
   assert.ok(scheduleWakeup.inputSchema.properties.prompt);
 });
 
-test('Wakeup rejects when neither delay_ms nor at is provided', async () => {
+test('scheduleWakeup rejects when neither delayMs nor at is provided', async () => {
   const agent = new Agent({ apiKey: 'x' });
-  await assert.rejects(scheduleWakeup.execute({}, { agent }), /delay_ms.*at/);
+  await assert.rejects(scheduleWakeup.execute({}, { agent }), /delayMs.*at/);
 });
 
-test('Wakeup rejects when both delay_ms and at are provided', async () => {
+test('scheduleWakeup rejects when both delayMs and at are provided', async () => {
   const agent = new Agent({ apiKey: 'x' });
   await assert.rejects(
-    scheduleWakeup.execute({ delay_ms: 100, at: new Date().toISOString() }, { agent }),
+    scheduleWakeup.execute({ delayMs: 100, at: new Date().toISOString() }, { agent }),
     /mutually exclusive/i,
   );
 });
 
-test('Wakeup rejects delay_ms > 2^31 - 1', async () => {
+test('scheduleWakeup rejects delayMs above 2^31 - 1', async () => {
   const agent = new Agent({ apiKey: 'x' });
-  await assert.rejects(scheduleWakeup.execute({ delay_ms: 2 ** 31 }, { agent }), /too large/i);
+  await assert.rejects(scheduleWakeup.execute({ delayMs: 2 ** 31 }, { agent }), /too large/i);
 });
 
 test('registers a non-blocking timer and returns immediately', async () => {
   const agent = new Agent({ apiKey: 'x' });
   const before = Date.now();
-  const out = await scheduleWakeup.execute({ delay_ms: 5000 }, { agent });
+  const out = await scheduleWakeup.execute({ delayMs: 5000 }, { agent });
   const elapsed = Date.now() - before;
   assert.ok(elapsed < 200, `expected immediate return, took ${elapsed}ms`);
   assert.match(out, /bg-[0-9a-f]{5}/);
@@ -46,20 +46,20 @@ test('registers a non-blocking timer and returns immediately', async () => {
 
 test('stores watch ids and tailBytes on the timer job', async () => {
   const agent = new Agent({ apiKey: 'x' });
-  await scheduleWakeup.execute({ delay_ms: 5000, watch: ['bg-zzzzz'], tail_bytes: 256 }, { agent });
+  await scheduleWakeup.execute({ delayMs: 5000, watch: ['bg-zzzzz'], tailBytes: 256 }, { agent });
   const job = [...agent.backgroundJobs.values()].find((j) => j.kind === 'timer');
   assert.deepEqual(job.watch, ['bg-zzzzz']);
   assert.equal(job.tailBytes, 256);
 });
 
 test('requires ctx.agent', async () => {
-  await assert.rejects(() => scheduleWakeup.execute({ delay_ms: 100 }, {}), /agent/i);
+  await assert.rejects(() => scheduleWakeup.execute({ delayMs: 100 }, {}), /agent/i);
 });
 
 test('echoes reason in the return message and stores reason/prompt on the timer job', async () => {
   const agent = new Agent({ apiKey: 'x' });
   const out = await scheduleWakeup.execute(
-    { delay_ms: 5000, reason: 'pace check-in', prompt: 'resume the task' },
+    { delayMs: 5000, reason: 'pace check-in', prompt: 'resume the task' },
     { agent },
   );
   assert.match(out, /reason: pace check-in/);

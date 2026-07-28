@@ -52,7 +52,7 @@ function withContentType(contentType, body) {
   return `${label}\n\n${body}`;
 }
 
-function isBlockedIp(ip) {
+export function isBlockedIp(ip) {
   const target = unmapIPv4(ip);
   return BLOCKED_IP_RANGES.some((range) => range.test(target));
 }
@@ -80,7 +80,7 @@ async function readBodyCapped(res, maxBytes) {
 
 // SSRF check: blocks private IPs, localhost, DNS rebinding, non-HTTP(S).
 // Returns the validated addresses to pin (or null for a literal-IP host).
-async function checkSSRF(urlStr) {
+export async function checkSSRF(urlStr) {
   try {
     const url = new URL(urlStr);
     const hostname = url.hostname;
@@ -206,12 +206,6 @@ function requestOnce(urlStr, { signal, lookup } = {}) {
   });
 }
 
-let _transport = requestOnce;
-// Swap the transport (tests inject a stub); no argument restores the default
-function _setTransport(fn) {
-  _transport = fn || requestOnce;
-}
-
 const description =
   'Fetch and analyze content from a URL. Use this to retrieve documentation, research technical topics, or read raw code from the web. It automatically cleans HTML for readability.';
 const inputSchema = {
@@ -226,6 +220,9 @@ const inputSchema = {
 };
 
 const execute = async ({ url, rawContent = false, limit = 20000 }, ctx = {}) => {
+  // The caller may supply a fetch-shaped transport; redirects carry it along via ctx
+  const transport = ctx.transport ?? requestOnce;
+
   // Validate URL format (throws if invalid)
   new URL(url);
 
@@ -247,7 +244,7 @@ const execute = async ({ url, rawContent = false, limit = 20000 }, ctx = {}) => 
   let contentType;
   try {
     // node:http(s) never auto-follows redirects, so each hop is re-checked below
-    res = await _transport(url, {
+    res = await transport(url, {
       signal: controller.signal,
       lookup: pinnedAddresses ? makeLookup(pinnedAddresses) : undefined,
     });
@@ -334,7 +331,4 @@ const execute = async ({ url, rawContent = false, limit = 20000 }, ctx = {}) => 
   return truncateOutput(cleanText, limit);
 };
 
-export const fetchUrl = Object.assign(
-  { name: 'fetchUrl', description, inputSchema, execute },
-  { _setTransport, checkSSRF, isBlockedIp },
-);
+export const fetchUrl = { name: 'fetchUrl', description, inputSchema, execute };

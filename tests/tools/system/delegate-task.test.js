@@ -30,7 +30,7 @@ function createFakeAgent(t, overrides = {}) {
   };
 }
 
-describe('Delegate tool module', () => {
+describe('delegateTask tool module', () => {
   let mod;
 
   before(async () => {
@@ -42,12 +42,12 @@ describe('Delegate tool module', () => {
     assert.strictEqual(mod.inputSchema.additionalProperties, false);
   });
 
-  it('should export description', () => {
+  it('describes itself with a non-empty description', () => {
     assert.ok(typeof mod.description === 'string');
     assert.ok(mod.description.length > 0);
   });
 
-  it('should export inputSchema', () => {
+  it('declares an object input schema', () => {
     assert.ok(mod.inputSchema);
     assert.strictEqual(mod.inputSchema.type, 'object');
     assert.ok(mod.inputSchema.properties);
@@ -57,22 +57,22 @@ describe('Delegate tool module', () => {
     assert.ok(mod.inputSchema.required.includes('description'));
   });
 
-  it('should not include context_files in inputSchema', () => {
+  it('omits the removed context_files parameter', () => {
     assert.strictEqual(mod.inputSchema.properties.context_files, undefined);
   });
 
-  it('should include id in inputSchema as optional string', () => {
+  it('accepts an optional string id', () => {
     assert.ok(mod.inputSchema.properties.id);
     assert.strictEqual(mod.inputSchema.properties.id.type, 'string');
     assert.ok(!mod.inputSchema.required.includes('id'));
   });
 
-  it('should export execute as a function', () => {
+  it('exposes execute as a function', () => {
     assert.strictEqual(typeof mod.execute, 'function');
   });
 });
 
-describe('Delegate tool: execute()', () => {
+describe('delegateTask execution', () => {
   let mod;
   let Agent;
 
@@ -85,7 +85,7 @@ describe('Delegate tool: execute()', () => {
     mock.reset();
   });
 
-  it('should spawn a sub-agent and return its result with ID prefix', async (t) => {
+  it('spawns a sub-agent and returns its report with the subagent ID footer', async (t) => {
     mock.method(Agent.prototype, 'run', async () => 'Sub-agent report: done');
 
     const fakeAgent = createFakeAgent(t, { maxCompletionTokens: undefined });
@@ -121,7 +121,7 @@ describe('Delegate tool: execute()', () => {
     await parent.skillRegistry._ensureDiscovered();
     parent.skillRegistry.skills.set('delegate-marker', {
       description: 'shared marker',
-      content: 'Delegate marker body.',
+      content: 'delegate marker body.',
     });
 
     await mod.execute({ description: 'Task', prompt: 'Work', id: 'shared-skills' }, { agent: parent });
@@ -129,7 +129,7 @@ describe('Delegate tool: execute()', () => {
     assert.equal(child.skillRegistry, parent.skillRegistry);
     assert.match(
       await child.tools.execute('loadSkill', { action: 'load', argument: 'delegate-marker' }, { agent: child }),
-      /Delegate marker body/,
+      /delegate marker body/,
     );
   });
 
@@ -150,7 +150,7 @@ describe('Delegate tool: execute()', () => {
     assert.strictEqual(sub.maxCompletionTokens, 32000);
   });
 
-  it('should pass persona as systemPrompt to sub-agent', async (t) => {
+  it('passes persona to the sub-agent as its systemPrompt', async (t) => {
     mock.method(Agent.prototype, 'run', async function () {
       return this.systemPrompt || 'no-prompt';
     });
@@ -192,7 +192,7 @@ describe('Delegate tool: execute()', () => {
     );
   });
 
-  it('should reject delegation when depth exceeds limit', async (t) => {
+  it('rejects delegation once the depth limit is exceeded', async (t) => {
     const fakeAgent = createFakeAgent(t, { _delegateDepth: 3 });
 
     await assert.rejects(
@@ -201,7 +201,7 @@ describe('Delegate tool: execute()', () => {
     );
   });
 
-  it('should accumulate sub-agent usage into parent agent', async (t) => {
+  it('accumulates sub-agent usage into the parent agent', async (t) => {
     mock.method(Agent.prototype, 'run', async () => {
       return 'done';
     });
@@ -214,7 +214,7 @@ describe('Delegate tool: execute()', () => {
     assert.strictEqual(fakeAgent.usage.tokens, 0);
   });
 
-  it('should throw a wrapped error when sub-agent fails', async (t) => {
+  it('wraps a failing sub-agent run in a delegation error', async (t) => {
     mock.method(Agent.prototype, 'run', async () => {
       throw new Error('Internal failure');
     });
@@ -227,7 +227,7 @@ describe('Delegate tool: execute()', () => {
     );
   });
 
-  it('should inherit parent tool registry including custom tools', async (t) => {
+  it('inherits the parent tool registry including custom tools', async (t) => {
     const { ToolRegistry } = await import('../../../src/registries/tool-registry.js');
     const parentTools = new ToolRegistry();
     parentTools.register({
@@ -249,7 +249,7 @@ describe('Delegate tool: execute()', () => {
     assert.ok(capturedToolNames.includes('CustomTestTool'));
   });
 
-  it('should set subagent maxTurns to 1000', async (t) => {
+  it('sets the subagent maxTurns to 1000', async (t) => {
     let capturedMaxTurns;
     mock.method(Agent.prototype, 'run', async function () {
       capturedMaxTurns = this.maxTurns;
@@ -262,7 +262,7 @@ describe('Delegate tool: execute()', () => {
     assert.strictEqual(capturedMaxTurns, 1000);
   });
 
-  it('should store new subagent in agent.subagents with auto-generated id', async (t) => {
+  it('stores a new subagent in agent.subagents under an auto-generated id', async (t) => {
     mock.method(Agent.prototype, 'run', async () => 'done');
 
     const fakeAgent = createFakeAgent(t, { apiKey: 'k', model: 'm' });
@@ -274,7 +274,7 @@ describe('Delegate tool: execute()', () => {
     assert.ok(result.includes(`Subagent ID: ${id} (new)`));
   });
 
-  it('should reuse existing subagent when id matches', async (t) => {
+  it('reuses an existing subagent when the id matches', async (t) => {
     let callCount = 0;
     mock.method(Agent.prototype, 'run', async () => {
       callCount++;
@@ -293,7 +293,7 @@ describe('Delegate tool: execute()', () => {
     assert.ok(result2.includes('Subagent ID: mybot (reused)'));
   });
 
-  it('should short-circuit when signal is pre-aborted', async (t) => {
+  it('short-circuits when the signal is pre-aborted', async (t) => {
     const controller = new AbortController();
     controller.abort();
 
@@ -308,7 +308,7 @@ describe('Delegate tool: execute()', () => {
     assert.strictEqual(fakeAgent.subagents.size, 0);
   });
 
-  it('should forward signal to subagent.run', async (t) => {
+  it('forwards the signal to subagent.run', async (t) => {
     const controller = new AbortController();
     let capturedOpts;
 
@@ -325,7 +325,7 @@ describe('Delegate tool: execute()', () => {
     assert.strictEqual(capturedOpts.signal, controller.signal);
   });
 
-  it('should reject when parent signal aborts mid-run', async (t) => {
+  it('rejects when the parent signal aborts mid-run', async (t) => {
     const controller = new AbortController();
 
     mock.method(Agent.prototype, 'run', async function (prompt, notify, opts) {
@@ -346,7 +346,7 @@ describe('Delegate tool: execute()', () => {
     );
   });
 
-  it('should only accumulate delta usage on reuse', async (t) => {
+  it('accumulates only delta usage when a subagent is reused', async (t) => {
     mock.method(Agent.prototype, 'run', async function () {
       this.usage.cost += 0.01;
       this.usage.tokens += 100;

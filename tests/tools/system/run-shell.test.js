@@ -1,18 +1,16 @@
-import { describe, it, before } from 'node:test';
+import { describe, it } from 'node:test';
 /* eslint-disable prefer-const */
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import Agent from '../../../src/core/agent.js';
+import { resolveLogger } from '../../../src/support/logger.js';
+import { runShell } from '../../../src/tools/system/run-shell.js';
 import { createTestTempDir } from '../../support/temp.js';
 
-describe('Bash tool module', () => {
-  let mod;
-
-  before(async () => {
-    mod = (await import('../../../src/tools/system/run-shell.js')).runShell;
-  });
+describe('runShell tool module', () => {
+  const mod = runShell;
 
   it('exports runShell with a strict workingDirectory input', () => {
     assert.strictEqual(mod.name, 'runShell');
@@ -21,25 +19,22 @@ describe('Bash tool module', () => {
     assert.equal(mod.inputSchema.properties.cwd, undefined);
   });
 
-  it('should export description', () => {
+  it('describes itself with a non-empty description', () => {
     assert.strictEqual(typeof mod.description, 'string');
+    assert.ok(mod.description.length > 0);
   });
 
-  it('should export inputSchema', () => {
-    assert.strictEqual(typeof mod.inputSchema, 'object');
+  it('declares an object input schema', () => {
+    assert.strictEqual(mod.inputSchema.type, 'object');
   });
 
-  it('should export execute as a function', () => {
+  it('exposes execute as a function', () => {
     assert.strictEqual(typeof mod.execute, 'function');
   });
 });
 
-describe('Bash tool: command injection fuzzing', () => {
-  let mod;
-
-  before(async () => {
-    mod = (await import('../../../src/tools/system/run-shell.js')).runShell;
-  });
+describe('runShell: command injection fuzzing', () => {
+  const mod = runShell;
 
   // All of these command injection attempts should be BLOCKED by the
   // isBlocked() check, the hasSuspiciousPattern() warning, or they should
@@ -216,7 +211,7 @@ describe('Bash tool: command injection fuzzing', () => {
       await mod.execute({ command: '; cat /etc/passwd', timeout: 5000 });
       // If bash somehow accepts it, it runs: no crash is fine
     } catch (err) {
-      // Bash syntax error expected: "syntax error near unexpected token `;'"
+      // bash syntax error expected: "syntax error near unexpected token `;'"
       assert.ok(err.message.length > 0);
       assert.ok(
         err.message.includes('syntax') ||
@@ -321,12 +316,8 @@ describe('Bash tool: command injection fuzzing', () => {
   });
 });
 
-describe('Bash tool: env sanitization', () => {
-  let mod;
-
-  before(async () => {
-    mod = (await import('../../../src/tools/system/run-shell.js')).runShell;
-  });
+describe('runShell: environment sanitization', () => {
+  const mod = runShell;
 
   it('strips sensitive keys like OPENROUTER_API_KEY from custom env', async () => {
     const secretValue = 'sk-or-v1-this-is-a-test-secret-12345';
@@ -463,12 +454,8 @@ describe('Bash tool: env sanitization', () => {
   });
 });
 
-describe('Bash tool: abort signal handling', () => {
-  let mod;
-
-  before(async () => {
-    mod = (await import('../../../src/tools/system/run-shell.js')).runShell;
-  });
+describe('runShell: abort signal handling', () => {
+  const mod = runShell;
 
   it('rejects immediately when ctx.signal is already aborted', async () => {
     const ac = new AbortController();
@@ -499,19 +486,13 @@ describe('Bash tool: abort signal handling', () => {
   });
 });
 
-describe('Bash tool: background hint message', () => {
-  let bash;
-
-  before(async () => {
-    bash = (await import('../../../src/tools/system/run-shell.js')).runShell;
-  });
-
+describe('runShell: background hint message', () => {
   it('background return message reflects automatic exit reporting', async (t) => {
     let agent;
     t.after(() => agent?.cleanup());
     const tmpDir = createTestTempDir(t, 'bash-background-');
     agent = new Agent({ apiKey: 'x', storagePaths: { tmpDir } });
-    const out = await bash.execute({ command: 'true', background: true }, { agent });
+    const out = await runShell.execute({ command: 'true', background: true }, { agent });
     assert.match(out, /reported automatically/i);
     assert.doesNotMatch(out, /to wait\/peek/);
     const job = agent.backgroundJobs.get(out.match(/Job ID: (bg-\S+)/)[1]);
@@ -521,12 +502,8 @@ describe('Bash tool: background hint message', () => {
   });
 });
 
-describe('Bash tool: advanced execution paths', () => {
-  let mod;
-
-  before(async () => {
-    mod = (await import('../../../src/tools/system/run-shell.js')).runShell;
-  });
+describe('runShell: advanced execution paths', () => {
+  const mod = runShell;
 
   it('blocks eval on sensitive path', async () => {
     await assert.rejects(() => mod.execute({ command: 'eval $(cat /etc/passwd)', timeout: 1000 }), /BLOCKED/);
@@ -591,6 +568,66 @@ describe('Bash tool: advanced execution paths', () => {
       assert.ok(typeof result === 'string');
     } catch (err) {
       assert.ok(err.message.length > 0);
+    }
+  });
+});
+
+describe('runShell: structured logging of suspicious commands', () => {
+  // The tool receives the same facade the ToolRegistry hands it, so the double
+  // records exactly what a real structured logger would emit.
+  function createRecordingLogger() {
+    const records = [];
+    const target = {};
+    for (const level of ['debug', 'info', 'warn', 'error']) {
+      target[level] = (context, message) => records.push({ level, context, message });
+    }
+    return { logger: resolveLogger(target, { debug: true }), records };
+  }
+
+  it('logs the matched rule only, without the command, secrets, or environment values', async (t) => {
+    const tmpDir = createTestTempDir(t, 'run-shell-logger-');
+    const targetFile = path.join(tmpDir, 'audit-marker-7f31c9.txt');
+    fs.writeFileSync(targetFile, 'marker\n');
+
+    const command = `chmod 644 ${targetFile}`;
+    const secretValue = 'tvly-do-not-log-4c81f2';
+    const environmentValue = 'staging-cluster-eu-3b7d';
+    const { logger, records } = createRecordingLogger();
+
+    await runShell.execute(
+      {
+        command,
+        env: { PATH: process.env.PATH, TAVILY_API_KEY: secretValue, DEPLOY_TARGET: environmentValue },
+        timeout: 10000,
+      },
+      { logger },
+    );
+
+    assert.ok(records.length > 0, 'the injected logger must receive the structured records runShell emits');
+
+    const warnings = records.filter(
+      (record) => record.level === 'warn' && record.message === 'Suspicious command pattern detected',
+    );
+    assert.equal(warnings.length, 1, 'a suspicious command must produce exactly one warning');
+    assert.deepEqual(warnings[0].context, {
+      component: 'runShell',
+      rule: '/\\bchmod\\s+[0-7]{3,4}\\b/',
+    });
+
+    // runShell narrates nothing at info level, so the command text can never
+    // reach an info record. Assert that directly instead of filtering to none.
+    assert.deepEqual(
+      records.filter((record) => record.level === 'info'),
+      [],
+      'runShell must not narrate shell runs at info level',
+    );
+
+    for (const record of records) {
+      const serialized = JSON.stringify(record);
+      assert.ok(!serialized.includes(command), `record must not carry the command: ${serialized}`);
+      assert.ok(!serialized.includes(targetFile), `record must not carry the command target: ${serialized}`);
+      assert.ok(!serialized.includes(secretValue), `record must not carry a secret value: ${serialized}`);
+      assert.ok(!serialized.includes(environmentValue), `record must not carry an environment value: ${serialized}`);
     }
   });
 });

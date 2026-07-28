@@ -84,7 +84,7 @@ describe('Agent: memoryHint injector', () => {
     assert.match(text, /\*\*feedback\*\*/);
   });
 
-  it('memoryHint references the using-memory skill and Skill tool', async () => {
+  it('memoryHint references the using-memory skill and the loadSkill tool', async () => {
     const fetchStub = captureFetch();
     global.fetch = fetchStub;
 
@@ -96,7 +96,7 @@ describe('Agent: memoryHint injector', () => {
 
     const text = findReminderText(fetchStub.captured[0]);
     assert.match(text, /using-memory/);
-    assert.match(text, /Skill tool/);
+    assert.match(text, /loadSkill tool/);
     assert.match(text, /argument="using-memory"/);
     assert.match(text, /MUST/);
   });

@@ -581,7 +581,7 @@ const execute = async ({ command, workingDirectory, env, timeout = 300000, backg
     const info = ptyMod
       ? runWithPtyBackground(command, cwd, safeEnv, signal, ctx.agent)
       : runWithSpawnBackground(command, cwd, safeEnv, signal, ctx.agent);
-    return `Started in background.\nJob ID: ${info.id} (kind: bash)\nLog: ${info.logPath}\nPID: ${info.pid ?? 'n/a'}\nExit will be reported automatically. Use readFile for the log, or scheduleWakeup({ delay_ms | at, watch: ['${info.id}'] }) for a timed check-in with a log tail.`;
+    return `Started in background.\nJob ID: ${info.id} (kind: bash)\nLog: ${info.logPath}\nPID: ${info.pid ?? 'n/a'}\nExit will be reported automatically. Use readFile for the log, or scheduleWakeup({ delayMs | at, watch: ['${info.id}'] }) for a timed check-in with a log tail.`;
   }
 
   if (ptyMod) {

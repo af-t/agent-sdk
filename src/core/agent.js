@@ -300,7 +300,7 @@ class Agent {
     this.#pendingBgDrains = [];
     this.currentTurn = 0;
     // Max request turns before forcing a break.
-    // Set to 0 for unlimited (used by subagents via Delegate).
+    // Set to 0 for unlimited (used by subagents via delegateTask).
     if (maxTurns !== undefined) {
       this.maxTurns = maxTurns;
     } else if (config.maxTurns !== undefined) {
@@ -428,7 +428,7 @@ class Agent {
     }
   }
 
-  // Read-only API key: used by Delegate tool for sub-agents
+  // Read-only API key: used by the delegateTask tool for sub-agents
   get apiKey() {
     return this.#apiKey;
   }

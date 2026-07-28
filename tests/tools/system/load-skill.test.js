@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import { SkillRegistry } from '../../../src/registries/skill-registry.js';
 
-describe('Skill tool module', () => {
+describe('loadSkill tool module', () => {
   let mod;
 
   before(async () => {
@@ -17,12 +17,12 @@ describe('Skill tool module', () => {
     assert.strictEqual(mod.name, 'loadSkill');
   });
 
-  it('should export description', () => {
+  it('describes itself with a non-empty description', () => {
     assert.ok(typeof mod.description === 'string');
     assert.ok(mod.description.length > 0);
   });
 
-  it('should export inputSchema', () => {
+  it('declares an object input schema', () => {
     assert.ok(mod.inputSchema);
     assert.strictEqual(mod.inputSchema.type, 'object');
     assert.ok(mod.inputSchema.properties);
@@ -39,7 +39,7 @@ describe('Skill tool module', () => {
   });
 });
 
-describe('Skill tool: execute()', () => {
+describe('loadSkill execution', () => {
   let mod;
   let registry;
   let tool;

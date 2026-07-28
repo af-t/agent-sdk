@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import createAgent from '../../src/index.js';
 import { ToolRegistry } from '../../src/registries/tool-registry.js';
 import { runShell } from '../../src/tools/system/run-shell.js';
-const { execute: bashExecute } = runShell;
+const { execute: runShellExecute } = runShell;
 
 test('agent.restricted defaults to true', async () => {
   const agent = await createAgent({ apiKey: 'sk-test' });
@@ -66,30 +66,30 @@ test('createAgent forwards restricted to its ToolRegistry', async () => {
   assert.equal(b.tools.restricted, true);
 });
 
-test('Bash blocks rm -rf / when restricted=true', async () => {
+test('runShell blocks rm -rf / when restricted=true', async () => {
   const fakeAgent = { restricted: true };
-  await assert.rejects(bashExecute({ command: 'rm -rf /' }, { agent: fakeAgent }), /BLOCKED/);
+  await assert.rejects(runShellExecute({ command: 'rm -rf /' }, { agent: fakeAgent }), /BLOCKED/);
 });
 
-test('Bash skips block list when restricted=false', async () => {
+test('runShell skips the block list when restricted=false', async () => {
   const fakeAgent = { restricted: false };
   // Use a harmless command that contains a blocked substring as a comment.
   // The block check uses `.includes`, so this would normally trigger.
-  await bashExecute({ command: "echo 'rm -rf /' # printing only" }, { agent: fakeAgent });
+  await runShellExecute({ command: "echo 'rm -rf /' # printing only" }, { agent: fakeAgent });
 });
 
-test('Bash strips secret env vars when restricted=true', async () => {
+test('runShell strips secret env vars when restricted=true', async () => {
   const fakeAgent = { restricted: true };
-  const out = await bashExecute(
+  const out = await runShellExecute(
     { command: 'echo "SECRET=${SECRET_TOKEN:-MISSING}"', env: { SECRET_TOKEN: 'sek' } },
     { agent: fakeAgent },
   );
   assert.match(String(out), /SECRET=MISSING/);
 });
 
-test('Bash passes through env vars when restricted=false', async () => {
+test('runShell passes through env vars when restricted=false', async () => {
   const fakeAgent = { restricted: false };
-  const out = await bashExecute(
+  const out = await runShellExecute(
     { command: 'echo "SECRET=${SECRET_TOKEN}"', env: { SECRET_TOKEN: 'sek' } },
     { agent: fakeAgent },
   );

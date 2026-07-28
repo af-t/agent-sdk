@@ -1,5 +1,12 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
+import {
+  ddgHtmlSearch,
+  ddgJsonSearch,
+  ddgSearch,
+  formatDdgResults,
+  searchWeb,
+} from '../../../src/tools/web/search-web.js';
 
 function makeFetchResponse(body, { ok = true, status = 200, contentType = 'application/json' } = {}) {
   if (contentType === 'application/json') {
@@ -15,46 +22,34 @@ function makeFetchResponse(body, { ok = true, status = 200, contentType = 'appli
   };
 }
 
-describe('WebSearch tool module', () => {
-  let mod;
-
-  before(async () => {
-    mod = (await import('../../../src/tools/web/search-web.js')).searchWeb;
-  });
-
+describe('searchWeb tool module', () => {
   it('exports searchWeb with canonical strict input fields', () => {
-    assert.strictEqual(mod.name, 'searchWeb');
-    assert.strictEqual(mod.inputSchema.additionalProperties, false);
-    assert.ok(mod.inputSchema.properties.maxResults);
-    assert.equal(mod.inputSchema.properties.max_results, undefined);
+    assert.strictEqual(searchWeb.name, 'searchWeb');
+    assert.strictEqual(searchWeb.inputSchema.additionalProperties, false);
+    assert.ok(searchWeb.inputSchema.properties.maxResults);
+    assert.equal(searchWeb.inputSchema.properties.max_results, undefined);
   });
 
-  it('should export description', () => {
-    assert.ok(typeof mod.description === 'string');
-    assert.ok(mod.description.length > 0);
+  it('describes itself with a non-empty description', () => {
+    assert.ok(typeof searchWeb.description === 'string');
+    assert.ok(searchWeb.description.length > 0);
   });
 
-  it('should export inputSchema', () => {
-    assert.ok(mod.inputSchema);
-    assert.strictEqual(mod.inputSchema.type, 'object');
-    assert.ok(mod.inputSchema.properties);
-    assert.ok(mod.inputSchema.properties.query);
-    assert.strictEqual(mod.inputSchema.properties.query.type, 'string');
-    assert.ok(mod.inputSchema.required.includes('query'));
+  it('requires a string query in its object schema', () => {
+    assert.strictEqual(searchWeb.inputSchema.type, 'object');
+    assert.strictEqual(searchWeb.inputSchema.properties.query.type, 'string');
+    assert.ok(searchWeb.inputSchema.required.includes('query'));
   });
 
-  it('should export execute as a function', () => {
-    assert.strictEqual(typeof mod.execute, 'function');
+  it('exposes execute as a function', () => {
+    assert.strictEqual(typeof searchWeb.execute, 'function');
   });
 });
 
-describe('ddgJsonSearch()', () => {
-  let ddgJsonSearch;
+describe('DuckDuckGo JSON search', () => {
   let originalFetch;
 
-  before(async () => {
-    const mod = (await import('../../../src/tools/web/search-web.js')).searchWeb;
-    ddgJsonSearch = mod.ddgJsonSearch;
+  before(() => {
     originalFetch = global.fetch;
   });
 
@@ -183,8 +178,7 @@ describe('ddgJsonSearch()', () => {
   });
 });
 
-describe('ddgHtmlSearch()', () => {
-  let ddgHtmlSearch;
+describe('DuckDuckGo HTML scraping fallback', () => {
   let originalFetch;
 
   const MOCK_HTML = [
@@ -202,9 +196,7 @@ describe('ddgHtmlSearch()', () => {
     '</body></html>',
   ].join('\n');
 
-  before(async () => {
-    const mod = (await import('../../../src/tools/web/search-web.js')).searchWeb;
-    ddgHtmlSearch = mod.ddgHtmlSearch;
+  before(() => {
     originalFetch = global.fetch;
   });
 
@@ -311,15 +303,10 @@ describe('ddgHtmlSearch()', () => {
   });
 });
 
-describe('ddgSearch() + formatDdgResults()', () => {
-  let ddgSearch;
-  let formatDdgResults;
+describe('DuckDuckGo search chain and result formatting', () => {
   let originalFetch;
 
-  before(async () => {
-    const mod = (await import('../../../src/tools/web/search-web.js')).searchWeb;
-    ddgSearch = mod.ddgSearch;
-    formatDdgResults = mod.formatDdgResults;
+  before(() => {
     originalFetch = global.fetch;
   });
 
@@ -401,14 +388,12 @@ describe('ddgSearch() + formatDdgResults()', () => {
   });
 });
 
-describe('execute(): fallback when no TAVILY_API_KEY', () => {
-  let execute;
+describe('searchWeb without a Tavily API key', () => {
+  const execute = searchWeb.execute;
   let originalFetch;
   let savedKey;
 
-  before(async () => {
-    const mod = await import('../../../src/tools/web/search-web.js');
-    execute = mod.searchWeb.execute;
+  before(() => {
     originalFetch = global.fetch;
     savedKey = process.env.TAVILY_API_KEY;
     delete process.env.TAVILY_API_KEY;
@@ -468,15 +453,13 @@ describe('execute(): fallback when no TAVILY_API_KEY', () => {
   });
 });
 
-describe('execute(): Tavily API path', () => {
-  let execute;
+describe('searchWeb with a Tavily API key', () => {
+  const execute = (input, context) =>
+    searchWeb.execute(input, { ...context, agent: { config: { tavilyApiKey: 'tvly-test-key-12345' } } });
   let originalFetch;
   let savedKey;
 
-  before(async () => {
-    const mod = await import('../../../src/tools/web/search-web.js');
-    execute = (input, context) =>
-      mod.searchWeb.execute(input, { ...context, agent: { config: { tavilyApiKey: 'tvly-test-key-12345' } } });
+  before(() => {
     originalFetch = global.fetch;
     savedKey = process.env.TAVILY_API_KEY;
     process.env.TAVILY_API_KEY = 'tvly-test-key-12345';

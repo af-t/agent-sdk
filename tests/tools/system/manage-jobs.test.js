@@ -13,8 +13,8 @@ function makeAgent() {
   return new Agent({ apiKey: 'sk-test-jobs' });
 }
 
-describe('Jobs tool', () => {
-  it('exports Jobs name and a flat schema requiring action', () => {
+describe('manageJobs tool', () => {
+  it('exports the manageJobs name and a flat schema requiring action', () => {
     assert.equal(manageJobs.name, 'manageJobs');
     assert.deepEqual(manageJobs.inputSchema.required, ['action']);
     assert.deepEqual(manageJobs.inputSchema.properties.action.enum, ['list', 'stop']);
@@ -65,14 +65,14 @@ describe('Jobs tool', () => {
     assert.match(out, /code 0/);
   });
 
-  it('stop requires job_id', async () => {
+  it('stop requires jobId', async () => {
     const agent = makeAgent();
-    await assert.rejects(() => manageJobs.execute({ action: 'stop' }, { agent }), /job_id/);
+    await assert.rejects(() => manageJobs.execute({ action: 'stop' }, { agent }), /jobId/);
   });
 
   it('stop on a missing job returns a not-found message', async () => {
     const agent = makeAgent();
-    const out = await manageJobs.execute({ action: 'stop', job_id: 'bg-zzzzz' }, { agent });
+    const out = await manageJobs.execute({ action: 'stop', jobId: 'bg-zzzzz' }, { agent });
     assert.match(out, /not found/i);
   });
 
@@ -84,7 +84,7 @@ describe('Jobs tool', () => {
       status: 'exited',
       startedAt: Date.now() - 500,
     });
-    const out = await manageJobs.execute({ action: 'stop', job_id: 'bg-done1' }, { agent });
+    const out = await manageJobs.execute({ action: 'stop', jobId: 'bg-done1' }, { agent });
     assert.match(out, /already/i);
   });
 
@@ -106,7 +106,7 @@ describe('Jobs tool', () => {
       startedAt: Date.now(),
       child,
     });
-    const out = await manageJobs.execute({ action: 'stop', job_id: 'bg-bash1' }, { agent });
+    const out = await manageJobs.execute({ action: 'stop', jobId: 'bg-bash1' }, { agent });
     assert.equal(sig, 'SIGTERM');
     assert.match(out, /bg-bash1/);
   });
@@ -123,7 +123,7 @@ describe('Jobs tool', () => {
       controller,
     };
     agent.backgroundJobs.set('bg-del01', job);
-    await manageJobs.execute({ action: 'stop', job_id: 'bg-del01' }, { agent });
+    await manageJobs.execute({ action: 'stop', jobId: 'bg-del01' }, { agent });
     assert.equal(controller.signal.aborted, true);
     assert.equal(job.status, 'killed');
   });
@@ -133,7 +133,7 @@ describe('Jobs tool', () => {
     const timer = setTimeout(() => {}, 100000);
     const job = { id: 'bg-tim01', kind: 'timer', status: 'running', startedAt: Date.now(), timer };
     agent.backgroundJobs.set('bg-tim01', job);
-    await manageJobs.execute({ action: 'stop', job_id: 'bg-tim01' }, { agent });
+    await manageJobs.execute({ action: 'stop', jobId: 'bg-tim01' }, { agent });
     assert.equal(job.status, 'killed');
   });
 });
@@ -153,7 +153,7 @@ describe('_killBackgroundJob helper', () => {
   });
 });
 
-test('cleanup aborts a running background Delegate controller', async (t) => {
+test('cleanup aborts a running background delegateTask controller', async (t) => {
   let parent;
   t.after(() => parent?.cleanup());
   const tmpDir = createTestTempDir(t, 'delegate-parent-');
@@ -171,7 +171,7 @@ test('cleanup aborts a running background Delegate controller', async (t) => {
   assert.equal(controller.signal.aborted, true);
 });
 
-test('Jobs stop terminates a real background Delegate (status killed)', async (t) => {
+test('manageJobs stop terminates a real background delegateTask (status killed)', async (t) => {
   // Subagent run blocks until its signal aborts, then throws like the real run loop.
   mock.method(Agent.prototype, 'run', function (_prompt, _notify, opts) {
     return new Promise((_resolve, reject) => {
@@ -204,7 +204,7 @@ test('Jobs stop terminates a real background Delegate (status killed)', async (t
   const job = parent.backgroundJobs.get(jobId);
   assert.equal(job.status, 'running');
 
-  const stopOut = await manageJobs.execute({ action: 'stop', job_id: jobId }, { agent: parent });
+  const stopOut = await manageJobs.execute({ action: 'stop', jobId }, { agent: parent });
   assert.match(stopOut, new RegExp(jobId));
 
   const event = await exited;

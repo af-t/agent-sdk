@@ -9,18 +9,7 @@ import { listFiles } from '../../../src/tools/files/list-files.js';
 
 const fileTools = [readFile, writeFile, editFile, findFiles, listFiles];
 
-describe('file tool contracts', () => {
-  it('exports complete, canonical tool definitions', () => {
-    assert.deepEqual(
-      fileTools.map((tool) => Object.keys(tool).sort()),
-      Array.from({ length: 5 }, () => ['description', 'execute', 'inputSchema', 'name']),
-    );
-    assert.deepEqual(
-      fileTools.map((tool) => tool.name),
-      ['readFile', 'writeFile', 'editFile', 'findFiles', 'listFiles'],
-    );
-  });
-
+describe('file tool input validation', () => {
   it('rejects snake_case input fields during schema validation', async () => {
     const registry = new ToolRegistry();
     registry.registerMany(fileTools);

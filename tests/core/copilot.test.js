@@ -141,14 +141,14 @@ test('renderWindow formats turns with tool calls and results', () => {
     {
       content: 'thinking then acting',
       reasoning: '',
-      toolCalls: [{ function: { name: 'Bash', arguments: '{}' } }],
-      toolEvents: [{ tool_end: { tool_call_id: 'a1', name: 'Bash', duration_ms: 5, error: 'boom' } }],
-      callSigs: ['Bash:{}'],
+      toolCalls: [{ function: { name: 'runShell', arguments: '{}' } }],
+      toolEvents: [{ tool_end: { tool_call_id: 'a1', name: 'runShell', duration_ms: 5, error: 'boom' } }],
+      callSigs: ['runShell:{}'],
     },
   ];
   const out = renderWindow(win, 2000);
-  assert.match(out, /\[tool_calls\] Bash/);
-  assert.match(out, /Bash#a1/);
+  assert.match(out, /\[tool_calls\] runShell/);
+  assert.match(out, /runShell#a1/);
   assert.match(out, /ERROR boom/);
   assert.match(out, /thinking then acting/);
 });
@@ -202,7 +202,7 @@ test('buildReasons fires toolError, everyNTurns, nearMaxTurns, costDelta', () =>
 
 test('buildReasons fires repeatedCall from window counts', () => {
   const t = normalizeTriggers({ everyNTurns: false, nearMaxTurns: false });
-  const recentTurns = [{ callSigs: ['Bash:{}'] }, { callSigs: ['Bash:{}'] }, { callSigs: ['Bash:{}'] }];
+  const recentTurns = [{ callSigs: ['runShell:{}'] }, { callSigs: ['runShell:{}'] }, { callSigs: ['runShell:{}'] }];
   assert.ok(buildReasons(ctxWith({ recentTurns }), t).includes('repeatedCall'));
 });
 
@@ -266,7 +266,7 @@ test('toolError trigger => supervisor steers the primary', async () => {
   const decisions = [];
   const copilot = createCopilot({ primary, supervisor, onDecision: (d) => decisions.push(d) });
   copilot.start();
-  await primary.emit({ tool_end: { tool_call_id: 'a1', name: 'Bash', duration_ms: 3, error: 'denied' } });
+  await primary.emit({ tool_end: { tool_call_id: 'a1', name: 'runShell', duration_ms: 3, error: 'denied' } });
   await primary.emit({ turn_end: { turn: 1, terminal: false } });
   await flush();
   assert.deepEqual(primary.steers, ['retry with sudo']);
@@ -280,7 +280,7 @@ test('abort decision aborts the run signal', async () => {
   const supervisor = fakeSupervisor('{"action":"abort","reason":"unrecoverable"}');
   const copilot = createCopilot({ primary, supervisor });
   const signal = copilot.start();
-  await primary.emit({ tool_end: { tool_call_id: 'a1', name: 'Bash', duration_ms: 3, error: 'x' } });
+  await primary.emit({ tool_end: { tool_call_id: 'a1', name: 'runShell', duration_ms: 3, error: 'x' } });
   await primary.emit({ turn_end: { turn: 1, terminal: false } });
   await flush();
   assert.equal(signal.aborted, true);
@@ -294,7 +294,7 @@ test('supervisor throw is best-effort: run unaffected, decision coerced to none'
   const decisions = [];
   const copilot = createCopilot({ primary, supervisor, onDecision: (d) => decisions.push(d) });
   copilot.start();
-  await primary.emit({ tool_end: { tool_call_id: 'a1', name: 'Bash', duration_ms: 3, error: 'x' } });
+  await primary.emit({ tool_end: { tool_call_id: 'a1', name: 'runShell', duration_ms: 3, error: 'x' } });
   await primary.emit({ turn_end: { turn: 1, terminal: false } });
   await flush();
   assert.deepEqual(primary.steers, []);

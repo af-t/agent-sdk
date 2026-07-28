@@ -1,5 +1,5 @@
 const description =
-  'Inspect and control background jobs started in this session: runShell background commands, delegateTask subagents, and scheduleWakeup timers. action="list" enumerates jobs (running only by default; pass all=true to include finished ones). action="stop" terminates a running job by its job_id. Side effect: "stop" sends SIGTERM/SIGKILL to a background process or aborts a background subagent.';
+  'Inspect and control background jobs started in this session: runShell background commands, delegateTask subagents, and scheduleWakeup timers. action="list" enumerates jobs (running only by default; pass all=true to include finished ones). action="stop" terminates a running job by its jobId. Side effect: "stop" sends SIGTERM/SIGKILL to a background process or aborts a background subagent.';
 const inputSchema = {
   type: 'object',
   additionalProperties: false,
@@ -7,9 +7,9 @@ const inputSchema = {
     action: {
       type: 'string',
       enum: ['list', 'stop'],
-      description: 'list = show background jobs; stop = terminate a running job by job_id.',
+      description: 'list = show background jobs; stop = terminate a running job by jobId.',
     },
-    job_id: {
+    jobId: {
       type: 'string',
       description: 'Background job id (bg-xxxxx). Required when action="stop".',
     },
@@ -23,10 +23,10 @@ const inputSchema = {
 };
 
 const execute = async (input, ctx = {}) => {
-  const { action, job_id, all = false } = input;
+  const { action, jobId, all = false } = input;
   const agent = ctx.agent;
   if (!agent || !agent.backgroundJobs) {
-    throw new Error('Jobs requires ctx.agent (an Agent instance).');
+    throw new Error('manageJobs requires ctx.agent (an Agent instance).');
   }
 
   if (action === 'list') {
@@ -34,20 +34,20 @@ const execute = async (input, ctx = {}) => {
   }
 
   if (action === 'stop') {
-    if (!job_id) {
-      throw new Error('Jobs stop requires `job_id`.');
+    if (!jobId) {
+      throw new Error('manageJobs stop requires `jobId`.');
     }
     if (typeof agent._killBackgroundJob !== 'function') {
-      throw new Error('Jobs stop requires an Agent that supports _killBackgroundJob.');
+      throw new Error('manageJobs stop requires an Agent that supports _killBackgroundJob.');
     }
-    const res = agent._killBackgroundJob(job_id);
+    const res = agent._killBackgroundJob(jobId);
     if (res.status === 'not_found') {
-      return `Job ${job_id} not found.`;
+      return `Job ${jobId} not found.`;
     }
     if (res.status === 'already_finished') {
-      return `Job ${job_id} already finished (${res.jobStatus}); nothing to stop.`;
+      return `Job ${jobId} already finished (${res.jobStatus}); nothing to stop.`;
     }
-    return `Stopped ${job_id} (${res.kind}).`;
+    return `Stopped ${jobId} (${res.kind}).`;
   }
 
   throw new Error(`Unknown action: ${action}. Use "list" or "stop".`);

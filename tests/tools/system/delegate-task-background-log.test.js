@@ -4,10 +4,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createTestTempDir } from '../../support/temp.js';
 
-// A background Delegate's finalizer must never crash the host process if the
+// A background delegateTask finalizer must never crash the host process if the
 // log write fails (e.g. cleanup() removed the tmp dir mid-flight). The exit
 // event must still fire so the parent learns the job ended.
-describe('Delegate background: log write failure does not crash the host', () => {
+describe('delegateTask background: log write failure does not crash the host', () => {
   let Agent;
   let execute;
 

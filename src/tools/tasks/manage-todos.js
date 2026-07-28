@@ -34,10 +34,10 @@ const formatTodoDetails = (todo) => {
   const priorityLabel = { high: '[high]', medium: '[medium]', low: '[low]' }[todo.priority];
 
   let dueInfo = '';
-  if (todo.due_date) {
-    const dueDate = new Date(todo.due_date);
-    const isOverdue = !todo.completed && dueDate < new Date();
-    dueInfo = ` | ${isOverdue ? '[overdue]' : 'due:'} ${dueDate.toLocaleDateString('en-US')}`;
+  if (todo.dueDate) {
+    const due = new Date(todo.dueDate);
+    const isOverdue = !todo.completed && due < new Date();
+    dueInfo = ` | ${isOverdue ? '[overdue]' : 'due:'} ${due.toLocaleDateString('en-US')}`;
   }
   return { status, priorityLabel, dueInfo };
 };
@@ -63,7 +63,7 @@ const inputSchema = {
       enum: ['low', 'medium', 'high'],
       description: 'Task priority: low, medium, or high (default: medium)',
     },
-    due_date: {
+    dueDate: {
       type: 'string',
       description: 'Due date in ISO 8601 format (e.g. 2025-12-31T23:59:59Z)',
     },
@@ -84,12 +84,12 @@ const inputSchema = {
       enum: ['all', 'pending', 'completed'],
       description: 'Filter for "list" action: all, pending, or completed',
     },
-    sort_by: {
+    sortBy: {
       type: 'string',
-      enum: ['created_at', 'priority', 'due_date'],
-      description: 'Sort order for "list" action: created_at, priority, or due_date',
+      enum: ['createdAt', 'priority', 'dueDate'],
+      description: 'Sort order for "list" action: createdAt, priority, or dueDate',
     },
-    todo_file: {
+    todoFile: {
       type: 'string',
       description:
         'Custom todo file path (optional, default: the agent-configured path under storagePaths.tmpDir or the appName storage namespace).',
@@ -99,14 +99,14 @@ const inputSchema = {
 };
 
 const execute = async (
-  { action, text, priority, due_date, category, id, completed, filter = 'all', sort_by = 'created_at', todo_file },
+  { action, text, priority, dueDate, category, id, completed, filter = 'all', sortBy = 'createdAt', todoFile },
   ctx = {},
 ) => {
   const trustedPaths = ctx.agent?.trustedPaths;
-  const todoPath = todo_file || ctx.agent?._todoFile;
+  const todoPath = todoFile || ctx.agent?._todoFile;
   if (!todoPath) {
     throw new Error(
-      'Todo requires a configured storage path. Provide a "todo_file" or run within an agent (storagePaths.tmpDir or the appName-derived default).',
+      'manageTodos requires a configured storage path. Provide a "todoFile" or run within an agent (storagePaths.tmpDir or the appName-derived default).',
     );
   }
 
@@ -129,16 +129,16 @@ const execute = async (
           priority: priority || 'medium',
           category: category || 'general',
           completed: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          due_date: due_date || null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          dueDate: dueDate || null,
         };
 
         todos.push(newTodo);
         await writeTodos(todoPath, todos, trustedPaths);
 
-        const dueDate = newTodo.due_date ? new Date(newTodo.due_date) : null;
-        const dueInfo = dueDate ? ` (Due: ${dueDate.toLocaleDateString('en-US')})` : '';
+        const due = newTodo.dueDate ? new Date(newTodo.dueDate) : null;
+        const dueInfo = due ? ` (Due: ${due.toLocaleDateString('en-US')})` : '';
 
         return `Todo added:
    Text: ${newTodo.text}
@@ -158,17 +158,17 @@ const execute = async (
         }
 
         filteredTodos.sort((a, b) => {
-          if (sort_by === 'priority') {
+          if (sortBy === 'priority') {
             const priorityOrder = { high: 3, medium: 2, low: 1 };
             return priorityOrder[b.priority] - priorityOrder[a.priority];
-          } else if (sort_by === 'due_date') {
-            if (!a.due_date && !b.due_date) return 0;
-            if (!a.due_date) return 1;
-            if (!b.due_date) return -1;
-            return new Date(a.due_date) - new Date(b.due_date);
+          } else if (sortBy === 'dueDate') {
+            if (!a.dueDate && !b.dueDate) return 0;
+            if (!a.dueDate) return 1;
+            if (!b.dueDate) return -1;
+            return new Date(a.dueDate) - new Date(b.dueDate);
           } else {
-            // created_at (default): newest first
-            return new Date(b.created_at) - new Date(a.created_at);
+            // createdAt (default): newest first
+            return new Date(b.createdAt) - new Date(a.createdAt);
           }
         });
 
@@ -183,7 +183,7 @@ const execute = async (
           const { status, priorityLabel, dueInfo } = formatTodoDetails(todo);
 
           output += `${index + 1}. ${status} ${priorityLabel} ${todo.text}\n`;
-          output += `   ID: ${todo.id} | ${todo.category.toUpperCase()} | Created: ${new Date(todo.created_at).toLocaleDateString('en-US')}${dueInfo}\n`;
+          output += `   ID: ${todo.id} | ${todo.category.toUpperCase()} | Created: ${new Date(todo.createdAt).toLocaleDateString('en-US')}${dueInfo}\n`;
         });
 
         const total = todos.length;
@@ -210,7 +210,7 @@ const execute = async (
         }
 
         todo.completed = true;
-        todo.updated_at = new Date().toISOString();
+        todo.updatedAt = new Date().toISOString();
         await writeTodos(todoPath, todos, trustedPaths);
 
         return `Todo completed:\n   "${todo.text}"`;
@@ -259,8 +259,8 @@ const execute = async (
           updates.push('category');
         }
 
-        if (due_date !== undefined) {
-          todo.due_date = due_date;
+        if (dueDate !== undefined) {
+          todo.dueDate = dueDate;
           updates.push('due date');
         }
 
@@ -269,7 +269,7 @@ const execute = async (
           updates.push('status');
         }
 
-        todo.updated_at = new Date().toISOString();
+        todo.updatedAt = new Date().toISOString();
         await writeTodos(todoPath, todos, trustedPaths);
 
         if (updates.length === 0) {

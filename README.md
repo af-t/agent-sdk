@@ -9,11 +9,11 @@ Minimal SDK for building AI agents connected to the [OpenRouter API](https://ope
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Basic Usage](#basic-usage)
-- [Background manageJobs](#background-jobs)
+- [Background Jobs](#background-jobs)
 - [Integration into Your Project](#integration-into-your-project)
 - [Available Tools](#available-tools)
 - [MCP Server](#mcp-server)
-- [loadSkill System](#skill-system)
+- [Skill System](#skill-system)
 - [Context Injection Layer](#context-injection-layer)
 - [Persistent Memory](#persistent-memory)
 - [Project Structure](#project-structure)
@@ -28,7 +28,7 @@ Minimal SDK for building AI agents connected to the [OpenRouter API](https://ope
 - **OpenRouter Integration**: Access 300+ LLM models through a single API with provider routing (order/only).
 - **Automatic Tool Execution Loop**: The agent automatically calls tools, receives results, and continues the conversation until a final answer is produced.
 - **MCP (Model Context Protocol) Support**: Connect your agent to external tools via stdio-based MCP servers.
-- **loadSkill Discovery System**: Discover and load skills from SKILL.md files across builtin (`src/skills/`) and plugin directories.
+- **Skill Discovery System**: Discover and load skills from SKILL.md files across builtin (`src/skills/`) and plugin directories, and pull them into context with the `loadSkill` tool.
 - **Built-in Tools**: File operations (readFile, writeFile, editFile, findFiles, listFiles), shell command execution (runShell with optional **node-pty** support), web search (Tavily), web fetch (using **cheerio**), and subagent delegation.
 - **Safety & Validation**: Tool inputs are validated against their schema (type checks, required fields, enums). Path traversal protection on readFile, writeFile, editFile, listFiles, and findFiles; **.gitignore** filtering on listFiles (and on findFiles when ripgrep is available): readFile, writeFile, and editFile do _not_ consult .gitignore, so ignored files inside the project root (such as `.env`) remain accessible to the agent. Dangerous shell command detection.
 - **Retry with Exponential Backoff**: Auto-retry with jitter to handle rate limits and transient errors.
@@ -312,26 +312,26 @@ Options: `port` (required; integer `0`-`65535`; `0` = ephemeral, read back via `
 
 Each matched request emits `{ type, method, path, query, headers, body, rawBody, ip, requestId, respond }`. Call `event.respond(value)` to reply: a string -> `200 text/plain`; an object -> a `{ status, headers, body }` spec (wrap a JSON payload as `respond({ body: {...} })`). Because the daemon awaits the handler, awaiting `ctx.agent.run(...)` before calling `respond` returns the agent's result to the HTTP caller; returning a bare `run` action is fire-and-forget and will `504` unless you also call `respond`. Auth (token + HMAC) uses constant-time comparison; bind stays on `127.0.0.1` by default: terminate TLS upstream before exposing it.
 
-## Background manageJobs
+## Background Jobs
 
-runShell commands and delegateTask subagents can run detached from the current turn. The agent returns immediately with a job ID and log path, and delivers a `<system-reminder>` to the run loop when the job finishes.
+runShell commands and delegateTask subagents can run detached from the current turn. The agent returns immediately with a job ID and log path, and delivers a `<system-reminder>` to the run loop when the job finishes. Use the `manageJobs` tool to list running jobs or stop one by its `jobId`.
 
 ```javascript
 // Detach a shell command
 const jobInfo = await agent.run('Run the test suite in the background.');
 // The runShell tool was called with background:true: agent got a job ID and log path back.
 
-// delegateTask a subagent in fire-and-forget mode
+// Hand a subagent a task in fire-and-forget mode
 // (delegateTask tool called with background:true inside the agent's tool loop)
 ```
 
-The `scheduleWakeup` tool complements background jobs: it pauses the run loop until a duration elapses or a specific time is reached, optionally short-circuiting when any watched background job exits:
+The `scheduleWakeup` tool complements background jobs: it registers a timer and returns immediately, then notifies the run loop once the delay elapses or the given time arrives, optionally tailing the logs of any watched background job:
 
 ```
-scheduleWakeup({ delay_ms: 30000 })              // wait 30 s
+scheduleWakeup({ delayMs: 30000 })              // wait 30 s
 scheduleWakeup({ at: '2026-01-01T00:00:00Z' })   // wait until a timestamp
-scheduleWakeup({ delay_ms: 60000, watch: ['bg-a1b2c'] }) // wake early if job finishes
-scheduleWakeup({ delay_ms: 60000, reason: 'pace check-in', prompt: 'resume the task' }) // self-documenting, custom wake text
+scheduleWakeup({ delayMs: 60000, watch: ['bg-a1b2c'] }) // wake early if job finishes
+scheduleWakeup({ delayMs: 60000, reason: 'pace check-in', prompt: 'resume the task' }) // self-documenting, custom wake text
 ```
 
 Register a listener for background-job completion from outside the run loop:
@@ -430,22 +430,22 @@ await agent.tools.connectMcpServer({
 
 ## Available Tools
 
-| Tool        | Category | Description                                                                           |
-| ----------- | -------- | ------------------------------------------------------------------------------------- |
-| `readFile`  | File     | Read text, notebooks, images, PDFs & binary files                                     |
-| `writeFile` | File     | Write a new file (overwrite)                                                          |
-| `editFile`  | File     | Edit a file with find-and-replace                                                     |
-| `findFiles` | File     | Search for files by name or content                                                   |
-| `listFiles` | File     | List directory contents (ls alternative)                                              |
-| `manageTodos`      | General  | Manage a todo list (add, list, complete, delete, update, clear) with persistence      |
-| `recallMemory` | General | Semantic search over stored memory files (embeddings, with lexical fallback)        |
-| `runShell`      | System   | Execute shell commands (pty with fallback to child_process); supports background mode |
-| `delegateTask`  | System   | delegateTask tasks to a sub-agent; supports background mode                               |
-| `scheduleWakeup`    | System   | Pause execution until a duration elapses or an absolute time is reached               |
-| `loadSkill`     | System   | Manage and load skills                                                                |
-| `manageJobs`      | System   | List and stop background jobs (runShell / delegateTask / scheduleWakeup)                              |
-| `searchWeb` | Web      | Web search via Tavily API                                                             |
-| `fetchUrl`  | Web      | Extract content from URLs                                                             |
+| Tool             | Category | Description                                                                           |
+| ---------------- | -------- | ------------------------------------------------------------------------------------- |
+| `readFile`       | File     | Read text, notebooks, images, PDFs & binary files                                     |
+| `writeFile`      | File     | Write a new file (overwrite)                                                          |
+| `editFile`       | File     | Edit a file with find-and-replace                                                     |
+| `findFiles`      | File     | Search for files by name or content                                                   |
+| `listFiles`      | File     | List directory contents (ls alternative)                                              |
+| `manageTodos`    | Task     | Manage a persistent todo list (add, list, complete, delete, update, clear)            |
+| `recallMemory`   | Task     | Semantic search over stored memory files (embeddings, with lexical fallback)          |
+| `runShell`       | System   | Execute shell commands (pty with fallback to child_process); supports background mode |
+| `delegateTask`   | System   | Hand a task to a sub-agent; supports background mode                                  |
+| `scheduleWakeup` | System   | Schedule a wake-up notification after a delay or at an absolute time                  |
+| `loadSkill`      | System   | List, search, and load skills                                                         |
+| `manageJobs`     | System   | List and stop background jobs (runShell / delegateTask / scheduleWakeup)              |
+| `searchWeb`      | Web      | Web search via Tavily, falling back to DuckDuckGo                                     |
+| `fetchUrl`       | Web      | Extract readable content from a URL                                                   |
 
 ### Reading non-text files
 
@@ -490,7 +490,7 @@ rl.on('line', (line) => {
 
 See `src/integrations/mcp-client.js` for the full implementation.
 
-## loadSkill System
+## Skill System
 
 The SDK has a discovery system for skills based on `SKILL.md` files. Skills are searched in:
 
@@ -513,14 +513,14 @@ The combined output of both scopes is joined with `\n\n`, wrapped in a single `<
 
 ### Builtin Injectors
 
-| Name           | Scope      | What it injects                                                                         |
-| -------------- | ---------- | --------------------------------------------------------------------------------------- |
-| `date`         | per-turn   | `Current date: YYYY-MM-DD HH:MM UTC`                                                    |
-| `contextFiles` | first-turn | Concatenated contents of files listed in `contextFiles` option (defaults to `AGENTS.md`) |
-| `memoryIndex`  | first-turn | Contents of `<memoryDir>/MEMORY.md`, if present                                         |
-| `memoryHint`   | first-turn | Brief description of the memory directory and the available memory types                |
-| `skillList`    | first-turn | Name + truncated description of every discovered skill                                  |
-| `pluginInstructions` | first-turn | Each plugin's `AGENTS.md`, merged into the first-turn reminder                    |
+| Name                 | Scope      | What it injects                                                                          |
+| -------------------- | ---------- | ---------------------------------------------------------------------------------------- |
+| `date`               | per-turn   | `Current date: YYYY-MM-DD HH:MM UTC`                                                     |
+| `contextFiles`       | first-turn | Concatenated contents of files listed in `contextFiles` option (defaults to `AGENTS.md`) |
+| `memoryIndex`        | first-turn | Contents of `<memoryDir>/MEMORY.md`, if present                                          |
+| `memoryHint`         | first-turn | Brief description of the memory directory and the available memory types                 |
+| `skillList`          | first-turn | Name + truncated description of every discovered skill                                   |
+| `pluginInstructions` | first-turn | Each plugin's `AGENTS.md`, merged into the first-turn reminder                           |
 
 Disable any builtin individually via the `injectors` option:
 
@@ -653,10 +653,10 @@ Four types ship by default and describe what each category is for:
 
 | Type        | Purpose                                                                            |
 | ----------- | ---------------------------------------------------------------------------------- |
-| `user`      | Information about the user: role, goals, preferences.                             |
+| `user`      | Information about the user: role, goals, preferences.                              |
 | `feedback`  | Guidance the user gave about how to approach work.                                 |
 | `project`   | Ongoing work context, decisions, deadlines that aren't derivable from code or git. |
-| `reference` | Pointers to external systems: dashboards, tracker projects, channels.             |
+| `reference` | Pointers to external systems: dashboards, tracker projects, channels.              |
 
 Extend or override via `memoryTypes`:
 
@@ -707,33 +707,40 @@ The embedding model can be configured using:
 ## Project Structure
 
 ```
-openrouter/
+agent-sdk/
 ├── src/
-│   ├── index.js           # Entry point: createAgent() factory function
-│   ├── config.js          # Configuration from environment variables
+│   ├── index.js                 # Entry point: createAgent() factory function
+│   ├── config/
+│   │   └── environment.js       # Configuration from environment variables
 │   ├── core/
-│   │   ├── agent.js       # Agent class: LLM interaction + tool loop
-│   │   ├── logger.js      # Colored console logger (debug/info/warn/error)
-│   │   ├── errors.js      # Custom error classes (ApiError, ToolError, ConfigError)
-│   │   ├── mcp.js         # MCP client (native stdio-based JSON-RPC)
+│   │   ├── agent.js             # Agent class: LLM interaction + tool loop
+│   │   ├── daemon.js            # Reactive daemon and its timer source
+│   │   ├── memory-recall.js     # Memory ranking behind the recallMemory tool
+│   │   ├── recording.js         # Session recording and replay
+│   │   └── trace-writer.js      # Live subagent trace logs
+│   ├── integrations/
+│   │   └── mcp-client.js        # MCP client (native stdio-based JSON-RPC)
+│   ├── registries/
+│   │   ├── tool-registry.js     # ToolRegistry: register, execute, hooks, MCP
+│   │   └── skill-registry.js    # SkillRegistry: discover & load SKILL.md
+│   ├── skills/                  # Builtin SKILL.md sets
 │   ├── support/
-│   │   ├── path-safety.js # Canonical path containment and ignore filters
-│   │   ├── environment.js # Secret and child-environment filtering
-│   │   ├── payload.js     # Payload limits and output helpers
-│   │   ├── retry.js       # Retrying and abort behavior
-│   │   └── http.js        # API dialects and request headers
-│   ├── registry/
-│   │   ├── tool.js        # ToolRegistry: register, execute, hooks, MCP
-│   │   └── skill.js       # SkillRegistry: discover & load SKILL.md
+│   │   ├── errors.js            # Custom error classes (ApiError, ToolError, ConfigError)
+│   │   ├── logger.js            # Structured logger and secret redaction
+│   │   ├── path-safety.js       # Canonical path containment and ignore filters
+│   │   ├── environment.js       # Secret and child-environment filtering
+│   │   ├── payload.js           # Payload limits and output helpers
+│   │   ├── retry.js             # Retrying and abort behavior
+│   │   └── http.js              # API dialects and request headers
 │   └── tools/
-│       ├── files/         # readFile, writeFile, editFile, findFiles, listFiles
-│       ├── general/       # manageTodos, recallMemory
-│       ├── system/        # runShell, delegateTask, manageJobs, loadSkill, scheduleWakeup
-│       └── web/           # Search (Tavily), Fetch
-├── CONTRIBUTING.md        # Contribution guidelines
-├── LICENSE                # MIT License
+│       ├── files/               # readFile, writeFile, editFile, findFiles, listFiles
+│       ├── tasks/               # manageTodos, recallMemory
+│       ├── system/              # runShell, delegateTask, manageJobs, loadSkill, scheduleWakeup
+│       └── web/                 # fetchUrl, searchWeb
+├── CONTRIBUTING.md              # Contribution guidelines
+├── LICENSE                      # MIT License
 ├── package.json
-└── .env.example           # Configuration template
+└── .env.example                 # Configuration template
 ```
 
 ## API Reference
@@ -746,7 +753,7 @@ Factory function to create an Agent instance.
 | ---------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `apiKey`                                                   | string   | OpenRouter API key (overrides `.env`).                                                                                                                                                                                    |
 | `model`                                                    | string   | Model identifier.                                                                                                                                                                                                         |
-| `sessionId`                                                | string   | Stable OpenRouter session ID. A UUID is generated once per Agent when omitted; not sent in the OpenAI dialect.                                                                                                             |
+| `sessionId`                                                | string   | Stable OpenRouter session ID. A UUID is generated once per Agent when omitted; not sent in the OpenAI dialect.                                                                                                            |
 | `order`                                                    | string[] | Provider routing order.                                                                                                                                                                                                   |
 | `only`                                                     | string[] | Restrict to specific providers.                                                                                                                                                                                           |
 | `provider`                                                 | object   | Provider routing: `{ order, only, avoid, sort, allowFallbacks, requireParameters, dataCollection }`. Merged with env. Sent on the wire as OpenRouter's `ignore`/`allow_fallbacks`/`require_parameters`/`data_collection`. |
@@ -762,8 +769,8 @@ Factory function to create an Agent instance.
 | `effort`                                                   | string   | Reasoning effort: `'low'`, `'medium'`, `'high'`. Default `'high'`.                                                                                                                                                        |
 | `maxToolOutputChars`                                       | number   | Cap (in chars) for tool output before truncation. Default `50_000`.                                                                                                                                                       |
 | `restricted`                                               | boolean  | Security mode. Default `true`. Set `false` to lift path-boundary checks, env filtering, and shell command blocks (logs a warning).                                                                                        |
-| `storagePaths`                                             | object   | `{ memoryDir?, tmpDir?, pluginsDir? }`. Paths support `~` expansion. External dirs are auto-added to `trustedPaths`.                                                                                                                   |
-| `contextFiles`                                             | string[] | Files to inject on the first turn. Default `['AGENTS.md']`. Missing files are skipped.                                                                                                                                     |
+| `storagePaths`                                             | object   | `{ memoryDir?, tmpDir?, pluginsDir? }`. Paths support `~` expansion. External dirs are auto-added to `trustedPaths`.                                                                                                      |
+| `contextFiles`                                             | string[] | Files to inject on the first turn. Default `['AGENTS.md']`. Missing files are skipped.                                                                                                                                    |
 | `memoryTypes`                                              | object   | Custom memory type descriptions; merged over the four built-in types.                                                                                                                                                     |
 | `injectors`                                                | object   | Disable built-in injectors by name, e.g. `{ date: false, skillList: false }`.                                                                                                                                             |
 

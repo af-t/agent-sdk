@@ -52,12 +52,12 @@ test('records tool errors and truncates oversized output', async (t) => {
   const dir = createTestTempDir(t, 'trace-test-');
   const logPath = path.join(dir, 'trace.log');
   w = createTraceWriter(logPath, { toolOutputCap: 20 });
-  await w.notify({ tool_calls: [{ id: 'e1', function: { name: 'Bash' } }] });
-  await w.notify({ tool_end: { tool_call_id: 'e1', name: 'Bash', duration_ms: 5, error: 'boom' } });
+  await w.notify({ tool_calls: [{ id: 'e1', function: { name: 'runShell' } }] });
+  await w.notify({ tool_end: { tool_call_id: 'e1', name: 'runShell', duration_ms: 5, error: 'boom' } });
   await w.notify({ tool_calls: [{ id: 'big', function: { name: 'readFile' } }] });
   await w.notify({ tool_end: { tool_call_id: 'big', name: 'readFile', duration_ms: 5, output: 'x'.repeat(500) } });
   await close();
   const out = fs.readFileSync(logPath, 'utf8');
-  assert.match(out, /-> Bash#e1 end \(5ms\): ERROR boom/);
+  assert.match(out, /-> runShell#e1 end \(5ms\): ERROR boom/);
   assert.ok(!out.includes('x'.repeat(500)), 'oversized output should be truncated');
 });

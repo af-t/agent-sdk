@@ -29,11 +29,11 @@ describe('SDK errors', () => {
   });
 
   it('attaches the tool name to tool errors', () => {
-    const error = new ToolError('Execution failed', { toolName: 'Bash' });
+    const error = new ToolError('Execution failed', { toolName: 'runShell' });
 
     assert(error instanceof SdkError);
     assert.equal(error.code, 'TOOL_ERROR');
-    assert.equal(error.toolName, 'Bash');
+    assert.equal(error.toolName, 'runShell');
   });
 
   it('uses the config error code while preserving its cause', () => {

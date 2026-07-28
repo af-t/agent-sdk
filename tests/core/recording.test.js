@@ -200,11 +200,11 @@ test('renderTrace reconstructs the human trace from recorded events', async (t) 
 test('renderTrace shows tool errors', async (t) => {
   const { file } = writeFixture(t, [
     { t: 'x', type: 'session_start', id: 's1', level: 'events', model: 'm' },
-    { t: 'x', type: 'tool_calls', turn: 1, calls: [{ id: 'e1', name: 'Bash' }] },
-    { t: 'x', type: 'tool_end', turn: 1, tool_call_id: 'e1', name: 'Bash', duration_ms: 5, error: 'boom' },
+    { t: 'x', type: 'tool_calls', turn: 1, calls: [{ id: 'e1', name: 'runShell' }] },
+    { t: 'x', type: 'tool_end', turn: 1, tool_call_id: 'e1', name: 'runShell', duration_ms: 5, error: 'boom' },
   ]);
   const rec = await Recording.load(file);
-  assert.match(rec.renderTrace(), /-> Bash#e1 end \(5ms\): ERROR boom/);
+  assert.match(rec.renderTrace(), /-> runShell#e1 end \(5ms\): ERROR boom/);
 });
 
 test('reads request/response payloads and tool results from a full recording', async (t) => {
@@ -218,7 +218,7 @@ test('reads request/response payloads and tool results from a full recording', a
       raw: { choices: [{ message: { content: 'a', tool_calls: [{ id: 'c1', function: { name: 'Echo' } }] } }] },
     },
     { t: 'x', type: 'tool_end', turn: 1, tool_call_id: 'c1', name: 'Echo', duration_ms: 4, output: 'echoed' },
-    { t: 'x', type: 'tool_end', turn: 1, tool_call_id: 'c2', name: 'Bash', duration_ms: 9, error: 'boom' },
+    { t: 'x', type: 'tool_end', turn: 1, tool_call_id: 'c2', name: 'runShell', duration_ms: 9, error: 'boom' },
     { t: 'x', type: 'response', turn: 2, raw: { choices: [{ message: { content: 'done' } }] } },
     { t: 'x', type: 'session_end', reason: 'closed' },
   ]);
