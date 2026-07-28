@@ -5,7 +5,7 @@ import { resolveLogger } from '../support/logger.js';
 
 const DEFAULT_INPUT_SCHEMA = Object.freeze({ type: 'object', properties: {} });
 
-function validateToolInput(inputSchema, input, toolName) {
+function validateToolInput(inputSchema, input, toolName, { allowOutputLimit = false } = {}) {
   const { required = [], properties = {} } = inputSchema || DEFAULT_INPUT_SCHEMA;
   for (const name of required) {
     if (input[name] === undefined || input[name] === null) {
@@ -13,7 +13,12 @@ function validateToolInput(inputSchema, input, toolName) {
     }
   }
   for (const [name, value] of Object.entries(input)) {
-    if (name === 'outputLimit') continue;
+    if (name === 'outputLimit' && allowOutputLimit) {
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new ToolError('Parameter "outputLimit" must be a finite number', { toolName });
+      }
+      continue;
+    }
     const property = properties[name];
     if (!property) {
       if (inputSchema.additionalProperties === false) {
@@ -130,7 +135,7 @@ export class ToolRegistry {
       logger: context.logger ?? this.logger.child({ tool: name }),
       signal: context.signal ?? new AbortController().signal,
     };
-    validateToolInput(tool.inputSchema, input, name);
+    validateToolInput(tool.inputSchema, input, name, { allowOutputLimit: true });
     const { outputLimit, ...toolInput } = input;
     const limit =
       outputLimit ??

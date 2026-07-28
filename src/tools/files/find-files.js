@@ -45,7 +45,7 @@ function spawnCommand(args, signal) {
     child.on('exit', (code) => {
       if (signal) signal.removeEventListener('abort', onAbort);
       if (aborted) {
-        reject(new Error('Find aborted'));
+        reject(new Error('File search was aborted'));
         return;
       }
       const out = Buffer.concat(output).toString();
@@ -89,7 +89,7 @@ async function nativeSearch({ absPath, pattern, mode, cwd, signal }) {
   const toRelative = makeToRelative(absPath, cwd);
 
   const walk = async (currentDir) => {
-    if (signal?.aborted) throw new Error('Find aborted');
+    if (signal?.aborted) throw new Error('File search was aborted');
     let entries;
     try {
       entries = await fs.readdir(currentDir, { withFileTypes: true });
@@ -98,7 +98,7 @@ async function nativeSearch({ absPath, pattern, mode, cwd, signal }) {
     }
 
     for (const entry of entries) {
-      if (signal?.aborted) throw new Error('Find aborted');
+      if (signal?.aborted) throw new Error('File search was aborted');
       const fullPath = path.join(currentDir, entry.name);
 
       if (mode === 'name') {
@@ -198,7 +198,7 @@ const execute = async ({ path: dirPath = '.', pattern, mode }, ctx = {}) => {
   const signal = ctx.signal;
 
   if (signal?.aborted) {
-    throw new Error('Find aborted before start');
+    throw new Error('File search was aborted before it started');
   }
 
   const absPath = resolveSafePath(dirPath, ctx.agent?.trustedPaths, { restricted: ctx.agent?.restricted !== false });

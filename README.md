@@ -716,10 +716,6 @@ openrouter/
 │   │   ├── logger.js      # Colored console logger (debug/info/warn/error)
 │   │   ├── errors.js      # Custom error classes (ApiError, ToolError, ConfigError)
 │   │   ├── mcp.js         # MCP client (native stdio-based JSON-RPC)
-│   ├── tools/files/
-│   │   ├── file-type.js   # Magic-byte detection for readFile
-│   │   ├── file-state.js  # File content cache (line-number stability)
-│   │   └── notebook.js    # .ipynb flattener for readFile
 │   ├── support/
 │   │   ├── path-safety.js # Canonical path containment and ignore filters
 │   │   ├── environment.js # Secret and child-environment filtering

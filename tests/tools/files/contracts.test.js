@@ -34,4 +34,52 @@ describe('file tool contracts', () => {
       /Unsupported parameter "old_text"/,
     );
   });
+
+  it('rejects a non-numeric root outputLimit before executing a tool', async () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 'echo',
+      description: 'Return text.',
+      inputSchema: { type: 'object', properties: {} },
+      execute: async () => 'unreachable',
+    });
+
+    await assert.rejects(
+      () => registry.execute('echo', { outputLimit: '10' }),
+      /Parameter "outputLimit" must be a finite number/,
+    );
+  });
+
+  it('rejects nested outputLimit in an edit entry', async () => {
+    const registry = new ToolRegistry();
+    registry.register(editFile);
+
+    await assert.rejects(
+      () =>
+        registry.execute('editFile', {
+          path: 'package.json',
+          edits: [{ action: 'replace', oldText: 'agent-sdk', newText: 'agent-sdk', outputLimit: 10 }],
+        }),
+      /Unsupported parameter "outputLimit"/,
+    );
+  });
+
+  it('uses a numeric root outputLimit and strips it before execution', async () => {
+    const registry = new ToolRegistry();
+    let receivedInput;
+    registry.register({
+      name: 'echo',
+      description: 'Return text.',
+      inputSchema: { type: 'object', properties: {} },
+      execute: async (input) => {
+        receivedInput = input;
+        return 'abcdefghij';
+      },
+    });
+
+    const result = await registry.execute('echo', { outputLimit: 4 });
+    assert.deepEqual(receivedInput, {});
+    assert.match(result, /^abcd/);
+    assert.match(result, /truncated/);
+  });
 });

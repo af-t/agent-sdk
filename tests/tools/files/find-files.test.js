@@ -243,7 +243,7 @@ describe('findFiles: abort signal handling', () => {
     ac.abort();
     await assert.rejects(
       () => mod.findFiles.execute({ path: FIXTURES_ABORT, pattern: '.', mode: 'name' }, { signal: ac.signal }),
-      /abort/i,
+      /File search was aborted before it started/,
     );
   });
 
@@ -253,7 +253,7 @@ describe('findFiles: abort signal handling', () => {
     ac.abort();
     await assert.rejects(
       () => mod.findFiles.execute({ path: FIXTURES_ABORT, pattern: 'hello', mode: 'content' }, { signal: ac.signal }),
-      /abort/i,
+      /File search was aborted before it started/,
     );
   });
 
@@ -367,7 +367,7 @@ describe('findFiles: nativeSearch fallback & edge cases', () => {
     await assert.rejects(
       () =>
         mod.findFiles.execute({ path: FIXTURES_NATIVE, pattern: 'content', mode: 'content' }, { signal: ac.signal }),
-      /abort/i,
+      /File search was aborted/,
     );
   });
 });
