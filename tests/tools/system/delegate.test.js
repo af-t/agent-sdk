@@ -3,6 +3,24 @@ import { describe, it, before, after, mock } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createTestTempDir } from '../../support/temp.js';
+import { resolveLogger } from '../../../src/support/logger.js';
+
+const noopLogger = resolveLogger(
+  Object.fromEntries(['debug', 'info', 'warn', 'error'].map((level) => [level, () => {}])),
+);
+
+function createFakeAgent(overrides = {}) {
+  return {
+    apiKey: 'sk-test-key',
+    model: 'test-model',
+    provider: {},
+    tools: {},
+    usage: { cost: 0, tokens: 0 },
+    subagents: new Map(),
+    logger: noopLogger,
+    ...overrides,
+  };
+}
 
 describe('Delegate tool module', () => {
   let mod;
@@ -61,15 +79,7 @@ describe('Delegate tool: execute()', () => {
   it('should spawn a sub-agent and return its result with ID prefix', async () => {
     mock.method(Agent.prototype, 'run', async () => 'Sub-agent report: done');
 
-    const fakeAgent = {
-      apiKey: 'sk-test-key',
-      model: 'test-model',
-      provider: {},
-      tools: {},
-      usage: { cost: 0, tokens: 0 },
-      maxCompletionTokens: undefined,
-      subagents: new Map(),
-    };
+    const fakeAgent = createFakeAgent({ maxCompletionTokens: undefined });
 
     const result = await mod.execute({ description: 'Test task', prompt: 'Do something useful' }, { agent: fakeAgent });
 
@@ -116,14 +126,7 @@ describe('Delegate tool: execute()', () => {
       return this.systemPrompt || 'no-prompt';
     });
 
-    const fakeAgent = {
-      apiKey: 'sk-test-key',
-      model: 'test-model',
-      provider: {},
-      tools: {},
-      usage: { cost: 0, tokens: 0 },
-      subagents: new Map(),
-    };
+    const fakeAgent = createFakeAgent();
 
     const result = await mod.execute(
       { description: 'Test', prompt: 'Work', persona: 'You are a code reviewer' },
@@ -136,14 +139,7 @@ describe('Delegate tool: execute()', () => {
   it('propagates _delegateDepth to spawned subagents', async () => {
     mock.method(Agent.prototype, 'run', async () => 'done');
 
-    const fakeAgent = {
-      apiKey: 'k',
-      model: 'm',
-      provider: {},
-      tools: {},
-      usage: { cost: 0, tokens: 0 },
-      subagents: new Map(),
-    };
+    const fakeAgent = createFakeAgent({ apiKey: 'k', model: 'm' });
 
     await mod.execute({ description: 'd', prompt: 'p', id: 'child' }, { agent: fakeAgent });
     assert.strictEqual(fakeAgent.subagents.get('child')._delegateDepth, 1);
@@ -152,14 +148,7 @@ describe('Delegate tool: execute()', () => {
   it('rejects nested delegation once the depth limit is reached', async () => {
     mock.method(Agent.prototype, 'run', async () => 'done');
 
-    let parent = {
-      apiKey: 'k',
-      model: 'm',
-      provider: {},
-      tools: {},
-      usage: { cost: 0, tokens: 0 },
-      subagents: new Map(),
-    };
+    let parent = createFakeAgent({ apiKey: 'k', model: 'm' });
 
     // Walk delegation three levels deep via real spawned subagents
     for (let i = 0; i < 3; i++) {
@@ -175,15 +164,7 @@ describe('Delegate tool: execute()', () => {
   });
 
   it('should reject delegation when depth exceeds limit', async () => {
-    const fakeAgent = {
-      apiKey: 'sk-test-key',
-      model: 'test-model',
-      provider: {},
-      tools: {},
-      usage: { cost: 0, tokens: 0 },
-      _delegateDepth: 3,
-      subagents: new Map(),
-    };
+    const fakeAgent = createFakeAgent({ _delegateDepth: 3 });
 
     await assert.rejects(
       () => mod.execute({ description: 'Deep task', prompt: 'Do it' }, { agent: fakeAgent }),
@@ -196,14 +177,7 @@ describe('Delegate tool: execute()', () => {
       return 'done';
     });
 
-    const fakeAgent = {
-      apiKey: 'sk-test-key',
-      model: 'test-model',
-      provider: {},
-      tools: {},
-      usage: { cost: 0, tokens: 0 },
-      subagents: new Map(),
-    };
+    const fakeAgent = createFakeAgent();
 
     await mod.execute({ description: 'Cost test', prompt: 'Do work' }, { agent: fakeAgent });
 
@@ -216,14 +190,7 @@ describe('Delegate tool: execute()', () => {
       throw new Error('Internal failure');
     });
 
-    const fakeAgent = {
-      apiKey: 'sk-test-key',
-      model: 'test-model',
-      provider: {},
-      tools: {},
-      usage: { cost: 0, tokens: 0 },
-      subagents: new Map(),
-    };
+    const fakeAgent = createFakeAgent();
 
     await assert.rejects(
       () => mod.execute({ description: 'Failing task', prompt: 'Do it' }, { agent: fakeAgent }),
@@ -247,14 +214,7 @@ describe('Delegate tool: execute()', () => {
       return 'done';
     });
 
-    const fakeAgent = {
-      apiKey: 'sk-test-key',
-      model: 'test-model',
-      provider: {},
-      tools: parentTools,
-      usage: { cost: 0, tokens: 0 },
-      subagents: new Map(),
-    };
+    const fakeAgent = createFakeAgent({ tools: parentTools });
 
     await mod.execute({ description: 'Registry test', prompt: 'do it' }, { agent: fakeAgent });
     assert.ok(capturedToolNames.includes('CustomTestTool'));
@@ -267,14 +227,7 @@ describe('Delegate tool: execute()', () => {
       return 'done';
     });
 
-    const fakeAgent = {
-      apiKey: 'sk-test-key',
-      model: 'test-model',
-      provider: {},
-      tools: {},
-      usage: { cost: 0, tokens: 0 },
-      subagents: new Map(),
-    };
+    const fakeAgent = createFakeAgent();
 
     await mod.execute({ description: 'MaxTurns test', prompt: 'do it' }, { agent: fakeAgent });
     assert.strictEqual(capturedMaxTurns, 1000);
@@ -283,14 +236,7 @@ describe('Delegate tool: execute()', () => {
   it('should store new subagent in agent.subagents with auto-generated id', async () => {
     mock.method(Agent.prototype, 'run', async () => 'done');
 
-    const fakeAgent = {
-      apiKey: 'k',
-      model: 'm',
-      provider: {},
-      tools: {},
-      usage: { cost: 0, tokens: 0 },
-      subagents: new Map(),
-    };
+    const fakeAgent = createFakeAgent({ apiKey: 'k', model: 'm' });
 
     const result = await mod.execute({ description: 'd', prompt: 'p' }, { agent: fakeAgent });
 
@@ -306,14 +252,7 @@ describe('Delegate tool: execute()', () => {
       return `call-${callCount}`;
     });
 
-    const fakeAgent = {
-      apiKey: 'k',
-      model: 'm',
-      provider: {},
-      tools: {},
-      usage: { cost: 0, tokens: 0 },
-      subagents: new Map(),
-    };
+    const fakeAgent = createFakeAgent({ apiKey: 'k', model: 'm' });
 
     await mod.execute({ description: 'd', prompt: 'first', id: 'mybot' }, { agent: fakeAgent });
     const subagent = fakeAgent.subagents.get('mybot');
@@ -329,14 +268,7 @@ describe('Delegate tool: execute()', () => {
     const controller = new AbortController();
     controller.abort();
 
-    const fakeAgent = {
-      apiKey: 'k',
-      model: 'm',
-      provider: {},
-      tools: {},
-      usage: { cost: 0, tokens: 0 },
-      subagents: new Map(),
-    };
+    const fakeAgent = createFakeAgent({ apiKey: 'k', model: 'm' });
 
     await assert.rejects(
       () => mod.execute({ description: 'd', prompt: 'p' }, { agent: fakeAgent, signal: controller.signal }),
@@ -356,14 +288,7 @@ describe('Delegate tool: execute()', () => {
       return 'done';
     });
 
-    const fakeAgent = {
-      apiKey: 'k',
-      model: 'm',
-      provider: {},
-      tools: {},
-      usage: { cost: 0, tokens: 0 },
-      subagents: new Map(),
-    };
+    const fakeAgent = createFakeAgent({ apiKey: 'k', model: 'm' });
 
     await mod.execute({ description: 'd', prompt: 'p' }, { agent: fakeAgent, signal: controller.signal });
 
@@ -384,14 +309,7 @@ describe('Delegate tool: execute()', () => {
       return 'should not reach';
     });
 
-    const fakeAgent = {
-      apiKey: 'k',
-      model: 'm',
-      provider: {},
-      tools: {},
-      usage: { cost: 0, tokens: 0 },
-      subagents: new Map(),
-    };
+    const fakeAgent = createFakeAgent({ apiKey: 'k', model: 'm' });
 
     await assert.rejects(
       () => mod.execute({ description: 'd', prompt: 'p' }, { agent: fakeAgent, signal: controller.signal }),
@@ -406,14 +324,7 @@ describe('Delegate tool: execute()', () => {
       return 'done';
     });
 
-    const fakeAgent = {
-      apiKey: 'k',
-      model: 'm',
-      provider: {},
-      tools: {},
-      usage: { cost: 0, tokens: 0 },
-      subagents: new Map(),
-    };
+    const fakeAgent = createFakeAgent({ apiKey: 'k', model: 'm' });
 
     await mod.execute({ description: 'd', prompt: 'first', id: 'bot' }, { agent: fakeAgent });
     assert.ok(Math.abs(fakeAgent.usage.cost - 0.01) < 1e-9);

@@ -30,7 +30,7 @@ test('ctx.agent.restricted is exposed to tools at execute time', async () => {
   assert.equal(seen, false);
 });
 
-test('restricted=false emits a warning at construction', async () => {
+test('restricted=false emits a structured warning at construction', async () => {
   const origWrite = process.stderr.write.bind(process.stderr);
   let captured = '';
   process.stderr.write = (chunk) => {
@@ -42,7 +42,11 @@ test('restricted=false emits a warning at construction', async () => {
   } finally {
     process.stderr.write = origWrite;
   }
-  assert.match(captured, /restricted=false/);
+  assert.deepEqual(JSON.parse(captured), {
+    component: 'agent',
+    restricted: false,
+    message: 'Agent constructed with security checks disabled',
+  });
 });
 
 test('ToolRegistry stores restricted flag (default true)', () => {
