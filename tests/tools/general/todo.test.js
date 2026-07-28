@@ -491,7 +491,6 @@ describe('Todo Tool', () => {
     const todos = JSON.parse(raw);
     assert.strictEqual(todos.length, 1);
     assert.strictEqual(todos[0].text, 'Agent todo');
-
   });
 
   it('throws a clear error when neither todo_file nor ctx.agent._todoFile is provided', async () => {
@@ -513,7 +512,6 @@ describe('Todo Tool', () => {
 
     const raw = await fsP.readFile(nestedFile, 'utf8');
     assert.strictEqual(JSON.parse(raw).length, 1);
-
   });
 
   it('todo_file param takes precedence over ctx.agent._todoFile', async (t) => {
@@ -536,6 +534,5 @@ describe('Todo Tool', () => {
     const raw = await fsP.readFile(explicitFile, 'utf8');
     assert.ok(JSON.parse(raw).length === 1);
     await assert.rejects(() => fsP.stat(agentTodoFile), { code: 'ENOENT' });
-
   });
 });
