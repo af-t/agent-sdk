@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { getIgnoreFilter, formatSize, ensureSafePath } from '../../core/utils.js';
+import { loadIgnoreFilter, resolveSafePath } from '../../support/path-safety.js';
+import { formatBytes } from '../../support/payload.js';
 
 export const name = 'List';
 export const description =
@@ -15,8 +16,8 @@ export const input_schema = {
 };
 
 export const execute = async ({ path: dirPath = '.', depth = 1 }, ctx = {}) => {
-  const absPath = ensureSafePath(dirPath, ctx.agent?.trustedPaths, { restricted: ctx.agent?.restricted !== false });
-  const filter = await getIgnoreFilter();
+  const absPath = resolveSafePath(dirPath, ctx.agent?.trustedPaths, { restricted: ctx.agent?.restricted !== false });
+  const filter = await loadIgnoreFilter();
   const results = [];
 
   const walk = async (currentDir, currentDepth) => {
@@ -46,7 +47,7 @@ export const execute = async ({ path: dirPath = '.', depth = 1 }, ctx = {}) => {
       if (entry.isFile()) {
         try {
           const stats = await fs.stat(fullPath);
-          suffix = ` (${formatSize(stats.size)})`;
+          suffix = ` (${formatBytes(stats.size)})`;
         } catch {
           suffix = ''; // stat failed: skip size display silently
         }

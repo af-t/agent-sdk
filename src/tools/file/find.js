@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { CONSTANTS, ensureSafePath } from '../../core/utils.js';
+import { resolveSafePath } from '../../support/path-safety.js';
+import { LIMITS } from '../../support/payload.js';
 
 export const name = 'Find';
 export const description =
@@ -113,7 +114,7 @@ async function nativeSearch({ absPath, pattern, mode, cwd, signal }) {
       } else if (mode === 'content' && entry.isFile()) {
         try {
           const stat = await fs.stat(fullPath);
-          if (stat.size > CONSTANTS.MAX_FILE_SIZE_SEARCH) continue;
+          if (stat.size > LIMITS.maxFileSizeSearch) continue;
 
           // Check first 512 bytes for null bytes before reading entire file
           const handle = await fs.open(fullPath, 'r');
@@ -181,7 +182,7 @@ function shellRgSearch(absPath, pattern, cwd, signal) {
       '--no-heading',
       '-i',
       '--max-filesize',
-      String(CONSTANTS.MAX_FILE_SIZE_SEARCH),
+      String(LIMITS.maxFileSizeSearch),
       '--max-columns',
       '100',
       '--',
@@ -214,7 +215,7 @@ export const execute = async ({ path: dirPath = '.', pattern, mode }, ctx = {}) 
     throw new Error('Find aborted before start');
   }
 
-  const absPath = ensureSafePath(dirPath, ctx.agent?.trustedPaths, { restricted: ctx.agent?.restricted !== false });
+  const absPath = resolveSafePath(dirPath, ctx.agent?.trustedPaths, { restricted: ctx.agent?.restricted !== false });
   const cwd = process.cwd();
 
   try {

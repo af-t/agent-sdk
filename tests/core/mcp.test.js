@@ -36,10 +36,10 @@ describe('McpNativeClient', () => {
     assert.equal(client.defaultTimeout, 5000);
   });
 
-  it('constructor uses default MCP_TIMEOUT when timeout not provided', async () => {
-    const { CONSTANTS } = await import('../../src/core/utils.js');
+  it('constructor uses default mcpTimeoutMs when timeout not provided', async () => {
+    const { LIMITS } = await import('../../src/support/payload.js');
     const client = new McpNativeClient({ command: 'echo' });
-    assert.equal(client.defaultTimeout, CONSTANTS.MCP_TIMEOUT);
+    assert.equal(client.defaultTimeout, LIMITS.mcpTimeoutMs);
     assert.equal(client.defaultTimeout, 30000);
   });
 

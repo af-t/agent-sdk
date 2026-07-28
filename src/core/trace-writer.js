@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { truncateOutput } from './utils.js';
+import { truncateOutput } from '../support/payload.js';
 
 const TRACE_TOOL_OUTPUT_CAP = 2000;
 

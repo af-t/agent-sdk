@@ -1,9 +1,9 @@
 import logger from '../core/logger.js';
 import fs from 'node:fs/promises';
-import { getDirname } from '../core/utils.js';
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-const __dirname = getDirname(import.meta);
+const __dirname = import.meta.dirname || path.dirname(fileURLToPath(import.meta.url));
 
 function parseFrontmatter(content) {
   const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);

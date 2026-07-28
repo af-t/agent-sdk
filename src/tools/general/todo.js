@@ -1,13 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ensureSafePath } from '../../core/utils.js';
+import { resolveSafePath } from '../../support/path-safety.js';
 
 // Hard cap to prevent unbounded growth
 const MAX_TODOS = 1000;
 
 const readTodos = async (filePath, trustedPaths = new Set()) => {
   try {
-    const safePath = ensureSafePath(filePath, trustedPaths);
+    const safePath = resolveSafePath(filePath, trustedPaths);
     const data = await fs.readFile(safePath, 'utf8');
     return JSON.parse(data);
   } catch (error) {
@@ -20,7 +20,7 @@ const readTodos = async (filePath, trustedPaths = new Set()) => {
 };
 
 const writeTodos = async (filePath, todos, trustedPaths = new Set()) => {
-  const safePath = ensureSafePath(filePath, trustedPaths);
+  const safePath = resolveSafePath(filePath, trustedPaths);
   await fs.mkdir(path.dirname(safePath), { recursive: true });
   await fs.writeFile(safePath, JSON.stringify(todos, null, 2), 'utf8');
 };

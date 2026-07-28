@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import logger from '../../core/logger.js';
-import { stripUnsafeEnv } from '../../core/utils.js';
+import { sanitizeChildEnvironment } from '../../support/environment.js';
 
 // Lazy-loaded PTY module: may be unavailable on platforms without native build support
 let _ptyModule = null;
@@ -561,7 +561,7 @@ export const execute = async (
       if (key in process.env) safeEnv[key] = process.env[key];
     }
     if (env !== process.env) {
-      Object.assign(safeEnv, stripUnsafeEnv(env));
+      Object.assign(safeEnv, sanitizeChildEnvironment(env));
     }
   } else {
     // Trust mode: passthrough full process.env, merge user-supplied env raw.

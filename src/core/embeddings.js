@@ -1,5 +1,8 @@
-import { withRetry, resolveDialect, buildRequestHeaders, callerAbortedError } from './utils.js';
+import { loadEnvironmentConfig } from '../config/environment.js';
 import { ApiError } from '../support/errors.js';
+import { buildRequestHeaders, resolveApiDialect } from '../support/http.js';
+import { LIMITS } from '../support/payload.js';
+import { createAbortError, retry } from '../support/retry.js';
 
 const EMBED_TIMEOUT = 120_000;
 
@@ -17,7 +20,7 @@ export function cosineSimilarity(a, b) {
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-// Reuses withRetry: 4xx fails fast, 5xx/429 retried.
+// Reuses retry: 4xx fails fast, 5xx/429 retried.
 export async function embedTexts(texts, { apiKey, baseUrl, model, signal } = {}) {
   if (!Array.isArray(texts) || texts.length === 0) {
     return { vectors: [], usage: null };
@@ -34,7 +37,7 @@ export async function embedTexts(texts, { apiKey, baseUrl, model, signal } = {})
     try {
       const res = await fetch(`${baseUrl}/embeddings`, {
         method: 'POST',
-        headers: buildRequestHeaders({ apiKey, dialect: resolveDialect(baseUrl) }),
+        headers: buildRequestHeaders({ apiKey, dialect: resolveApiDialect(baseUrl) }),
         body: JSON.stringify({ model, input: texts }),
         signal: controller.signal,
       });
@@ -43,15 +46,21 @@ export async function embedTexts(texts, { apiKey, baseUrl, model, signal } = {})
       try {
         body = JSON.parse(text);
       } catch {
-        throw new ApiError(`Embeddings API returned non-JSON (${res.status})`, { status: res.status, body: text.slice(0, 500) });
+        throw new ApiError(`Embeddings API returned non-JSON (${res.status})`, {
+          status: res.status,
+          body: text.slice(0, 500),
+        });
       }
       if (!res.ok) {
-        throw new ApiError(body?.error?.message || `Embeddings API error (${res.status})`, { status: res.status, body });
+        throw new ApiError(body?.error?.message || `Embeddings API error (${res.status})`, {
+          status: res.status,
+          body,
+        });
       }
       return body;
     } catch (err) {
-      // Caller aborted: flag it so withRetry fails fast instead of retrying.
-      if (signal?.aborted) throw callerAbortedError('Embeddings request aborted', err);
+      // Caller aborted: flag it so retry fails fast instead of retrying.
+      if (signal?.aborted) throw createAbortError('Embeddings request aborted', err);
       throw err;
     } finally {
       clearTimeout(timer);
@@ -59,7 +68,12 @@ export async function embedTexts(texts, { apiKey, baseUrl, model, signal } = {})
     }
   };
 
-  const body = await withRetry(doFetch);
+  const body = await retry(doFetch, {
+    attempts: loadEnvironmentConfig().maxRetries,
+    baseDelayMs: LIMITS.retryBaseDelayMs,
+    maxDelayMs: 60_000,
+    signal,
+  });
   const data = Array.isArray(body?.data) ? body.data : [];
   // Place each embedding at its declared index so a partial/gappy response
   // never misaligns vectors with their inputs. Fall back to positional order

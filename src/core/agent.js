@@ -1,15 +1,8 @@
-import {
-  withRetry,
-  getDirname,
-  CONSTANTS,
-  ensureSafePath,
-  payloadHasMultimodal,
-  degradePayload,
-  resolveDialect,
-  buildRequestHeaders,
-  sanitizeAppName,
-  callerAbortedError,
-} from './utils.js';
+import { fileURLToPath } from 'node:url';
+import { buildRequestHeaders, resolveApiDialect } from '../support/http.js';
+import { resolveSafePath } from '../support/path-safety.js';
+import { degradePayload, hasMultimodalContent, LIMITS, sanitizeAppName } from '../support/payload.js';
+import { createAbortError, retry } from '../support/retry.js';
 import { mergeReasoningDelta, finalizeReasoningDetails, sanitizeAssistantReasoning } from './reasoning.js';
 import { ToolRegistry } from '../registry/tool.js';
 import { ApiError, ConfigError } from '../support/errors.js';
@@ -23,7 +16,7 @@ import fs from 'node:fs';
 import { readFile, readdir, rm, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
-const __dirname = getDirname(import.meta);
+const __dirname = import.meta.dirname || path.dirname(fileURLToPath(import.meta.url));
 
 function resolveStoragePath(p) {
   if (!p || typeof p !== 'string') return null;
@@ -51,11 +44,11 @@ function makeIdleTimer(ms, controller) {
 }
 
 // Error for a request that failed because the caller aborted the run.
-// `.aborted = true` makes withRetry fail fast instead of retrying. `cause`
+// `.aborted = true` makes retry fail fast instead of retrying. `cause`
 // preserves the error that was in flight when the abort was observed (e.g. a
 // real ApiError) so it isn't silently discarded: inspect err.cause for it.
 function callerAbortError(cause) {
-  return callerAbortedError('Agent run aborted', cause);
+  return createAbortError('Agent run aborted', cause);
 }
 
 // Compose the caller's signal with a per-request idle-timeout controller so
@@ -88,6 +81,7 @@ class Agent {
   #injectors = { 'first-turn': [], 'per-turn': [] };
   #beforeRequestHooks = [];
   #running = false;
+  #maxRetries;
   #pending = [];
   #activeRunPromise = null;
   #multimodalUnsupported = false;
@@ -119,6 +113,7 @@ class Agent {
 
   constructor(options = {}) {
     const config = loadEnvironmentConfig();
+    this.#maxRetries = config.maxRetries;
     const {
       apiKey,
       baseUrl,
@@ -171,7 +166,7 @@ class Agent {
     }
     this.#apiKey = apiKey || config.apiKey;
     this.#baseUrl = baseUrl || config.baseUrl || 'https://openrouter.ai/api/v1';
-    this.dialect = resolveDialect(this.#baseUrl);
+    this.dialect = resolveApiDialect(this.#baseUrl);
     this.#sessionId = sessionId ?? crypto.randomUUID();
 
     // Empty-turn recovery is a built-in stop hook (default on). It re-sends the
@@ -226,11 +221,7 @@ class Agent {
     this.tools = tools || new ToolRegistry({ restricted: this.restricted });
 
     this.temperature =
-      temperature !== undefined
-        ? temperature
-        : config.temperature !== undefined
-          ? config.temperature
-          : undefined;
+      temperature !== undefined ? temperature : config.temperature !== undefined ? config.temperature : undefined;
     this.topP = topP !== undefined ? topP : config.topP;
     this.minP = minP !== undefined ? minP : config.minP;
     this.topK = topK !== undefined ? topK : config.topK;
@@ -314,7 +305,7 @@ class Agent {
     } else {
       this.maxTurns = DEFAULT_MAX_TURNS;
     }
-    this.maxToolOutputChars = maxToolOutputChars ?? CONSTANTS.MAX_TOOL_OUTPUT;
+    this.maxToolOutputChars = maxToolOutputChars ?? LIMITS.maxToolOutput;
     this.autoWake = autoWake !== undefined ? !!autoWake : (config.autoWake ?? false);
     // Callback and options forwarded to run() during auto-wake invocations,
     // allowing callers to attach streaming/WebSocket/metadata tracking.
@@ -351,7 +342,7 @@ class Agent {
       });
     }
 
-    this.appName = sanitizeAppName(appName ?? config.appName ?? CONSTANTS.DEFAULT_APP_NAME);
+    this.appName = sanitizeAppName(appName ?? config.appName ?? LIMITS.defaultAppName);
     const resolvedMemoryDir = resolveStoragePath(storagePaths?.memoryDir) || path.resolve(`.${this.appName}/memory`);
     const resolvedTmpDir = resolveStoragePath(storagePaths?.tmpDir) || null;
     const resolvedPluginsDir = resolveStoragePath(storagePaths?.pluginsDir) || path.resolve(`.${this.appName}/plugins`);
@@ -483,7 +474,7 @@ class Agent {
     agent._sendForTest = async () => {
       const raw = recording.responseAt(agent.currentTurn);
       if (!raw) {
-        // tag non-retryable so withRetry fails fast
+        // tag non-retryable so retry fails fast
         const err = new Error(`replay: no recorded response for turn ${agent.currentTurn}`);
         err.status = 400;
         throw err;
@@ -782,10 +773,10 @@ class Agent {
       }
 
       if (!res.ok) {
-        throw new ApiError(
-          responseBody?.error?.message || `OpenRouter API error (${res.status})`,
-          { status: res.status, body: responseBody },
-        );
+        throw new ApiError(responseBody?.error?.message || `OpenRouter API error (${res.status})`, {
+          status: res.status,
+          body: responseBody,
+        });
       }
 
       return responseBody;
@@ -867,9 +858,15 @@ class Agent {
       // action === 'retry': re-send the identical payload.
       this.#stopAttempts++;
       try {
-        const retryResponse = await withRetry(
+        const retryResponse = await retry(
           () => (isStreaming ? this.#sendStream(payload, signal) : this.#send(payload, signal)),
-          5,
+          {
+            attempts: this.#maxRetries,
+            baseDelayMs: LIMITS.retryBaseDelayMs,
+            maxDelayMs: 60_000,
+            signal,
+            logger: this.logger,
+          },
         );
         const retryMessage = retryResponse.choices?.[0]?.message;
         content = retryMessage?.content || null;
@@ -1650,15 +1647,21 @@ class Agent {
         }
 
         // Build payload + onBeforeRequest hooks ONCE per turn.
-        // withRetry retries the network call only: injectors and hooks do not re-fire.
+        // retry retries the network call only: injectors and hooks do not re-fire.
         const payload = await this.#buildPayload();
         if (this.#multimodalUnsupported) degradePayload(payload);
         this.#recorder?.request(loopCount, payload);
         let response;
         try {
-          response = await withRetry(
+          response = await retry(
             () => (isStreaming ? this.#sendStream(payload, signal) : this.#send(payload, signal)),
-            5,
+            {
+              attempts: this.#maxRetries,
+              baseDelayMs: LIMITS.retryBaseDelayMs,
+              maxDelayMs: 60_000,
+              signal,
+              logger: this.logger,
+            },
           );
           this.#pendingRichCallIds.clear();
           this.#richUserMsgIdx = -1;
@@ -1672,7 +1675,7 @@ class Agent {
               errMsg.includes('file') ||
               errMsg.includes('video'));
 
-          if (isMultimodalError && !this.#multimodalUnsupported && payloadHasMultimodal(payload)) {
+          if (isMultimodalError && !this.#multimodalUnsupported && hasMultimodalContent(payload)) {
             this.logger.warn(
               { component: 'agent', status: err.status, error: err },
               'Multimodal request rejected; degrading and retrying text-only fallback',
@@ -1700,9 +1703,15 @@ class Agent {
                 break;
               }
             }
-            response = await withRetry(
+            response = await retry(
               () => (isStreaming ? this.#sendStream(payload, signal) : this.#send(payload, signal)),
-              5,
+              {
+                attempts: this.#maxRetries,
+                baseDelayMs: LIMITS.retryBaseDelayMs,
+                maxDelayMs: 60_000,
+                signal,
+                logger: this.logger,
+              },
             );
           } else {
             this.#pendingRichCallIds.clear();
@@ -1960,7 +1969,7 @@ function contextFilesInjector(filePaths, trustedPathsFn) {
     for (const filePath of filePaths) {
       let resolved;
       try {
-        resolved = ensureSafePath(filePath, trustedPaths);
+        resolved = resolveSafePath(filePath, trustedPaths);
       } catch {
         // Path traversal or outside root: skip silently.
         continue;
@@ -1989,7 +1998,7 @@ function memoryIndexInjector(memoryDirFn, trustedPathsFn) {
     const trustedPaths = trustedPathsFn?.() ?? new Set();
     let resolved;
     try {
-      resolved = ensureSafePath(path.join(memoryDir, 'MEMORY.md'), trustedPaths);
+      resolved = resolveSafePath(path.join(memoryDir, 'MEMORY.md'), trustedPaths);
     } catch {
       return '';
     }

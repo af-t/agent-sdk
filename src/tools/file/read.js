@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ensureSafePath } from '../../core/utils.js';
+import { resolveSafePath } from '../../support/path-safety.js';
 import { hashContent, mergeRanges } from '../../core/file-state.js';
 import { detectFileType, imageDimensions, hexPreview, humanSize, magicByteType } from '../../core/file-type.js';
 import { flattenNotebook } from '../../core/notebook.js';
@@ -93,7 +93,7 @@ async function readText(safePath, filePath, { start_line = 1, end_line = Infinit
 }
 
 export const execute = async ({ path: filePath, start_line = 1, end_line = Infinity, max_lines = 1500 }, ctx = {}) => {
-  const safePath = ensureSafePath(filePath, ctx.agent?.trustedPaths, { restricted: ctx.agent?.restricted !== false });
+  const safePath = resolveSafePath(filePath, ctx.agent?.trustedPaths, { restricted: ctx.agent?.restricted !== false });
 
   const stat = await fs.stat(safePath);
 

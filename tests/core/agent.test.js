@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { CONSTANTS } from '../../src/core/utils.js';
+import { LIMITS } from '../../src/support/payload.js';
 
 function makeSseResponse(lines) {
   const encoder = new TextEncoder();
@@ -137,9 +137,9 @@ describe('Agent', () => {
       assert.equal(agent.tools, registry);
     });
 
-    it('defaults maxToolOutputChars to CONSTANTS.MAX_TOOL_OUTPUT', () => {
+    it('defaults maxToolOutputChars to LIMITS.maxToolOutput', () => {
       const agent = new Agent({ apiKey: 'sk-key' });
-      assert.strictEqual(agent.maxToolOutputChars, CONSTANTS.MAX_TOOL_OUTPUT);
+      assert.strictEqual(agent.maxToolOutputChars, LIMITS.maxToolOutput);
     });
 
     it('accepts maxToolOutputChars override', () => {

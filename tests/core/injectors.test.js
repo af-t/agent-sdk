@@ -401,7 +401,7 @@ describe('Agent: onBeforeRequest hook', () => {
     global.fetch = stubFinal('ok');
     const agent = new Agent({ apiKey: 'sk-test', injectors: { date: false } });
     agent.onBeforeRequest(() => {
-      // non-retryable so withRetry surfaces fast
+      // non-retryable so retry surfaces fast
       const err = new Error('hook failure');
       err.status = 400;
       throw err;
@@ -410,7 +410,7 @@ describe('Agent: onBeforeRequest hook', () => {
   });
 
   it('hooks and per-turn injectors fire once per turn, not per retry', async () => {
-    // Speed up withRetry delay so test stays fast.
+    // Speed up retry delay so test stays fast.
     const realSetTimeout = globalThis.setTimeout;
     globalThis.setTimeout = (fn, _delay, ...args) => realSetTimeout(fn, 1, ...args);
 
@@ -418,7 +418,7 @@ describe('Agent: onBeforeRequest hook', () => {
     global.fetch = async (_url, _opts) => {
       fetchCalls++;
       if (fetchCalls === 1) {
-        // First attempt: retryable 5xx error so withRetry triggers a retry.
+        // First attempt: retryable 5xx error so retry triggers a retry.
         return { ok: false, status: 503, json: async () => ({ error: { message: 'transient' } }) };
       }
       return makeJsonResponse({
@@ -557,7 +557,7 @@ describe('Agent: contextFiles first-turn injector', () => {
     assert.match(part.text, /Some project notes here/);
   });
 
-  it('path traversal attempt rejected by ensureSafePath', async () => {
+  it('path traversal attempt rejected by resolveSafePath', async () => {
     const fetchStub = captureFetch();
     global.fetch = fetchStub;
 

@@ -3,7 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { ensureSafePath } from '../../core/utils.js';
+import { resolveSafePath } from '../../support/path-safety.js';
 import { hashContent, isRangeCovered } from '../../core/file-state.js';
 
 async function diff(file1, file2) {
@@ -224,7 +224,7 @@ export const input_schema = {
 export const execute = async ({ path: filePath, edits }, ctx = {}) => {
   if (!edits || edits.length === 0) throw new Error('edits must not be empty');
 
-  const safePath = ensureSafePath(filePath, ctx.agent?.trustedPaths, { restricted: ctx.agent?.restricted !== false });
+  const safePath = resolveSafePath(filePath, ctx.agent?.trustedPaths, { restricted: ctx.agent?.restricted !== false });
   const rawContent = await fs.readFile(safePath, 'utf8');
   const currentHash = hashContent(rawContent);
 

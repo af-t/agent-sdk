@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ensureSafePath } from '../../core/utils.js';
+import { resolveSafePath } from '../../support/path-safety.js';
 import { hashContent } from '../../core/file-state.js';
 
 const MAX_WRITE_SIZE = 10 * 1024 * 1024; // 10MB limit to prevent disk exhaustion
@@ -22,7 +22,7 @@ export const input_schema = {
 };
 
 export const execute = async ({ path: filePath, content, overwrite = false }, ctx = {}) => {
-  const safePath = ensureSafePath(filePath, ctx.agent?.trustedPaths, { restricted: ctx.agent?.restricted !== false });
+  const safePath = resolveSafePath(filePath, ctx.agent?.trustedPaths, { restricted: ctx.agent?.restricted !== false });
 
   const size = Buffer.byteLength(content, 'utf8');
   if (size > MAX_WRITE_SIZE) {

@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio';
-import { CONSTANTS, truncateOutput } from '../../core/utils.js';
+import { LIMITS, truncateOutput } from '../../support/payload.js';
 import dns from 'node:dns/promises';
 import http from 'node:http';
 import https from 'node:https';
@@ -237,7 +237,7 @@ export const execute = async ({ url, use_raw, useRaw = false, limit = 20000 }, c
   if (ctx.signal?.aborted) throw new Error('Request aborted');
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), CONSTANTS.FETCH_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), LIMITS.fetchTimeoutMs);
 
   const onAbort = () => controller.abort();
   if (ctx.signal) {
@@ -279,15 +279,15 @@ export const execute = async ({ url, use_raw, useRaw = false, limit = 20000 }, c
     }
 
     const contentLength = res.headers.get('content-length');
-    if (contentLength && parseInt(contentLength) > CONSTANTS.FETCH_MAX_SIZE) {
+    if (contentLength && parseInt(contentLength) > LIMITS.fetchMaxSize) {
       throw new Error(
-        `Response too large (${contentLength} bytes). Maximum allowed is ${CONSTANTS.FETCH_MAX_SIZE} bytes (10MB).`,
+        `Response too large (${contentLength} bytes). Maximum allowed is ${LIMITS.fetchMaxSize} bytes (10MB).`,
       );
     }
 
     contentType = res.headers.get('content-type') || 'unknown';
     // Hard cap even without content-length (chunked responses)
-    raw = await readBodyCapped(res, CONSTANTS.FETCH_MAX_SIZE);
+    raw = await readBodyCapped(res, LIMITS.fetchMaxSize);
   } finally {
     clearTimeout(timeout);
     if (ctx.signal) {

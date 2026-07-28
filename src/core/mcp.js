@@ -3,7 +3,8 @@
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { EventEmitter } from 'node:events';
-import { CONSTANTS, stripSecrets, stripUnsafeEnv } from './utils.js';
+import { removeSecrets, sanitizeChildEnvironment } from '../support/environment.js';
+import { LIMITS } from '../support/payload.js';
 import logger from './logger.js';
 
 export class McpNativeClient extends EventEmitter {
@@ -17,13 +18,13 @@ export class McpNativeClient extends EventEmitter {
     this.initialized = false;
     this.capabilities = null;
     this.serverInfo = null;
-    this.defaultTimeout = config.timeout || CONSTANTS.MCP_TIMEOUT;
+    this.defaultTimeout = config.timeout || LIMITS.mcpTimeoutMs;
   }
 
   async connect() {
     let childEnv;
     if (this.config.restricted !== false) {
-      childEnv = { ...stripSecrets(process.env), ...stripUnsafeEnv(this.config.env || {}) };
+      childEnv = { ...removeSecrets(process.env), ...sanitizeChildEnvironment(this.config.env || {}) };
     } else {
       childEnv = { ...process.env, ...(this.config.env || {}) };
     }

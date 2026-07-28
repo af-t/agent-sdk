@@ -1,4 +1,4 @@
-import { CONSTANTS, truncateOutput } from '../../core/utils.js';
+import { LIMITS, truncateOutput } from '../../support/payload.js';
 
 function decodeHtmlEntities(str) {
   return str
@@ -48,7 +48,7 @@ export const input_schema = {
 };
 
 export async function ddgJsonSearch(query, maxResults, signal) {
-  const { controller, timer } = createAbortTimer(signal, CONSTANTS.FETCH_TIMEOUT_MS);
+  const { controller, timer } = createAbortTimer(signal, LIMITS.fetchTimeoutMs);
 
   try {
     const res = await fetch(
@@ -80,7 +80,7 @@ export async function ddgJsonSearch(query, maxResults, signal) {
 }
 
 export async function ddgHtmlSearch(query, maxResults, signal) {
-  const { controller, timer } = createAbortTimer(signal, CONSTANTS.FETCH_TIMEOUT_MS);
+  const { controller, timer } = createAbortTimer(signal, LIMITS.fetchTimeoutMs);
 
   try {
     const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
@@ -180,7 +180,7 @@ export const execute = async (
     }
   }
 
-  const { controller, timer: timeout } = createAbortTimer(ctx.signal, CONSTANTS.FETCH_TIMEOUT_MS);
+  const { controller, timer: timeout } = createAbortTimer(ctx.signal, LIMITS.fetchTimeoutMs);
 
   try {
     const body = {

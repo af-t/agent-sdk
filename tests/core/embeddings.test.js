@@ -109,7 +109,7 @@ describe('embedTexts', () => {
         () => embedTexts(['a'], { apiKey: 'sk-x', baseUrl: 'https://x', model: 'm', signal: ac.signal }),
         (err) => err.aborted === true,
       );
-      assert.equal(calls, 1); // withRetry must not retry a caller abort
+      assert.equal(calls, 1); // retry must not retry a caller abort
     } finally {
       global.fetch = original;
     }

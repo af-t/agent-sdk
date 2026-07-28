@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { ensureSafePath } from './utils.js';
+import { resolveSafePath } from '../support/path-safety.js';
 import { embedTexts, cosineSimilarity } from './embeddings.js';
 import { lexicalRank } from './lexical-rank.js';
 import logger from './logger.js';
@@ -68,7 +68,7 @@ async function rankWithEmbeddings({
 }) {
   let sidecarPath;
   try {
-    sidecarPath = ensureSafePath(path.join(memoryDir, SIDECAR_NAME), trustedPaths, { restricted });
+    sidecarPath = resolveSafePath(path.join(memoryDir, SIDECAR_NAME), trustedPaths, { restricted });
   } catch {
     sidecarPath = null;
   }
@@ -121,7 +121,7 @@ async function loadCorpus(memoryDir, trustedPaths, restricted = true) {
     if (!fname.endsWith('.md') || fname === 'MEMORY.md') continue;
     let resolved;
     try {
-      resolved = ensureSafePath(path.join(memoryDir, fname), trustedPaths, { restricted });
+      resolved = resolveSafePath(path.join(memoryDir, fname), trustedPaths, { restricted });
     } catch (err) {
       logger.debug(`memory-recall: path check failed for "${fname}": ${err.message}`);
       continue;

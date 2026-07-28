@@ -3,7 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import Agent from '../../core/agent.js';
-import { CONSTANTS } from '../../core/utils.js';
+import { LIMITS } from '../../support/payload.js';
 import logger from '../../core/logger.js';
 import { createTraceWriter } from '../../core/trace-writer.js';
 
@@ -62,7 +62,7 @@ export const execute = async ({ description, prompt, persona, id, background = f
       provider: agent.provider,
       tools: agent.tools,
       systemPrompt: persona,
-      maxCompletionTokens: agent.maxCompletionTokens || CONSTANTS.MAX_COMPLETION_TOKENS_SUBAGENT,
+      maxCompletionTokens: agent.maxCompletionTokens || LIMITS.maxCompletionTokensSubagent,
       maxTurns: 1000,
       isSubagent: true,
       restricted: agent.restricted,
