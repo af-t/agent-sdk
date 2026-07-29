@@ -38,7 +38,7 @@ describe('Agent: memoryHint injector', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
   });
@@ -139,7 +139,7 @@ describe('Agent: memoryIndex injector', () => {
   let tempDir;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'memory-test-'));

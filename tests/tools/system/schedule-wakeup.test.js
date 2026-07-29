@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import Agent from '../../../src/core/agent.js';
+import Agent from '../../../src/agent/agent.js';
 import { scheduleWakeup } from '../../../src/tools/system/schedule-wakeup.js';
 
 test('scheduleWakeup exposes its strict timer schema', () => {

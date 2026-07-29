@@ -13,7 +13,7 @@ describe('createAgent', () => {
   before(async () => {
     const indexMod = await import('../src/index.js');
     createAgent = indexMod.default;
-    const agentMod = await import('../src/core/agent.js');
+    const agentMod = await import('../src/agent/agent.js');
     Agent = agentMod.default;
     const registryMod = await import('../src/registries/tool-registry.js');
     ToolRegistry = registryMod.ToolRegistry;
@@ -209,9 +209,9 @@ describe('createAgent', () => {
     assert.ok(result.includes('package.json') || result.includes('src'), 'result should list project files');
   });
 
-  it('agent.use() registers a callable tool', async () => {
+  it('agent.registerTools() registers a callable tool', async () => {
     const agent = await createAgent();
-    agent.use({
+    agent.registerTools({
       name: 'PingTool',
       description: 'test tool',
       inputSchema: { type: 'object', properties: {}, required: [] },
@@ -223,7 +223,7 @@ describe('createAgent', () => {
 
   it('two agents have independent tool registries', async () => {
     const [agent1, agent2] = await Promise.all([createAgent(), createAgent()]);
-    agent1.use({
+    agent1.registerTools({
       name: 'OnlyAgent1Tool',
       description: 'test',
       inputSchema: { type: 'object', properties: {}, required: [] },

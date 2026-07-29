@@ -40,7 +40,7 @@ describe('Agent: parallel tool scheduler', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
   });
@@ -61,7 +61,7 @@ describe('Agent: parallel tool scheduler', () => {
     let active = 0;
     let maxActive = 0;
     const agent = new Agent({ apiKey: 'sk-test' });
-    agent.use({
+    agent.registerTools({
       name: 'SlowSafe',
       description: 'sleeps',
       inputSchema: { type: 'object', properties: { id: { type: 'number' } } },
@@ -89,7 +89,7 @@ describe('Agent: parallel tool scheduler', () => {
     );
 
     const agent = new Agent({ apiKey: 'sk-test' });
-    agent.use({
+    agent.registerTools({
       name: 'OrderedSafe',
       description: 'sleeps then returns label',
       inputSchema: {
@@ -130,7 +130,7 @@ describe('Agent: parallel tool scheduler', () => {
       await new Promise((r) => setTimeout(r, 50));
       active--;
     };
-    agent.use({ name: 'Sleeper', description: 'd', inputSchema: {}, execute: sleep });
+    agent.registerTools({ name: 'Sleeper', description: 'd', inputSchema: {}, execute: sleep });
 
     await agent.run('go');
     // Deterministic concurrency check instead of wall-clock timing (flaky under CPU load).
@@ -148,7 +148,7 @@ describe('Agent: parallel tool scheduler', () => {
     );
 
     const agent = new Agent({ apiKey: 'sk-test' });
-    agent.use({
+    agent.registerTools({
       name: 'MaybeThrow',
       description: 'maybe throws',
       inputSchema: { type: 'object', properties: { throw: { type: 'boolean' } } },

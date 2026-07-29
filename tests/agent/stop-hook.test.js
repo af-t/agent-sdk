@@ -1,7 +1,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
-import Agent from '../../src/core/agent.js';
+import Agent from '../../src/agent/agent.js';
 
 const NUDGE_NEEDLE = 'no response and no tool call';
 
@@ -171,7 +171,7 @@ describe('Agent: stop hooks & empty-turn recovery', () => {
 
   it('resets the recovery budget after a successful tool turn', async () => {
     const agent = new Agent({ apiKey: 'sk-test', emptyTurnRecovery: { retries: 1 } });
-    agent.use({
+    agent.registerTools({
       name: 'Probe',
       description: 'probe',
       inputSchema: { type: 'object', properties: {}, required: [] },

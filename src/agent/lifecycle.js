@@ -7,6 +7,10 @@ const VALID_INJECTOR_SCOPES = new Set(['first-turn', 'per-turn']);
 // loop the run forever.
 const MAX_STOP_RECOVERY = 8;
 
+const DEFAULT_EMPTY_TURN_RETRIES = 2;
+const DEFAULT_EMPTY_TURN_NUDGE =
+  'Your previous turn produced reasoning but no response and no tool call. Provide your final answer now, or call a tool to proceed.';
+
 function validateInjector({ name, scope, run }) {
   if (typeof name !== 'string' || name.length === 0) {
     throw new ConfigError('Injector name must be a non-empty string');
@@ -24,6 +28,49 @@ function validateInjector({ name, scope, run }) {
 // keyed on scope and name together.
 function injectorKey(scope, name) {
   return `${scope}:${name}`;
+}
+
+// The built-in stop hook, on unless the options or the environment turn it off.
+// It recovers a terminal turn whose content is empty (only reasoning, no tool
+// call), escalating raw retry x N to a single nudge and then giving up. A
+// non-retryable error on a retry (a 400 history-schema error, say) jumps
+// straight to the nudge. It always runs after the caller's own stop hooks, which
+// a shared hook list cannot express, so the agent holds it and hands it to
+// resolveStop per terminal turn.
+export function createEmptyTurnRecoveryHook(emptyTurnRecovery, config) {
+  let enabled = true;
+  let retries = DEFAULT_EMPTY_TURN_RETRIES;
+  let nudge = DEFAULT_EMPTY_TURN_NUDGE;
+
+  if (emptyTurnRecovery === false) {
+    enabled = false;
+  } else if (emptyTurnRecovery && typeof emptyTurnRecovery === 'object') {
+    if (emptyTurnRecovery.enabled !== undefined) enabled = !!emptyTurnRecovery.enabled;
+    if (emptyTurnRecovery.retries !== undefined) retries = parseInt(emptyTurnRecovery.retries);
+    if (typeof emptyTurnRecovery.nudge === 'string' && emptyTurnRecovery.nudge.trim().length > 0) {
+      nudge = emptyTurnRecovery.nudge;
+    }
+  } else if (emptyTurnRecovery === undefined) {
+    if (config.emptyTurnRecovery !== undefined) enabled = config.emptyTurnRecovery;
+    if (config.emptyTurnRetries !== undefined) retries = config.emptyTurnRetries;
+  }
+  if (Number.isNaN(retries) || retries < 0) retries = DEFAULT_EMPTY_TURN_RETRIES;
+  if (!enabled) return null;
+
+  // The configured nudge is just the inner text; wrap it as a system-reminder so
+  // the model reads it as framework guidance, not a user turn (consistent with
+  // how injectors and background-exit drains surface machine-generated messages).
+  const prompt = `<system-reminder>\n${nudge}\n</system-reminder>`;
+  return function emptyTurnRecovery({ content, attempt, lastError }) {
+    const empty = content == null || String(content).trim() === '';
+    if (!empty) return undefined; // non-empty terminal turn: allow normal stop
+    if (lastError) {
+      return attempt > retries ? { action: 'stop' } : { action: 'continue', prompt };
+    }
+    if (attempt < retries) return { action: 'retry' };
+    if (attempt === retries) return { action: 'continue', prompt };
+    return { action: 'stop' };
+  };
 }
 
 // Owns the run's injectors and request/stop hooks: registration, disposal,

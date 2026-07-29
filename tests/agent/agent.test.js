@@ -25,13 +25,146 @@ function makeJsonResponse(body) {
   return { ok: true, status: 200, text: async () => text };
 }
 
+// A logger whose children keep writing into one shared array, so a test can see
+// which components were built from the logger the caller handed in.
+function makeRecordingLogger(records, bindings = {}) {
+  const write =
+    (level) =>
+    (context = {}, message = '') =>
+      records.push({ level, ...bindings, ...context, message });
+  return {
+    debug: write('debug'),
+    info: write('info'),
+    warn: write('warn'),
+    error: write('error'),
+    child: (extra = {}) => makeRecordingLogger(records, { ...bindings, ...extra }),
+  };
+}
+
+describe('Agent facade contract', () => {
+  let Agent;
+  let createAgent;
+  let createAgentNamed;
+  let originalFetch;
+
+  const echoTool = {
+    name: 'echo',
+    description: 'echo the message back',
+    inputSchema: { type: 'object', properties: { msg: { type: 'string' } } },
+    execute: async ({ msg }) => msg,
+  };
+
+  before(async () => {
+    Agent = (await import('../../src/agent/agent.js')).default;
+    const indexMod = await import('../../src/index.js');
+    createAgent = indexMod.default;
+    createAgentNamed = indexMod.createAgent;
+    originalFetch = global.fetch;
+  });
+
+  after(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('is exported from the factory module as both the default and a named export', () => {
+    assert.equal(typeof createAgent, 'function');
+    assert.equal(createAgentNamed, createAgent);
+  });
+
+  it('registers tools through registerTools and no longer answers to use()', async () => {
+    global.fetch = async () =>
+      makeJsonResponse({
+        choices: [{ message: { content: 'done', reasoning: null, tool_calls: null } }],
+        usage: { cost: 0, total_tokens: 1 },
+      });
+
+    const records = [];
+    const agent = await createAgent({
+      apiKey: 'test-key',
+      model: 'test/model',
+      logger: makeRecordingLogger(records),
+    });
+
+    assert.equal(agent.registerTools([echoTool]), agent, 'registerTools returns the agent for chaining');
+    assert.equal(typeof agent.use, 'undefined');
+    assert.ok(agent.tools.listTools().some((tool) => tool.name === 'echo'));
+    assert.equal(await agent.run('hello'), 'done');
+  });
+
+  it('registers a single tool passed on its own', async () => {
+    const agent = new Agent({ apiKey: 'test-key', model: 'test/model' });
+    agent.registerTools(echoTool);
+    assert.deepEqual(
+      agent.tools.listTools().map((tool) => tool.name),
+      ['echo'],
+    );
+  });
+
+  it('exposes the collaborators it delegates to', () => {
+    const agent = new Agent({ apiKey: 'test-key', model: 'test/model' });
+    assert.equal(typeof agent.requestClient.request, 'function');
+    assert.equal(typeof agent.lifecycle.registerInjector, 'function');
+    assert.equal(typeof agent.toolExecutor.execute, 'function');
+    assert.equal(typeof agent.backgroundJobs.register, 'function');
+    assert.equal(typeof agent.runLoop.run, 'function');
+    assert.equal(typeof agent.fileState.get, 'function');
+  });
+
+  it('builds every collaborator from one logger lineage', async (t) => {
+    global.fetch = async () =>
+      makeJsonResponse({
+        choices: [
+          {
+            message: {
+              content: null,
+              reasoning: null,
+              tool_calls: [{ id: 'c1', type: 'function', function: { name: 'echo', arguments: '{"msg":"hi"}' } }],
+            },
+          },
+        ],
+        usage: { cost: 0, total_tokens: 1 },
+      });
+
+    const records = [];
+    const agent = await createAgent({
+      apiKey: 'test-key',
+      model: 'test/model',
+      maxTurns: 1,
+      logger: makeRecordingLogger(records),
+    });
+    t.after(() => agent.cleanup());
+    agent.registerTools([echoTool]);
+
+    // One turn against a stubbed provider, capped so the run loop also warns.
+    await agent.run('hello');
+
+    const components = new Set(records.map((record) => record.component));
+    for (const component of ['requestClient', 'runLoop']) {
+      assert.ok(components.has(component), `expected a ${component} record in the caller's logger`);
+    }
+
+    // The collaborators that only log on failure still hold a logger from the
+    // same lineage, so writing through one lands in the caller's records.
+    agent.logger.info({ component: 'agent' }, 'from the agent');
+    agent.lifecycle.logger.info({}, 'from lifecycle');
+    agent.toolExecutor.logger.info({}, 'from the tool executor');
+    agent.backgroundJobs.logger.info({}, 'from background jobs');
+    agent.tools.logger.info({}, 'from the tool registry');
+    agent.skillRegistry.logger.info({}, 'from the skill registry');
+    const later = new Set(records.map((record) => record.component));
+    for (const component of ['agent', 'lifecycle', 'toolExecutor', 'backgroundJobs', 'toolRegistry', 'skillRegistry']) {
+      assert.ok(later.has(component), `expected a ${component} record in the caller's logger`);
+    }
+  });
+});
+
 describe('Agent', () => {
   let Agent;
   let ToolRegistry;
 
   before(async () => {
     // We'll import with key present since env always has it
-    const agentMod = await import('../../src/core/agent.js');
+    const agentMod = await import('../../src/agent/agent.js');
     Agent = agentMod.default;
     const registryMod = await import('../../src/registries/tool-registry.js');
     ToolRegistry = registryMod.ToolRegistry;
@@ -148,32 +281,6 @@ describe('Agent', () => {
     });
   });
 
-  describe('use()', () => {
-    it('registers a single tool', () => {
-      const agent = new Agent({ apiKey: 'sk-key' });
-      const tool = {
-        name: 'my_tool',
-        description: 'My custom tool',
-        inputSchema: { type: 'object', properties: {} },
-        execute: async () => 'done',
-      };
-      agent.use(tool);
-      const tools = agent.tools.listTools();
-      assert.equal(tools.length, 1);
-      assert.equal(tools[0].name, 'my_tool');
-    });
-
-    it('registers multiple tools from an array', () => {
-      const agent = new Agent({ apiKey: 'sk-key' });
-      const tools = [
-        { name: 'a', description: '', inputSchema: {}, execute: async () => {} },
-        { name: 'b', description: '', inputSchema: {}, execute: async () => {} },
-      ];
-      agent.use(tools);
-      assert.equal(agent.tools.listTools().length, 2);
-    });
-  });
-
   describe('usage tracking', () => {
     it('initializes usage with cost and tokens at 0', () => {
       const agent = new Agent({ apiKey: 'sk-key' });
@@ -212,11 +319,50 @@ describe('Agent', () => {
   });
 
   describe('fileState', () => {
-    it('initializes fileState as an empty Map and currentTurn to 0', () => {
+    it('starts empty, keeps its entries private, and starts at turn 0', () => {
       const agent = new Agent({ apiKey: 'sk-key' });
-      assert.ok(agent.fileState instanceof Map);
       assert.equal(agent.fileState.size, 0);
       assert.equal(agent.currentTurn, 0);
+      // The file tools read and write entries; nothing else gets to walk or
+      // rewrite the whole map behind the read-before-edit guard's back.
+      for (const method of ['get', 'set', 'has', 'clear']) {
+        assert.equal(typeof agent.fileState[method], 'function', `fileState.${method} should be callable`);
+      }
+      assert.equal(agent.fileState.delete, undefined);
+      assert.equal(agent.fileState.entries, undefined);
+    });
+
+    it('carries the read-before-edit guard for the real file tools', async (t) => {
+      const { readFile } = await import('../../src/tools/files/read-file.js');
+      const { editFile } = await import('../../src/tools/files/edit-file.js');
+      const agent = new Agent({ apiKey: 'sk-key' });
+      const dir = createTestTempDir(t, 'sdk-file-state-');
+      agent.trustedPaths.add(fs.realpathSync(dir));
+      const file = path.join(fs.realpathSync(dir), 'notes.txt');
+      fs.writeFileSync(file, 'alpha\nbeta\n');
+      const edit = { path: file, edits: [{ action: 'replace', oldText: 'beta', newText: 'gamma' }] };
+
+      // An unread file cannot be edited, whatever the edit asks for.
+      await assert.rejects(() => editFile.execute(edit, { agent }), /has not been read in this session/);
+
+      agent.currentTurn = 1;
+      const first = await readFile.execute({ path: file }, { agent });
+      assert.match(first, /alpha/);
+      assert.equal(agent.fileState.size, 1);
+
+      // The same range again comes back from context instead of the file.
+      assert.match(await readFile.execute({ path: file }, { agent }), /^\[CACHED\]/);
+
+      await editFile.execute(edit, { agent });
+      assert.equal(fs.readFileSync(file, 'utf8'), 'alpha\ngamma\n');
+
+      // Content changed behind the agent's back: the next edit has to re-read.
+      fs.writeFileSync(file, 'alpha\ndelta\n');
+      await assert.rejects(
+        () =>
+          editFile.execute({ path: file, edits: [{ action: 'replace', oldText: 'delta', newText: 'x' }] }, { agent }),
+        /was modified since last read/,
+      );
     });
 
     it('reset() clears fileState and resets currentTurn', () => {
@@ -240,7 +386,7 @@ describe('run(): non-streaming (no notify)', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
   });
@@ -280,7 +426,7 @@ describe('run(): streaming (with notify)', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
   });
@@ -323,7 +469,7 @@ describe('run(): streaming (with notify)', () => {
     };
 
     const agent = new Agent({ apiKey: 'sk-test' });
-    agent.use({
+    agent.registerTools({
       name: 'Echo',
       description: 'echo the message',
       inputSchema: { type: 'object', properties: { msg: { type: 'string' } }, required: ['msg'] },
@@ -373,7 +519,7 @@ describe('run(): maxTurns enforcement', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
   });
@@ -401,7 +547,7 @@ describe('run(): maxTurns enforcement', () => {
     };
 
     const agent = new Agent({ apiKey: 'sk-test', maxTurns: 2 });
-    agent.use({
+    agent.registerTools({
       name: 'Loop',
       description: 'loops',
       inputSchema: { type: 'object', properties: {}, required: [] },
@@ -419,7 +565,7 @@ describe('run(): cache_control placement', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
   });
@@ -483,7 +629,7 @@ describe('run(): cache_control placement', () => {
     };
 
     const agent = new Agent({ apiKey: 'sk-test' });
-    agent.use({
+    agent.registerTools({
       name: 'Probe',
       description: 'returns text',
       inputSchema: { type: 'object', properties: {}, required: [] },
@@ -530,7 +676,7 @@ describe('run(): AbortSignal', () => {
   let Agent;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
   });
 
@@ -547,7 +693,7 @@ describe('run(): message accumulation and reset', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
   });
@@ -600,7 +746,7 @@ describe('Agent: storagePaths option', () => {
   let Agent;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
   });
 
@@ -708,7 +854,7 @@ describe('Agent: cleanup()', () => {
   let Agent;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
   });
 
@@ -771,7 +917,7 @@ describe('run(): tool_call id normalization', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
   });
@@ -807,7 +953,7 @@ describe('run(): tool_call id normalization', () => {
 
     const agent = new Agent({ apiKey: 'sk-test' });
     let ctxId;
-    agent.use({
+    agent.registerTools({
       name: 'Probe',
       description: 'probe',
       inputSchema: { type: 'object', properties: {}, required: [] },
@@ -851,7 +997,7 @@ describe('run(): tool_call id normalization', () => {
     };
 
     const agent = new Agent({ apiKey: 'sk-test' });
-    agent.use({
+    agent.registerTools({
       name: 'Probe',
       description: 'probe',
       inputSchema: { type: 'object', properties: {}, required: [] },
@@ -870,7 +1016,7 @@ describe('run(): steering / pending requests', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
   });
@@ -911,7 +1057,7 @@ describe('run(): steering / pending requests', () => {
     const agent = new Agent({ apiKey: 'sk-test' });
     let observedRunning;
     let observedSteer;
-    agent.use({
+    agent.registerTools({
       name: 'Probe',
       description: 'probe',
       inputSchema: { type: 'object', properties: {}, required: [] },
@@ -952,7 +1098,7 @@ describe('run(): steering / pending requests', () => {
     };
     const agent = new Agent({ apiKey: 'sk-test' });
     let concurrent;
-    agent.use({
+    agent.registerTools({
       name: 'Probe',
       description: 'probe',
       inputSchema: { type: 'object', properties: {}, required: [] },
@@ -974,7 +1120,7 @@ describe('run(): steering applied in-loop', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
   });
@@ -1009,7 +1155,7 @@ describe('run(): steering applied in-loop', () => {
       });
     };
     const agent = new Agent({ apiKey: 'sk-test' });
-    agent.use({
+    agent.registerTools({
       name: 'Probe',
       description: 'probe',
       inputSchema: { type: 'object', properties: {}, required: [] },
@@ -1038,7 +1184,7 @@ describe('run(): steering applied in-loop', () => {
       return makeSseResponse(['data: {"choices":[{"delta":{"content":"done"}}],"usage":null}', 'data: [DONE]']);
     };
     const agent = new Agent({ apiKey: 'sk-test' });
-    agent.use({
+    agent.registerTools({
       name: 'Probe',
       description: 'probe',
       inputSchema: { type: 'object', properties: {}, required: [] },
@@ -1109,7 +1255,7 @@ describe('run(): steering applied in-loop', () => {
     };
 
     const agent = new Agent({ apiKey: 'sk-test', maxTurns: 2 });
-    agent.use({
+    agent.registerTools({
       name: 'RichTool',
       description: 'returns rich multimodal array',
       inputSchema: { type: 'object', properties: {} },
@@ -1272,7 +1418,7 @@ describe('run(): steering applied in-loop', () => {
     let originalFetch;
 
     before(async () => {
-      const mod = await import('../../src/core/agent.js');
+      const mod = await import('../../src/agent/agent.js');
       Agent = mod.default;
       originalFetch = global.fetch;
     });
@@ -1322,7 +1468,7 @@ describe('Agent dialect + headers', () => {
   let originalFetch;
 
   before(async () => {
-    Agent = (await import('../../src/core/agent.js')).default;
+    Agent = (await import('../../src/agent/agent.js')).default;
   });
   beforeEach(() => {
     originalFetch = global.fetch;
@@ -1374,7 +1520,7 @@ describe('Agent payload dialect shaping', () => {
   let originalFetch;
 
   before(async () => {
-    Agent = (await import('../../src/core/agent.js')).default;
+    Agent = (await import('../../src/agent/agent.js')).default;
   });
   beforeEach(() => {
     originalFetch = global.fetch;

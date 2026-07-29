@@ -17,7 +17,7 @@ describe('Agent: tool_start / tool_end notify events', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
   });
@@ -40,7 +40,7 @@ describe('Agent: tool_start / tool_end notify events', () => {
     };
 
     const agent = new Agent({ apiKey: 'sk-test' });
-    agent.use({
+    agent.registerTools({
       name: 'Echo',
       description: 'echo',
       inputSchema: { type: 'object', properties: { msg: { type: 'string' } } },
@@ -79,7 +79,7 @@ describe('Agent: tool_start / tool_end notify events', () => {
     };
 
     const agent = new Agent({ apiKey: 'sk-test' });
-    agent.use({
+    agent.registerTools({
       name: 'Boom',
       description: 'd',
       inputSchema: {},
@@ -110,7 +110,7 @@ describe('Agent: tool_start / tool_end notify events', () => {
     };
 
     const agent = new Agent({ apiKey: 'sk-test' });
-    agent.use({
+    agent.registerTools({
       name: 'Ok',
       description: 'd',
       inputSchema: {},

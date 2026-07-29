@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import Agent from '../../src/core/agent.js';
+import Agent from '../../src/agent/agent.js';
 
 process.env.OPENROUTER_API_KEY = 'sk-test-key';
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import Agent from '../../src/core/agent.js';
+import Agent from '../../src/agent/agent.js';
 import {
   createCopilot,
   extractGoal,
@@ -354,7 +354,7 @@ test('end-to-end: real Agent run, tool error triggers a steer', async () => {
   try {
     const primary = new Agent({ apiKey: 'x', model: 'm' });
     // turn 1: call a failing tool; turn 2: finish
-    primary.use({
+    primary.registerTools({
       name: 'Boom',
       description: 'always throws. Side effect: none',
       inputSchema: { type: 'object', properties: {} },

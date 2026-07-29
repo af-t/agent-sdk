@@ -1,23 +1,32 @@
 import { fileURLToPath } from 'node:url';
 import { resolveApiDialect } from '../support/http.js';
-import { resolveSafePath } from '../support/path-safety.js';
 import { degradePayload, LIMITS, sanitizeAppName } from '../support/payload.js';
-import { RequestClient } from '../agent/request-client.js';
-import { Lifecycle } from '../agent/lifecycle.js';
-import { ToolExecutor } from '../agent/tool-executor.js';
-import { BackgroundJobs } from '../agent/background-jobs.js';
-import { drainBackgroundExits, RunLoop } from '../agent/run-loop.js';
-import { sanitizeAssistantReasoning } from './reasoning.js';
+import { RequestClient } from './request-client.js';
+import { createEmptyTurnRecoveryHook, Lifecycle } from './lifecycle.js';
+import { ToolExecutor } from './tool-executor.js';
+import { BackgroundJobs } from './background-jobs.js';
+import { drainBackgroundExits, RunLoop } from './run-loop.js';
+import { FileState } from './file-state.js';
+import { resolveModelSettings, resolveProviderRouting } from './settings.js';
+import {
+  contextFilesInjector,
+  defaultDateInjector,
+  memoryHintInjector,
+  memoryIndexInjector,
+  pluginInstructionsInjector,
+  skillListInjector,
+} from './injectors.js';
+import { sanitizeAssistantReasoning } from '../core/reasoning.js';
 import { ToolRegistry } from '../registries/tool-registry.js';
 import { ConfigError } from '../support/errors.js';
-import { createSessionRecorder } from './session-recorder.js';
+import { createSessionRecorder } from '../core/session-recorder.js';
 import { loadEnvironmentConfig } from '../config/environment.js';
 import { SkillRegistry } from '../registries/skill-registry.js';
 import { resolveLogger } from '../support/logger.js';
 import crypto from 'node:crypto';
 import os from 'node:os';
 import fs from 'node:fs';
-import { readFile, readdir, rm, unlink } from 'node:fs/promises';
+import { readdir, rm, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
 const __dirname = import.meta.dirname || path.dirname(fileURLToPath(import.meta.url));
@@ -36,10 +45,11 @@ const RICH_CONTENT_DROPPED =
 
 const DEFAULT_MAX_TURNS = 25;
 
-const DEFAULT_EMPTY_TURN_RETRIES = 2;
-const DEFAULT_EMPTY_TURN_NUDGE =
-  'Your previous turn produced reasoning but no response and no tool call. Provide your final answer now, or call a tool to proceed.';
-
+// The agent a caller holds. It owns the conversation, the settings each request
+// is built from, and the file and subagent state that built-in tools reach
+// through `ctx.agent`. Everything else is delegated to a collaborator built in
+// the constructor. The run loop drives a run and calls back here for the payload
+// and the rich-content bookkeeping, both of which need the whole conversation.
 class Agent {
   #apiKey;
   #baseUrl;
@@ -74,12 +84,8 @@ class Agent {
       model,
       embeddingModel,
       tools,
-      order,
-      only,
-      provider,
       systemPrompt,
       maxTurns,
-      effort,
       maxToolOutputChars,
       injectors,
       contextFiles,
@@ -88,18 +94,6 @@ class Agent {
       memoryTypes,
       isSubagent,
       restricted,
-      temperature,
-      topP,
-      minP,
-      topK,
-      frequencyPenalty,
-      presencePenalty,
-      repetitionPenalty,
-      seed,
-      maxCompletionTokens,
-      responseFormat,
-      stop,
-      reasoning,
       autoWake,
       autoWakeNotify,
       autoWakeOptions,
@@ -133,130 +127,24 @@ class Agent {
       retryOptions: { attempts: config.maxRetries },
     });
     this.lifecycle = new Lifecycle({ logger: this.logger });
+    this.#recoveryHook = createEmptyTurnRecoveryHook(emptyTurnRecovery, config);
 
-    // Empty-turn recovery is a built-in stop hook (default on). It re-sends the
-    // same payload (raw retry) then nudges, so a terminal turn that carried only
-    // reasoning (content empty, no tool calls) does not silently end the run.
-    let recoveryEnabled = true;
-    let recoveryRetries = DEFAULT_EMPTY_TURN_RETRIES;
-    let recoveryNudge = DEFAULT_EMPTY_TURN_NUDGE;
-    if (emptyTurnRecovery === false) {
-      recoveryEnabled = false;
-    } else if (emptyTurnRecovery && typeof emptyTurnRecovery === 'object') {
-      if (emptyTurnRecovery.enabled !== undefined) recoveryEnabled = !!emptyTurnRecovery.enabled;
-      if (emptyTurnRecovery.retries !== undefined) recoveryRetries = parseInt(emptyTurnRecovery.retries);
-      if (typeof emptyTurnRecovery.nudge === 'string' && emptyTurnRecovery.nudge.trim().length > 0) {
-        recoveryNudge = emptyTurnRecovery.nudge;
-      }
-    } else if (emptyTurnRecovery === undefined) {
-      if (config.emptyTurnRecovery !== undefined) recoveryEnabled = config.emptyTurnRecovery;
-      if (config.emptyTurnRetries !== undefined) recoveryRetries = config.emptyTurnRetries;
-    }
-    if (Number.isNaN(recoveryRetries) || recoveryRetries < 0) recoveryRetries = DEFAULT_EMPTY_TURN_RETRIES;
-    this.#recoveryHook = recoveryEnabled
-      ? makeEmptyTurnRecoveryHook({ retries: recoveryRetries, nudge: recoveryNudge })
-      : null;
     this.model = model;
     this.embeddingModel = embeddingModel ?? config.embeddingModel ?? 'openai/text-embedding-3-small';
     this.isSubagent = !!isSubagent;
-
-    const resolvedOrder = order || provider?.order || config.provider.order;
-    const resolvedOnly = only || provider?.only || config.provider.only;
-    const resolvedIgnore = provider?.ignore || provider?.avoid || config.provider.avoid;
-    const resolvedSort = provider?.sort || config.provider.sort;
-    const resolvedAllowFallbacks =
-      provider?.allowFallbacks !== undefined ? provider.allowFallbacks : config.provider.allowFallbacks;
-    const resolvedRequireParameters =
-      provider?.requireParameters !== undefined ? provider.requireParameters : config.provider.requireParameters;
-    const resolvedDataCollection =
-      provider?.dataCollection !== undefined ? provider.dataCollection : config.provider.dataCollection;
-
-    this.provider = {
-      order: resolvedOrder,
-      only: resolvedOnly,
-      ignore: resolvedIgnore,
-      avoid: resolvedIgnore,
-      sort: resolvedSort,
-      allowFallbacks: resolvedAllowFallbacks,
-      requireParameters: resolvedRequireParameters,
-      dataCollection: resolvedDataCollection,
-    };
+    this.provider = resolveProviderRouting(options, config);
 
     this.messages = [];
     this.tools = tools || new ToolRegistry({ restricted: this.restricted, logger: this.logger });
     this.toolExecutor = new ToolExecutor({ registry: this.tools, logger: this.logger });
 
-    this.temperature =
-      temperature !== undefined ? temperature : config.temperature !== undefined ? config.temperature : undefined;
-    this.topP = topP !== undefined ? topP : config.topP;
-    this.minP = minP !== undefined ? minP : config.minP;
-    this.topK = topK !== undefined ? topK : config.topK;
-    this.frequencyPenalty =
-      frequencyPenalty !== undefined
-        ? frequencyPenalty
-        : config.frequencyPenalty !== undefined
-          ? config.frequencyPenalty
-          : undefined;
-    this.presencePenalty =
-      presencePenalty !== undefined
-        ? presencePenalty
-        : config.presencePenalty !== undefined
-          ? config.presencePenalty
-          : undefined;
-    this.repetitionPenalty =
-      repetitionPenalty !== undefined
-        ? repetitionPenalty
-        : config.repetitionPenalty !== undefined
-          ? config.repetitionPenalty
-          : undefined;
-    this.seed = seed !== undefined ? seed : config.seed;
-
-    const resolvedMaxCompletionTokens =
-      maxCompletionTokens !== undefined ? maxCompletionTokens : config.maxCompletionTokens;
-    this.maxCompletionTokens = resolvedMaxCompletionTokens;
-
-    this.responseFormat = responseFormat;
-    this.stop = stop;
-
-    // Resolve effort parameter with proper fallback order (explicit reasoning.effort > explicit effort > config reasoning effort > 'high')
-    let resolvedEffort = config.reasoning.effort;
-    if (effort !== undefined) {
-      resolvedEffort = effort;
-    }
-    if (reasoning && typeof reasoning === 'object' && reasoning.effort !== undefined) {
-      resolvedEffort = reasoning.effort;
-    }
-
-    this.reasoning = undefined;
-    if (reasoning && typeof reasoning === 'object') {
-      this.reasoning = {
-        effort: resolvedEffort !== undefined ? resolvedEffort : config.reasoning.effort,
-        maxTokens:
-          reasoning.maxTokens !== undefined
-            ? reasoning.maxTokens
-            : config.reasoning.maxTokens !== undefined
-              ? config.reasoning.maxTokens
-              : undefined,
-        exclude: reasoning.exclude !== undefined ? reasoning.exclude : config.reasoning.exclude,
-        enabled: reasoning.enabled !== undefined ? reasoning.enabled : config.reasoning.enabled,
-      };
-    } else if (
-      resolvedEffort !== undefined ||
-      config.reasoning.maxTokens !== undefined ||
-      config.reasoning.exclude !== undefined ||
-      config.reasoning.enabled !== undefined
-    ) {
-      this.reasoning = {
-        effort: resolvedEffort,
-        maxTokens: config.reasoning.maxTokens,
-        exclude: config.reasoning.exclude,
-        enabled: config.reasoning.enabled,
-      };
-    }
+    // Sampling, reasoning and completion limits land as public fields, so a
+    // caller can change any of them between runs.
+    Object.assign(this, resolveModelSettings(options, config));
 
     this.usage = { cost: 0, tokens: 0, cachedTokens: 0, cacheWriteTokens: 0 };
     this.subagents = new Map();
-    this.fileState = new Map();
+    this.fileState = new FileState();
     this.currentTurn = 0;
     // Max request turns before forcing a break.
     // Set to 0 for unlimited (used by subagents via delegateTask).
@@ -416,6 +304,11 @@ class Agent {
     return this.runLoop.isRunning;
   }
 
+  registerTools(tools) {
+    this.tools.registerMany(Array.isArray(tools) ? tools : [tools]);
+    return this;
+  }
+
   // Queue a prompt for the active run loop. Non-blocking; returns false when
   // idle (no loop to steer) or when the prompt is empty.
   steer(prompt) {
@@ -516,7 +409,7 @@ class Agent {
       logger: childLogger,
       skillRegistry: this.skillRegistry,
     });
-    // keep in sync with sampling params in constructor
+    // keep in sync with sampling params in resolveModelSettings
     const carry = [
       'temperature',
       'topP',
@@ -788,16 +681,6 @@ class Agent {
     }
   }
 
-  use(tools) {
-    if (Array.isArray(tools)) {
-      for (const tool of tools) {
-        this.tools.register(tool);
-      }
-      return;
-    }
-    this.tools.register(tools);
-  }
-
   reset() {
     this.messages = [];
     this.usage = { cost: 0, tokens: 0, cachedTokens: 0, cacheWriteTokens: 0 };
@@ -930,9 +813,9 @@ class Agent {
     return this.#multimodalUnsupported;
   }
 
-  // Built-in empty-turn recovery. It always runs after user stop hooks, which a
-  // shared hook list cannot express, so it stays here and is handed to the
-  // lifecycle per terminal turn.
+  // Built-in empty-turn recovery, or null when it is switched off. It always
+  // runs after user stop hooks, which a shared hook list cannot express, so it
+  // stays here and is handed to the lifecycle per terminal turn.
   get _recoveryHook() {
     return this.#recoveryHook;
   }
@@ -988,149 +871,6 @@ class Agent {
       }
     }
   }
-}
-
-// Built-in stop hook: recover a terminal turn whose content is empty (only
-// reasoning, no tool call). Escalates raw retry x N -> single nudge -> give up.
-// A non-retryable error on a retry (e.g. a 400 history-schema error) jumps
-// straight to the nudge.
-function makeEmptyTurnRecoveryHook({ retries, nudge }) {
-  // The configured nudge is just the inner text; wrap it as a system-reminder so
-  // the model reads it as framework guidance, not a user turn (consistent with
-  // how injectors and background-exit drains surface machine-generated messages).
-  const prompt = `<system-reminder>\n${nudge}\n</system-reminder>`;
-  return function emptyTurnRecovery({ content, attempt, lastError }) {
-    const empty = content == null || String(content).trim() === '';
-    if (!empty) return undefined; // non-empty terminal turn: allow normal stop
-    if (lastError) {
-      return attempt > retries ? { action: 'stop' } : { action: 'continue', prompt };
-    }
-    if (attempt < retries) return { action: 'retry' };
-    if (attempt === retries) return { action: 'continue', prompt };
-    return { action: 'stop' };
-  };
-}
-
-function defaultDateInjector() {
-  const now = new Date();
-  const iso = now.toISOString();
-  const date = iso.slice(0, 10);
-  const time = iso.slice(11, 16);
-  return `Current date: ${date} ${time} UTC`;
-}
-
-function contextFilesInjector(filePaths, trustedPathsFn) {
-  return async function () {
-    const trustedPaths = trustedPathsFn?.() ?? new Set();
-    const parts = [];
-    for (const filePath of filePaths) {
-      let resolved;
-      try {
-        resolved = resolveSafePath(filePath, trustedPaths);
-      } catch {
-        // Path traversal or outside root: skip silently.
-        continue;
-      }
-      let content;
-      try {
-        content = await readFile(resolved, 'utf8');
-      } catch {
-        // File missing: skip silently.
-        continue;
-      }
-      if (filePaths.length > 1) {
-        const basename = path.basename(resolved);
-        parts.push(`## ${basename}\n${content}`);
-      } else {
-        parts.push(content);
-      }
-    }
-    return parts.join('\n\n');
-  };
-}
-
-function memoryIndexInjector(memoryDirFn, trustedPathsFn) {
-  return async function () {
-    const memoryDir = memoryDirFn();
-    const trustedPaths = trustedPathsFn?.() ?? new Set();
-    let resolved;
-    try {
-      resolved = resolveSafePath(path.join(memoryDir, 'MEMORY.md'), trustedPaths);
-    } catch {
-      return '';
-    }
-    try {
-      const content = await readFile(resolved, 'utf8');
-      if (!content.trim()) return '';
-      return `## Memory index\n${content}`;
-    } catch {
-      return '';
-    }
-  };
-}
-
-function memoryHintInjector(memoryDirFn, memoryTypesFn) {
-  return function () {
-    const memoryDir = memoryDirFn();
-    const types = memoryTypesFn();
-    const typeLines = Object.entries(types)
-      .map(([k, v]) => `- **${k}**: ${v}`)
-      .join('\n');
-    return [
-      '## Memory system',
-      `Memory files live at \`${memoryDir}/\`. Use writeFile, readFile, and editFile to manage them.`,
-      '',
-      '### Available types',
-      typeLines,
-      '',
-      'You **MUST** load the `using-memory` skill (via the loadSkill tool with action="load",',
-      'argument="using-memory") BEFORE the first memory write or update in this conversation,',
-      'unless you have already loaded it. The skill defines file format, naming conventions,',
-      'and the MEMORY.md index protocol, and you are required to follow it exactly.',
-    ].join('\n');
-  };
-}
-
-function skillListInjector(skillRegistry) {
-  return async ({ logger }) => {
-    try {
-      await skillRegistry._ensureDiscovered();
-    } catch (err) {
-      logger.warn({ component: 'agent', injector: 'skillList', error: err }, 'Skill discovery failed');
-      return '';
-    }
-    const skills = skillRegistry.skills;
-    if (!skills || skills.size === 0) return '';
-    const lines = [];
-    for (const [name, skill] of skills) {
-      const desc = (skill.description || '').trim();
-      const truncated = desc.length > 120 ? desc.slice(0, 117) + '...' : desc;
-      lines.push(`- ${name}: ${truncated}`);
-    }
-    if (lines.length === 0) return '';
-    return (
-      `## Available skills\n${lines.join('\n')}\n\n` +
-      'When a skill is relevant to your current task, you **MUST** load it via the loadSkill tool ' +
-      '(action="load", argument=<skill name>) and follow its instructions and conventions exactly. ' +
-      'Do not invent alternative approaches or formats when a skill provides authoritative guidance ' +
-      'for the task at hand. Skill bodies are the source of truth for their respective domains.'
-    );
-  };
-}
-
-function pluginInstructionsInjector(skillRegistry) {
-  return async ({ logger }) => {
-    try {
-      await skillRegistry._ensureDiscovered();
-    } catch (err) {
-      logger.warn({ component: 'agent', injector: 'pluginInstructions', error: err }, 'Skill discovery failed');
-      return '';
-    }
-    const instructions = skillRegistry.getPluginInstructions();
-    if (!instructions || instructions.length === 0) return '';
-    const sections = instructions.map(({ plugin, content }) => `### ${plugin}\n${content}`);
-    return `## Plugin instructions\n\n${sections.join('\n\n')}`;
-  };
 }
 
 export default Agent;

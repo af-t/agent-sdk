@@ -23,7 +23,7 @@ describe('Agent: multimodal degradation', () => {
   let realFetch;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     realFetch = globalThis.fetch;
   });

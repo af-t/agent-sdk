@@ -10,7 +10,7 @@ describe('Agent: abort propagation', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
   });
@@ -45,7 +45,7 @@ describe('Agent: abort propagation', () => {
     };
 
     const agent = new Agent({ apiKey: 'sk-test' });
-    agent.use({
+    agent.registerTools({
       name: 'SeesSignal',
       description: 'd',
       inputSchema: {},
@@ -85,7 +85,7 @@ describe('Agent: abort propagation', () => {
     };
 
     const agent = new Agent({ apiKey: 'sk-test' });
-    agent.use({
+    agent.registerTools({
       name: 'WaitForAbort',
       description: 'd',
       inputSchema: {},
@@ -131,7 +131,7 @@ describe('Agent: abort propagation', () => {
     };
 
     const agent = new Agent({ apiKey: 'sk-test' });
-    agent.use({
+    agent.registerTools({
       name: 'IgnoresSignal',
       description: 'd',
       inputSchema: {},

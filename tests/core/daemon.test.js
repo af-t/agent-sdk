@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { logger } from '../../src/core/logger.js';
-import Agent from '../../src/core/agent.js';
+import Agent from '../../src/agent/agent.js';
 import { createDaemon, createTimerSource } from '../../src/core/daemon.js';
 
 function fakeAgent({ running = false } = {}) {

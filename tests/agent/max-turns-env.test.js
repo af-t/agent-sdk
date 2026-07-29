@@ -9,7 +9,7 @@ describe('Agent MAX_TURNS env override', () => {
 
   before(async () => {
     process.env.OPENROUTER_MAX_TURNS = '0';
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
   });
 

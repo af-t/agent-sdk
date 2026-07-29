@@ -51,7 +51,7 @@ describe('Agent: injector registry', () => {
   let ConfigError;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     const errMod = await import('../../src/support/errors.js');
     ConfigError = errMod.ConfigError;
@@ -107,7 +107,7 @@ describe('Agent: first-turn vs per-turn semantics', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
   });
@@ -185,7 +185,7 @@ describe('Agent: builtin date injector', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
   });
@@ -227,7 +227,7 @@ describe('Agent: empty injectors yield no reminder block', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
   });
@@ -258,7 +258,7 @@ describe('Agent: cache_control preservation with injection', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
   });
@@ -336,7 +336,7 @@ describe('Agent: onBeforeRequest hook', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
   });
@@ -462,7 +462,7 @@ describe('Agent: async injectors', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
   });
@@ -498,7 +498,7 @@ describe('Agent: contextFiles first-turn injector', () => {
   const fixtureDir = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'fixtures', 'context-files');
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
   });
@@ -620,7 +620,7 @@ describe('Agent: skillList first-turn injector', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
   });
@@ -707,7 +707,7 @@ describe('Agent: pluginInstructions first-turn injector', () => {
   let pluginsDir;
 
   before(async () => {
-    Agent = (await import('../../src/core/agent.js')).default;
+    Agent = (await import('../../src/agent/agent.js')).default;
     originalFetch = global.fetch;
 
     pluginsDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'agent-plugins-test-'));

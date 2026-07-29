@@ -1,7 +1,7 @@
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import createAgent from '../../../src/index.js';
-import Agent from '../../../src/core/agent.js';
+import Agent from '../../../src/agent/agent.js';
 
 test('foreground delegateTask waits for subagent background jobs to finish', async () => {
   const parent = await createAgent({ apiKey: 'x' });

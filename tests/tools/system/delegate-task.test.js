@@ -78,7 +78,7 @@ describe('delegateTask execution', () => {
 
   before(async () => {
     mod = (await import('../../../src/tools/system/delegate-task.js')).delegateTask;
-    Agent = (await import('../../../src/core/agent.js')).default;
+    Agent = (await import('../../../src/agent/agent.js')).default;
   });
 
   after(() => {

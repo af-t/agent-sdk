@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import Agent from '../../src/core/agent.js';
+import Agent from '../../src/agent/agent.js';
 
 const NO_INJECTORS = {
   date: false,
@@ -38,7 +38,7 @@ function makeSend(onPayload) {
 
 function makeAgent(execute) {
   const agent = new Agent({ apiKey: 'sk-test', injectors: NO_INJECTORS });
-  agent.use({
+  agent.registerTools({
     name: 'T',
     description: 't',
     inputSchema: { type: 'object', properties: {} },

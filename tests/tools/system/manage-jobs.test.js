@@ -2,7 +2,7 @@ import { describe, it, test, mock } from 'node:test';
 /* eslint-disable prefer-const */
 import assert from 'node:assert/strict';
 
-import Agent from '../../../src/core/agent.js';
+import Agent from '../../../src/agent/agent.js';
 import createAgent from '../../../src/index.js';
 import { manageJobs } from '../../../src/tools/system/manage-jobs.js';
 import { createTestTempDir } from '../../support/temp.js';

@@ -142,7 +142,7 @@ test('Bug B: autoWakeNotify callback is invoked during auto-wake run', async () 
 
   // Use a tool call to generate non-turn_end events that #broadcast sends
   // to #notifyCallbacks (turn_end only goes to subscribedCallbacks).
-  agent.use({
+  agent.registerTools({
     name: 'ack',
     description: 'ack',
     inputSchema: { type: 'object', properties: {} },
@@ -193,7 +193,7 @@ test('Bug B: autoWakeNotify can be set after construction', async () => {
   agent.autoWakeNotify = (event) => events.push(event);
 
   // Use a tool call so the notify receives tool_start/tool_end events.
-  agent.use({
+  agent.registerTools({
     name: 'ack',
     description: 'ack',
     inputSchema: { type: 'object', properties: {} },
@@ -267,7 +267,7 @@ test('Bug B: autoWakeOptions are forwarded to auto-wake run()', async () => {
 test('events arriving while isRunning are drained during the run loop', async () => {
   const agent = await makeAgent({ autoWake: false });
 
-  agent.use({
+  agent.registerTools({
     name: 'trigger_exit',
     description: 'triggers a background exit',
     inputSchema: { type: 'object', properties: {} },
@@ -337,7 +337,7 @@ test('onBackgroundExit listeners do NOT fire during active run (events queued)',
     listenerCalls++;
   });
 
-  agent.use({
+  agent.registerTools({
     name: 'slow_tool',
     description: 'd',
     inputSchema: { type: 'object', properties: {} },
@@ -384,7 +384,7 @@ test('onBackgroundExit listeners do NOT fire during active run (events queued)',
 
 test('queued bg exit drains at run start, merged with the prompt (single reminder)', async () => {
   const agent = await makeAgent({ autoWake: false });
-  agent.use({
+  agent.registerTools({
     name: 'noop',
     description: 'd',
     inputSchema: { type: 'object', properties: {} },

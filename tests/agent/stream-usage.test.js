@@ -17,7 +17,7 @@ describe('Agent: streaming usage', () => {
   let originalFetch;
 
   before(async () => {
-    Agent = (await import('../../src/core/agent.js')).default;
+    Agent = (await import('../../src/agent/agent.js')).default;
     originalFetch = global.fetch;
   });
 

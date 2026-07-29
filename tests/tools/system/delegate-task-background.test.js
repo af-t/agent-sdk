@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 import createAgent from '../../../src/index.js';
-import Agent from '../../../src/core/agent.js';
+import Agent from '../../../src/agent/agent.js';
 import { createTestTempDir } from '../../support/temp.js';
 
 test('a delegateTask subagent inherits parent.restricted', async (t) => {

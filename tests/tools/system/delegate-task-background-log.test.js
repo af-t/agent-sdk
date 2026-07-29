@@ -12,7 +12,7 @@ describe('delegateTask background: log write failure does not crash the host', (
   let execute;
 
   before(async () => {
-    Agent = (await import('../../../src/core/agent.js')).default;
+    Agent = (await import('../../../src/agent/agent.js')).default;
     execute = (await import('../../../src/tools/system/delegate-task.js')).delegateTask.execute;
   });
 

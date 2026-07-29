@@ -39,7 +39,7 @@ describe('Agent: empty tool arguments (zero-parameter tools)', () => {
   let originalFetch;
 
   before(async () => {
-    const mod = await import('../../src/core/agent.js');
+    const mod = await import('../../src/agent/agent.js');
     Agent = mod.default;
     originalFetch = global.fetch;
   });
@@ -58,7 +58,7 @@ describe('Agent: empty tool arguments (zero-parameter tools)', () => {
       let executed = false;
       let receivedInput;
       const agent = new Agent({ apiKey: 'sk-test' });
-      agent.use({
+      agent.registerTools({
         name: 'NoArgs',
         description: 'takes no arguments',
         inputSchema: { type: 'object', properties: {}, required: [] },

@@ -25,7 +25,7 @@ test('a full-level run records request/response and applies redact', async (t) =
   const resource = { agent: undefined };
   t.after(() => resource.agent?.cleanup());
   const dir = createTestTempDir(t, 'agentfull-');
-  const Agent = (await import('../../src/core/agent.js')).default;
+  const Agent = (await import('../../src/agent/agent.js')).default;
   const orig = global.fetch;
   let n = 0;
   global.fetch = async () => {
@@ -61,7 +61,7 @@ test('a full-level run records request/response and applies redact', async (t) =
       },
     });
     const { agent } = resource;
-    agent.use({
+    agent.registerTools({
       name: 'Echo',
       description: 'echo',
       inputSchema: { type: 'object', properties: { msg: { type: 'string' } } },
@@ -89,10 +89,10 @@ test('a full-level run records request/response and applies redact', async (t) =
 });
 
 test('agent threads tool_call_id into the tool ctx', async () => {
-  const Agent = (await import('../../src/core/agent.js')).default;
+  const Agent = (await import('../../src/agent/agent.js')).default;
   const agent = new Agent({ apiKey: 'sk-test', injectors: NO_INJECTORS });
   let seenId;
-  agent.use({
+  agent.registerTools({
     name: 'Echo',
     description: 'echo',
     inputSchema: { type: 'object', properties: {} },
@@ -163,14 +163,14 @@ function fullFixtureLines() {
 }
 
 test('Agent.replay throws on a non-full recording', async (t) => {
-  const Agent = (await import('../../src/core/agent.js')).default;
+  const Agent = (await import('../../src/agent/agent.js')).default;
   const { file } = writeFullFixture(t, [{ t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' }]);
   const rec = await Recording.load(file);
   assert.throws(() => Agent.replay(rec), /full/);
 });
 
 test('Agent.replay reproduces a recorded run with zero network and recorded tool output', async (t) => {
-  const Agent = (await import('../../src/core/agent.js')).default;
+  const Agent = (await import('../../src/agent/agent.js')).default;
   const resource = { agent: undefined };
   t.after(() => resource.agent?.cleanup());
   const { file } = writeFullFixture(t, fullFixtureLines());
@@ -196,7 +196,7 @@ test('Agent.replay reproduces a recorded run with zero network and recorded tool
 });
 
 test('Agent.replay toolMode live re-executes tools against the provided registry', async (t) => {
-  const Agent = (await import('../../src/core/agent.js')).default;
+  const Agent = (await import('../../src/agent/agent.js')).default;
   const resource = { agent: undefined };
   t.after(() => resource.agent?.cleanup());
   const { file } = writeFullFixture(t, fullFixtureLines());
@@ -233,7 +233,7 @@ test('Agent.replay toolMode live re-executes tools against the provided registry
 });
 
 test('Agent.replay requires tools and skillRegistry to be supplied together', async (t) => {
-  const Agent = (await import('../../src/core/agent.js')).default;
+  const Agent = (await import('../../src/agent/agent.js')).default;
   const { file } = writeFullFixture(t, fullFixtureLines());
   const rec = await Recording.load(file);
 
@@ -248,7 +248,7 @@ test('Agent.replay requires tools and skillRegistry to be supplied together', as
 });
 
 test('Agent.replay uses the SkillRegistry bound to loadSkill', async (t) => {
-  const Agent = (await import('../../src/core/agent.js')).default;
+  const Agent = (await import('../../src/agent/agent.js')).default;
   const resource = { agent: undefined };
   t.after(() => resource.agent?.cleanup());
   const { file } = writeFullFixture(t, fullFixtureLines());
@@ -273,7 +273,7 @@ test('Agent.replay uses the SkillRegistry bound to loadSkill', async (t) => {
 });
 
 test('Agent.replay reproduces a recorded tool error', async (t) => {
-  const Agent = (await import('../../src/core/agent.js')).default;
+  const Agent = (await import('../../src/agent/agent.js')).default;
   const lines = fullFixtureLines();
   const te = lines.find((l) => l.type === 'tool_end');
   delete te.output;
@@ -300,7 +300,7 @@ test('Agent.replay reproduces a recorded tool error', async (t) => {
 });
 
 test('Agent.replay throws on an unknown toolMode', async (t) => {
-  const Agent = (await import('../../src/core/agent.js')).default;
+  const Agent = (await import('../../src/agent/agent.js')).default;
   const { file } = writeFullFixture(t, fullFixtureLines());
   const rec = await Recording.load(file);
   assert.throws(() => Agent.replay(rec, { toolMode: 'bogus' }), /unknown toolMode/);

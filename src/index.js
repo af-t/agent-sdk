@@ -1,4 +1,4 @@
-import Agent from './core/agent.js';
+import Agent from './agent/agent.js';
 import process from 'node:process';
 import { loadEnvironmentConfig } from './config/environment.js';
 import { ToolRegistry } from './registries/tool-registry.js';

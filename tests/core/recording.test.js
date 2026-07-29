@@ -41,7 +41,7 @@ test('load parses meta, events, and snapshots and skips malformed lines', async 
 });
 
 test('forkAt seeds a new independent Agent from the snapshot', async (t) => {
-  const Agent = (await import('../../src/core/agent.js')).default;
+  const Agent = (await import('../../src/agent/agent.js')).default;
   const { file } = writeFixture(t, [
     { t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' },
     {
@@ -58,7 +58,7 @@ test('forkAt seeds a new independent Agent from the snapshot', async (t) => {
 
   const rec = await Recording.load(file);
   const parent = new Agent({ apiKey: 'sk-test', model: 'parent-model' });
-  parent.use({
+  parent.registerTools({
     name: 'Echo',
     description: 'echo',
     inputSchema: { type: 'object', properties: {} },
@@ -103,7 +103,7 @@ test('forkAt shares the SkillRegistry used by loadSkill', async (t) => {
 });
 
 test('forkAt inherits parent appName', async (t) => {
-  const Agent = (await import('../../src/core/agent.js')).default;
+  const Agent = (await import('../../src/agent/agent.js')).default;
   const { file } = writeFixture(t, [
     { t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' },
     {
@@ -123,7 +123,7 @@ test('forkAt inherits parent appName', async (t) => {
 });
 
 test('forkAt creates an Agent child logger', async (t) => {
-  const Agent = (await import('../../src/core/agent.js')).default;
+  const Agent = (await import('../../src/agent/agent.js')).default;
   const { file } = writeFixture(t, [
     { t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' },
     {
@@ -157,7 +157,7 @@ test('forkAt creates an Agent child logger', async (t) => {
 });
 
 test('forkAt forwards parent pluginsDir', async (t) => {
-  const Agent = (await import('../../src/core/agent.js')).default;
+  const Agent = (await import('../../src/agent/agent.js')).default;
   const { file } = writeFixture(t, [
     { t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' },
     {

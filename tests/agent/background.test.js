@@ -83,13 +83,13 @@ test('cleanup removes the auto-created fallback log dir', async (t) => {
 test('pending bg exits drain into messages as a system-reminder after tool group', async (t) => {
   const agent = await createAgent({ apiKey: 'x' });
   t.after(() => agent.cleanup());
-  agent.use({
+  agent.registerTools({
     name: 'noop',
     description: 'd',
     inputSchema: { type: 'object', properties: {} },
     execute: async () => {
-      // Simulate a bg exit happening during the tool call.
-      // _fireBackgroundExit queues into #pendingBgDrains while loop is active.
+      // Simulate a bg exit happening during the tool call. While a loop is
+      // active the event only queues, and the loop drains it at a tool boundary.
       agent._fireBackgroundExit({
         id: 'bg-xyz',
         kind: 'bash',

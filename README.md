@@ -357,7 +357,7 @@ import createAgent from './src/index.js';
 const agent = await createAgent();
 
 // Register a single tool
-agent.use({
+agent.registerTools({
   name: 'GetWeather',
   description: 'Get the current weather for a city',
   inputSchema: {
@@ -375,7 +375,7 @@ agent.use({
 });
 
 // Register multiple tools at once
-agent.use([toolA, toolB, toolC]);
+agent.registerTools([toolA, toolB, toolC]);
 ```
 
 ### 2. Override System Prompt
@@ -399,7 +399,7 @@ Be concise and provide runnable code examples.
 ### 3. Use the Bare Agent Class
 
 ```javascript
-import Agent from './src/core/agent.js';
+import Agent from './src/agent/agent.js';
 import { ToolRegistry } from './src/registries/tool-registry.js';
 
 const tools = new ToolRegistry();
@@ -807,7 +807,7 @@ Queue a prompt for an already-running loop without waiting for it to finish: see
 
 | Method                                   | Description                                                                                                  |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `use(tool \| tool[])`                    | Register one or more tools after construction.                                                               |
+| `registerTools(tool \| tool[])`          | Register one or more tools after construction. Returns the agent.                                            |
 | `reset()`                                | Clear messages and reset accumulated usage.                                                                  |
 | `registerInjector({ name, scope, run })` | Register a context injector. `scope` is `'first-turn'` or `'per-turn'`.                                      |
 | `unregisterInjector(name)`               | Remove a previously registered injector by name.                                                             |

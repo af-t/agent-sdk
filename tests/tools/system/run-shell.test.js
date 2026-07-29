@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
-import Agent from '../../../src/core/agent.js';
+import Agent from '../../../src/agent/agent.js';
 import { resolveLogger } from '../../../src/support/logger.js';
 import { runShell } from '../../../src/tools/system/run-shell.js';
 import { createTestTempDir } from '../../support/temp.js';

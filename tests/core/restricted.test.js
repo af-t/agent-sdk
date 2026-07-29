@@ -18,7 +18,7 @@ test('agent.restricted respects constructor option', async () => {
 test('ctx.agent.restricted is exposed to tools at execute time', async () => {
   const agent = await createAgent({ apiKey: 'sk-test', restricted: false });
   let seen;
-  agent.use({
+  agent.registerTools({
     name: 'probe_restricted',
     description: 'd',
     inputSchema: { type: 'object', properties: {} },

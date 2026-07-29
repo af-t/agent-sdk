@@ -20,7 +20,7 @@ test('a tool-using run writes events and a turn snapshot to a session file', asy
   let agent;
   t.after(() => agent?.cleanup());
   const dir = createTestTempDir(t, 'agentrec-');
-  const Agent = (await import('../../src/core/agent.js')).default;
+  const Agent = (await import('../../src/agent/agent.js')).default;
   const orig = global.fetch;
   let n = 0;
   global.fetch = async () => {
@@ -36,7 +36,7 @@ test('a tool-using run writes events and a turn snapshot to a session file', asy
 
   try {
     agent = new Agent({ apiKey: 'sk-test', record: { dir } });
-    agent.use({
+    agent.registerTools({
       name: 'Echo',
       description: 'echo',
       inputSchema: { type: 'object', properties: { msg: { type: 'string' } } },
@@ -69,7 +69,7 @@ test('non-streaming run (no notify) still records assistant and tool_calls', asy
   let agent;
   t.after(() => agent?.cleanup());
   const dir = createTestTempDir(t, 'agentrec-ns-');
-  const Agent = (await import('../../src/core/agent.js')).default;
+  const Agent = (await import('../../src/agent/agent.js')).default;
   const orig = global.fetch;
   let n = 0;
   // #send calls #request which uses res.text(), not res.json()
@@ -107,7 +107,7 @@ test('non-streaming run (no notify) still records assistant and tool_calls', asy
 
   try {
     agent = new Agent({ apiKey: 'sk-test', record: { dir } });
-    agent.use({
+    agent.registerTools({
       name: 'Echo',
       description: 'echo',
       inputSchema: { type: 'object', properties: { msg: { type: 'string' } } },

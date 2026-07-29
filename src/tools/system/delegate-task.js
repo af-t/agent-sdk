@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import Agent from '../../core/agent.js';
+import Agent from '../../agent/agent.js';
 import { LIMITS } from '../../support/payload.js';
 import { createTraceWriter } from '../../core/trace-writer.js';
 
