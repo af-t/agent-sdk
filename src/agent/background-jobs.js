@@ -137,7 +137,11 @@ export class BackgroundJobs {
         id,
         kind: 'timer',
         status: 'done',
+        startedAt: job.startedAt,
+        finishedAt: job.endedAt,
         exitCode: 0,
+        // A timer has no process to signal.
+        signal: null,
         durationMs: job.endedAt - job.startedAt,
         logPath: null,
         watch,

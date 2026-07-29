@@ -91,6 +91,13 @@ describe('BackgroundJobs: timers', () => {
     assert.equal(events[0].kind, 'timer');
     assert.equal(events[0].exitCode, 0);
     assert.equal(events[0].id, id);
+    assert.equal(events[0].status, 'done');
+    assert.equal(events[0].logPath, null);
+    // A timer has no process, so no signal terminated it.
+    assert.equal(events[0].signal, null);
+    assert.equal(events[0].startedAt, jobs.get(id).startedAt);
+    assert.equal(events[0].finishedAt, jobs.get(id).endedAt);
+    assert.equal(events[0].durationMs, events[0].finishedAt - events[0].startedAt);
   });
 
   it('threads reason, prompt, watch and tailBytes onto the job and the exit event', async () => {

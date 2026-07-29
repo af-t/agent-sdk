@@ -158,9 +158,13 @@ const execute = async ({ description, prompt, persona, id, background = false },
       agent._fireBackgroundExit({
         id: bgId,
         kind: 'delegate',
-        exitCode: job.exitCode,
-        durationMs: job.endedAt - job.startedAt,
         status: job.status,
+        startedAt: job.startedAt,
+        finishedAt: job.endedAt,
+        exitCode: job.exitCode,
+        // A subagent is aborted through its controller, not a process signal.
+        signal: null,
+        durationMs: job.endedAt - job.startedAt,
         logPath,
         traceLogPath,
       });

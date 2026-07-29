@@ -192,7 +192,11 @@ function setupBackgroundJob(agent, child, startedAt, reason, kind = 'bash') {
   };
   agent.backgroundJobs.register(job);
 
-  const handleExit = (exitCode, status) => {
+  // The emitted `signal` follows Node's child_process convention: whatever
+  // terminated the process, or null when it exited on its own. The two sources
+  // spell "no signal" differently (spawn reports null, node-pty reports 0), so
+  // both are normalized to null.
+  const handleExit = (exitCode, status, exitSignal) => {
     stream.end();
     job.endedAt = Date.now();
     job.exitCode = exitCode;
@@ -200,9 +204,12 @@ function setupBackgroundJob(agent, child, startedAt, reason, kind = 'bash') {
     agent._fireBackgroundExit({
       id,
       kind,
-      exitCode,
-      durationMs: job.endedAt - job.startedAt,
       status,
+      startedAt: job.startedAt,
+      finishedAt: job.endedAt,
+      exitCode,
+      signal: exitSignal || null,
+      durationMs: job.endedAt - job.startedAt,
       logPath,
     });
   };
@@ -284,8 +291,8 @@ function runWithSpawn(command, cwd, env, timeout, signal, agent, logger) {
         child.stdout.removeAllListeners('data');
         child.stdout.pause();
         child.stdout.pipe(stream);
-        child.on('close', (code) => {
-          handleExit(code, getExitStatus(code, null));
+        child.on('close', (code, sig) => {
+          handleExit(code, getExitStatus(code, sig), sig);
         });
         resolve(
           `Command exceeded timeout (${timeout}ms), transitioned to background.\n` +
@@ -375,7 +382,7 @@ function runWithPty(command, cwd, env, timeout, signal, agent, logger) {
         dataDisposer.dispose();
         ptyProcess.onData((d) => stream.write(d));
         ptyProcess.onExit(({ exitCode, signal: sig }) => {
-          handleExit(exitCode, getExitStatus(exitCode, sig));
+          handleExit(exitCode, getExitStatus(exitCode, sig), sig);
         });
         resolve(
           `Command exceeded timeout (${timeout}ms), transitioned to background.\n` +
@@ -421,8 +428,8 @@ function runWithSpawnBackground(command, cwd, env, signal, agent) {
   const { id, logPath, stream, handleExit, job } = setupBackgroundJob(agent, child, startedAt, 'explicit');
   child.stdout.pipe(stream);
 
-  child.on('close', (code) => {
-    handleExit(code, getExitStatus(code, null));
+  child.on('close', (code, sig) => {
+    handleExit(code, getExitStatus(code, sig), sig);
   });
 
   child.on('error', (err) => {
@@ -433,9 +440,13 @@ function runWithSpawnBackground(command, cwd, env, signal, agent) {
     agent._fireBackgroundExit({
       id,
       kind: 'bash',
-      exitCode: -1,
-      durationMs: job.endedAt - job.startedAt,
       status: 'crashed',
+      startedAt: job.startedAt,
+      finishedAt: job.endedAt,
+      exitCode: -1,
+      // The process failed to start, so nothing signalled it.
+      signal: null,
+      durationMs: job.endedAt - job.startedAt,
       error: err.message,
       logPath,
     });
@@ -481,7 +492,7 @@ function runWithPtyBackground(command, cwd, env, signal, agent) {
 
   try {
     ptyProcess.onExit(({ exitCode, signal: sig }) => {
-      handleExit(exitCode, getExitStatus(exitCode, sig));
+      handleExit(exitCode, getExitStatus(exitCode, sig), sig);
     });
   } catch (err) {
     stream.end();

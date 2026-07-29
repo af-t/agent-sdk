@@ -153,6 +153,13 @@ test('background delegateTask streams a trace file and its exit event carries tr
 
   const event = seen.find((e) => e.kind === 'delegate');
   assert.ok(event.traceLogPath, 'exit event should carry traceLogPath');
+  assert.equal(event.status, 'exited');
+  assert.equal(event.exitCode, 0);
+  // A subagent is stopped through its controller, never a process signal.
+  assert.equal(event.signal, null);
+  assert.equal(typeof event.startedAt, 'number');
+  assert.equal(typeof event.finishedAt, 'number');
+  assert.equal(event.durationMs, event.finishedAt - event.startedAt);
   const trace = fs.readFileSync(event.traceLogPath, 'utf8');
   assert.match(trace, /\[assistant\]\nbg work/);
   assert.match(trace, /-> runShell#b1 end \(3ms\): ok/);

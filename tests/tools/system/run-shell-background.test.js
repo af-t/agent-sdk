@@ -43,6 +43,8 @@ test('runShell kills and rejects on timeout when no agent can adopt the job', as
 
 test('runShell background:true returns immediately with a job id and log path', async () => {
   const agent = await createAgent({ apiKey: 'x' });
+  const exits = [];
+  agent._onBackgroundExitRaw((event) => exits.push(event));
   try {
     const out = await runShellExecute({ command: 'echo hello; sleep 0.5; echo done', background: true }, { agent });
     assert.match(out, /Started in background/);
@@ -63,6 +65,21 @@ test('runShell background:true returns immediately with a job id and log path', 
     assert.equal(agent.backgroundJobs.get(ids[0]).status, 'exited');
     const content = fs.readFileSync(logPath, 'utf8');
     assert.match(content, /hello[\s\S]*done/);
+
+    // The exit record the agent receives for a real background command.
+    assert.equal(exits.length, 1);
+    const [exit] = exits;
+    assert.equal(exit.id, ids[0]);
+    assert.equal(exit.kind, 'bash');
+    assert.equal(exit.status, 'exited');
+    assert.equal(exit.exitCode, 0);
+    assert.equal(exit.logPath, logPath);
+    // The command exited on its own, so nothing signalled it.
+    assert.equal(exit.signal, null);
+    assert.equal(typeof exit.startedAt, 'number');
+    assert.equal(typeof exit.finishedAt, 'number');
+    assert.ok(exit.finishedAt >= exit.startedAt);
+    assert.equal(exit.durationMs, exit.finishedAt - exit.startedAt);
   } finally {
     await agent.cleanup();
   }
