@@ -1,7 +1,7 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { ConfigError } from '../support/errors.js';
-import { logger } from './logger.js';
+import { resolveLogger } from '../support/logger.js';
 
 const VALID_AUTH = new Set(['none', 'token', 'hmac']);
 
@@ -18,7 +18,9 @@ export function createHttpSource(options = {}) {
     responseTimeoutMs = 30000,
     bodyLimitBytes = 1_000_000,
     _transport = defaultTransport,
+    logger,
   } = options;
+  const componentLogger = resolveLogger(logger).child({ component: 'httpSource' });
 
   if (!(Number.isInteger(port) && port >= 0 && port <= 65535)) {
     throw new ConfigError('createHttpSource: port is required (an integer 0-65535)');
@@ -77,7 +79,7 @@ export function createHttpSource(options = {}) {
     try {
       emitFn(event);
     } catch (err) {
-      logger.warn(`http-source: emit threw: ${err.message}`);
+      componentLogger.warn({ error: err, eventType: event?.type }, 'Emit threw');
     }
   }
 
@@ -182,7 +184,7 @@ export function createHttpSource(options = {}) {
         rawBuf = await readBody(req);
       } catch (err) {
         if (err.httpStatus === 413) {
-          logger.warn('http-source: request body exceeded limit');
+          componentLogger.warn({ method, path }, 'Request body exceeded the configured limit');
           writeResponse(res, { status: 413, body: { error: 'payload too large' } });
           return;
         }
@@ -191,7 +193,7 @@ export function createHttpSource(options = {}) {
 
       // Verify HMAC over the raw bytes before any lossy utf8 decode.
       if (!checkAuth(route, headers, rawBuf)) {
-        logger.warn(`http-source: auth failed for ${method} ${path}`);
+        componentLogger.warn({ method, path }, 'Auth check failed');
         writeResponse(res, { status: 401, body: { error: 'unauthorized' } });
         return;
       }
@@ -214,7 +216,7 @@ export function createHttpSource(options = {}) {
         let settled = false;
         const respond = (spec) => {
           if (settled) {
-            logger.warn('http-source: respond called more than once; ignoring');
+            componentLogger.warn({ method, path }, 'Respond called more than once; ignoring');
             return;
           }
           settled = true;
@@ -223,7 +225,7 @@ export function createHttpSource(options = {}) {
           try {
             writeResponse(res, spec);
           } catch (err) {
-            logger.warn(`http-source: failed to write response: ${err.message}`);
+            componentLogger.warn({ error: err }, 'Failed to write the response');
           }
           resolve();
         };
@@ -246,7 +248,7 @@ export function createHttpSource(options = {}) {
         });
       });
     } catch (err) {
-      logger.warn(`http-source: request pipeline threw: ${err.message}`);
+      componentLogger.warn({ error: err }, 'Request handler failed');
       try {
         writeResponse(res, { status: 500, body: { error: 'internal error' } });
       } catch {
@@ -258,17 +260,22 @@ export function createHttpSource(options = {}) {
   return {
     start(emit) {
       if (started) {
-        logger.warn('http-source already started; ignoring');
+        componentLogger.warn({}, 'Source already started; ignoring');
         return;
       }
       started = true;
       emitFn = emit;
       try {
-        stopTransport = _transport({ host, port }, onRequest, (addr) => {
-          boundAddress = addr;
-        });
+        stopTransport = _transport(
+          { host, port },
+          onRequest,
+          (addr) => {
+            boundAddress = addr;
+          },
+          componentLogger,
+        );
       } catch (err) {
-        logger.warn(`http-source backend start threw: ${err.message}`);
+        componentLogger.warn({ error: err }, 'Backend start threw');
       }
     },
     stop() {
@@ -277,7 +284,7 @@ export function createHttpSource(options = {}) {
         try {
           stopTransport();
         } catch (err) {
-          logger.warn(`http-source backend stop threw: ${err.message}`);
+          componentLogger.warn({ error: err }, 'Backend stop threw');
         }
       }
       stopTransport = null;
@@ -294,11 +301,11 @@ export function createHttpSource(options = {}) {
   };
 }
 
-function defaultTransport({ host, port }, onRequest, onListening) {
+function defaultTransport({ host, port }, onRequest, onListening, logger) {
   const server = http.createServer((req, res) => {
     onRequest(req, res);
   });
-  server.on('error', (err) => logger.warn(`http-source server error: ${err.message}`));
+  server.on('error', (err) => logger.warn({ error: err }, 'Server emitted an error event'));
   server.listen(port, host, () => {
     const addr = server.address();
     if (onListening && addr && typeof addr === 'object') {

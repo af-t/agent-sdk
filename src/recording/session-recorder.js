@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { logger } from './logger.js';
+import { resolveLogger } from '../support/logger.js';
 
 const LEVELS = { events: 0, snapshots: 1, full: 2 };
 
@@ -15,7 +15,8 @@ function sessionId() {
   return `${ts}-${rand}`;
 }
 
-export function createSessionRecorder({ dir, level = 'snapshots', model, redact } = {}) {
+export function createSessionRecorder({ dir, level = 'snapshots', model, redact, logger } = {}) {
+  const componentLogger = resolveLogger(logger).child({ component: 'sessionRecorder' });
   const lvl = LEVELS[level] ?? LEVELS.snapshots;
   fs.mkdirSync(dir, { recursive: true });
   const id = sessionId();
@@ -27,7 +28,7 @@ export function createSessionRecorder({ dir, level = 'snapshots', model, redact 
 
   stream.on('error', (err) => {
     alive = false;
-    logger.warn(`SessionRecorder stream error, disabling recording: ${err.message}`);
+    componentLogger.warn({ error: err, filePath }, 'Recording stream failed; disabling recording');
   });
 
   function write(obj) {
@@ -37,7 +38,7 @@ export function createSessionRecorder({ dir, level = 'snapshots', model, redact 
       try {
         rec = redact(obj);
       } catch (err) {
-        logger.warn(`SessionRecorder redact threw, dropping record: ${err.message}`);
+        componentLogger.warn({ error: err, type: obj.type }, 'Redact hook threw; dropping record');
         return;
       }
       if (!rec) return; // redact dropped the record
@@ -45,7 +46,7 @@ export function createSessionRecorder({ dir, level = 'snapshots', model, redact 
     try {
       stream.write(JSON.stringify(rec) + '\n');
     } catch (err) {
-      logger.warn(`SessionRecorder write failed, disabling recording: ${err.message}`);
+      componentLogger.warn({ error: err, filePath }, 'Write failed; disabling recording');
       alive = false;
     }
   }

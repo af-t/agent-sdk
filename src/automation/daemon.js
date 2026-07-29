@@ -1,5 +1,5 @@
 import { ConfigError } from '../support/errors.js';
-import { logger } from './logger.js';
+import { resolveLogger } from '../support/logger.js';
 
 const SOFT_CAP = 1000;
 
@@ -7,9 +7,10 @@ function isAgentLike(a) {
   return a && typeof a.run === 'function' && typeof a.steer === 'function' && typeof a.isRunning === 'boolean';
 }
 
-export function createDaemon({ agent, handler, sources = [], signal, onAction } = {}) {
+export function createDaemon({ agent, handler, sources = [], signal, onAction, logger } = {}) {
   if (!isAgentLike(agent)) throw new ConfigError('createDaemon: agent must be an Agent-like object');
   if (typeof handler !== 'function') throw new ConfigError('createDaemon: handler must be a function');
+  const componentLogger = resolveLogger(logger).child({ component: 'daemon' });
   const allSources = Array.isArray(sources) ? sources : [];
 
   let controller = null;
@@ -23,13 +24,16 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction } 
 
   function emit(event) {
     if (!started) {
-      logger.warn('daemon.emit called while not started; event ignored');
+      componentLogger.warn({ eventType: event?.type }, 'Emit called before start; event ignored');
       return;
     }
     queue.push({ ...event, receivedAt: Date.now() });
     if (queue.length > SOFT_CAP && !warnedCap) {
       warnedCap = true;
-      logger.warn(`daemon queue exceeded ${SOFT_CAP} pending events; handler may be too slow`);
+      componentLogger.warn(
+        { softCap: SOFT_CAP, queueLength: queue.length },
+        'Queue exceeded soft cap; handler may be too slow',
+      );
     }
     drain();
   }
@@ -53,7 +57,7 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction } 
     try {
       action = await handler(event, makeCtx());
     } catch (err) {
-      logger.warn(`daemon handler threw: ${err.message}`);
+      componentLogger.warn({ error: err, eventType: event?.type }, 'Handler threw');
       return;
     }
     if (action == null) return;
@@ -61,13 +65,13 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction } 
       try {
         onAction(action, event);
       } catch (err) {
-        logger.warn(`daemon onAction threw: ${err.message}`);
+        componentLogger.warn({ error: err }, 'onAction callback threw');
       }
     }
     try {
       executeAction(action);
     } catch (err) {
-      logger.warn(`daemon action execution threw: ${err.message}`);
+      componentLogger.warn({ error: err, actionType: action?.type }, 'Action execution threw');
     }
   }
 
@@ -79,7 +83,7 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction } 
   function startRun(prompt, notify) {
     const c = ensureRunController();
     Promise.resolve(agent.run(prompt, notify, { signal: c.signal })).catch((err) =>
-      logger.warn(`daemon run rejected: ${err.message}`),
+      componentLogger.warn({ error: err }, 'Agent run rejected'),
     );
   }
 
@@ -93,7 +97,7 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction } 
         return;
       case 'steer': {
         const ok = agent.steer(action.prompt);
-        if (!ok) logger.warn('daemon steer action while agent idle; no-op');
+        if (!ok) componentLogger.warn({}, 'Steer action while agent idle; no-op');
         return;
       }
       case 'prompt':
@@ -104,7 +108,7 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction } 
         if (runController) runController.abort();
         return;
       default:
-        logger.warn(`daemon unknown action type '${action.type}'; ignored`);
+        componentLogger.warn({ actionType: action.type }, 'Unknown action type; ignored');
     }
   }
 
@@ -138,10 +142,10 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction } 
       try {
         const r = src.start(emit);
         if (r && typeof r.then === 'function') {
-          r.catch((err) => logger.warn(`daemon source start rejected: ${err.message}`));
+          r.catch((err) => componentLogger.warn({ error: err }, 'Source start rejected'));
         }
       } catch (err) {
-        logger.warn(`daemon source start threw: ${err.message}`);
+        componentLogger.warn({ error: err }, 'Source start threw');
       }
     }
     return controller.signal;
@@ -155,7 +159,7 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction } 
         try {
           await src.stop();
         } catch (err) {
-          logger.warn(`daemon source stop threw: ${err.message}`);
+          componentLogger.warn({ error: err }, 'Source stop threw');
         }
       }),
     );

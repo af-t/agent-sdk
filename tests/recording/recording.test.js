@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { Recording } from '../../src/core/recording.js';
+import { Recording } from '../../src/recording/recording.js';
 import { resolveLogger } from '../../src/support/logger.js';
 import { createTestTempDir } from '../support/temp.js';
 
@@ -38,6 +38,33 @@ test('load parses meta, events, and snapshots and skips malformed lines', async 
   assert.equal(rec.snapshots.length, 1);
   assert.deepEqual(rec.snapshotAt(1).usage, { cost: 1, tokens: 2 });
   assert.equal(rec.snapshotAt(99), null);
+});
+
+test('load routes a malformed line through an injected logger', async (t) => {
+  const { file } = writeFixture(t, [{ t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' }]);
+  fs.appendFileSync(file, 'not json\n');
+
+  const records = [];
+  const target = Object.fromEntries(
+    ['debug', 'info', 'warn', 'error'].map((level) => [
+      level,
+      (context, message) => records.push({ level, context, message }),
+    ]),
+  );
+
+  await Recording.load(file, { logger: resolveLogger(target) });
+
+  assert.equal(records[0].level, 'warn');
+  assert.equal(records[0].context.component, 'recording');
+  assert.equal(records[0].context.filePath, file);
+  assert.equal(records[0].message, 'Skipping malformed line while loading a recording');
+});
+
+test('load falls back to a resolved default logger when none is injected', async (t) => {
+  const { file } = writeFixture(t, [{ t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' }]);
+  fs.appendFileSync(file, 'not json\n');
+
+  await assert.doesNotReject(() => Recording.load(file));
 });
 
 test('forkAt seeds a new independent Agent from the snapshot', async (t) => {

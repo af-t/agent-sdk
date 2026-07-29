@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { createTraceWriter } from '../../src/core/trace-writer.js';
+import { createTraceWriter } from '../../src/recording/trace-writer.js';
 import { createTestTempDir } from '../support/temp.js';
 
 function createTestTraceWriter(t) {

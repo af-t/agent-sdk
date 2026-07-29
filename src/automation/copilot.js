@@ -1,6 +1,6 @@
 import { ConfigError } from '../support/errors.js';
-import { logger } from './logger.js';
-import { createTraceFormatter } from './trace-writer.js';
+import { resolveLogger } from '../support/logger.js';
+import { createTraceFormatter } from '../recording/trace-writer.js';
 
 export function extractGoal(messages) {
   if (!Array.isArray(messages)) return '';
@@ -72,7 +72,8 @@ export function normalizeTriggers(cfg = {}) {
   };
 }
 
-export function buildReasons(ctx, t) {
+export function buildReasons(ctx, t, logger) {
+  const componentLogger = resolveLogger(logger).child({ component: 'copilot' });
   const reasons = [];
   if (t.toolError && ctx.hadError) reasons.push('toolError');
   if (t.repeatedCall) {
@@ -98,7 +99,7 @@ export function buildReasons(ctx, t) {
     try {
       r = fn(ctx);
     } catch (err) {
-      logger.warn(`copilot custom trigger threw: ${err.message}`);
+      componentLogger.warn({ error: err }, 'Custom trigger threw');
       continue;
     }
     if (r === true) reasons.push('custom');
@@ -162,9 +163,11 @@ export function createCopilot({
   onDecision,
   signal,
   goal,
+  logger,
 } = {}) {
   if (!isAgentLike(primary)) throw new ConfigError('createCopilot: primary must be an Agent-like object');
   if (!isAgentLike(supervisor)) throw new ConfigError('createCopilot: supervisor must be an Agent-like object');
+  const componentLogger = resolveLogger(logger).child({ component: 'copilot' });
 
   let controller = null;
   let dispose = null;
@@ -196,7 +199,7 @@ export function createCopilot({
       }
       if (event.turnEnd) finalizeTurn(event.turnEnd);
     } catch (err) {
-      logger.warn(`copilot event handler threw: ${err.message}`);
+      componentLogger.warn({ error: err }, 'Event handler threw');
     }
   }
 
@@ -225,14 +228,14 @@ export function createCopilot({
       maxTurns: primary.maxTurns,
       hadError: turn.hadError,
     };
-    const reasons = buildReasons(ctx, trig);
+    const reasons = buildReasons(ctx, trig, componentLogger);
     if (reasons.length === 0) return;
     if (evaluating) return;
 
     lastCost = costNow;
     evaluating = true;
     evaluate(reasons)
-      .catch((err) => logger.warn(`copilot evaluation failed: ${err.message}`))
+      .catch((err) => componentLogger.warn({ error: err }, 'Evaluation failed'))
       .finally(() => {
         evaluating = false;
       });
@@ -243,7 +246,7 @@ export function createCopilot({
     try {
       onDecision({ ...decision, triggers: reasons });
     } catch (err) {
-      logger.warn(`copilot onDecision threw: ${err.message}`);
+      componentLogger.warn({ error: err }, 'onDecision callback threw');
     }
   }
 
@@ -255,7 +258,7 @@ export function createCopilot({
     try {
       raw = await supervisor.run(input);
     } catch (err) {
-      logger.warn(`copilot supervisor.run threw: ${err.message}`);
+      componentLogger.warn({ error: err }, 'Supervisor run threw');
       emitDecision({ action: 'none', reason: `supervisor error: ${err.message}` }, reasons);
       return;
     }

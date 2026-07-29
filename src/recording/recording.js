@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { logger } from './logger.js';
+import { resolveLogger } from '../support/logger.js';
 import { createTraceFormatter } from './trace-writer.js';
 
 export class Recording {
@@ -11,20 +11,23 @@ export class Recording {
     this.snapshots = snapshots;
   }
 
-  static async load(filePath) {
+  static async load(filePath, { logger } = {}) {
+    const componentLogger = resolveLogger(logger).child({ component: 'recording' });
     const raw = await readFile(filePath, 'utf8');
     const events = [];
     const snapshots = [];
     let id;
     let level;
     let model;
-    for (const line of raw.split('\n')) {
+    const lines = raw.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
       if (!line.trim()) continue;
       let rec;
       try {
         rec = JSON.parse(line);
       } catch {
-        logger.warn(`Recording.load: skipping malformed line`);
+        componentLogger.warn({ filePath, line: i + 1 }, 'Skipping malformed line while loading a recording');
         continue;
       }
       if (rec.type === 'session_start') {

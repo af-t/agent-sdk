@@ -38,12 +38,12 @@ export async function createAgent(options = {}) {
 }
 
 export default createAgent;
-export { createCopilot } from './core/copilot.js';
-export { createDaemon, createTimerSource } from './core/daemon.js';
-export { createFileWatchSource } from './core/file-watch-source.js';
-export { createHttpSource } from './core/http-source.js';
-export { recallMemories } from './core/memory-recall.js';
-export { Recording } from './core/recording.js';
+export { createCopilot } from './automation/copilot.js';
+export { createDaemon, createTimerSource } from './automation/daemon.js';
+export { createFileWatchSource } from './automation/file-watch-source.js';
+export { createHttpSource } from './automation/http-source.js';
+export { recallMemories } from './memory/memory-recall.js';
+export { Recording } from './recording/recording.js';
 export { McpClientWrapper, McpNativeClient } from './integrations/mcp-client.js';
 export { SkillRegistry } from './registries/skill-registry.js';
 export { ToolRegistry } from './registries/tool-registry.js';

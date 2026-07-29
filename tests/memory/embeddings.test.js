@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { cosineSimilarity, embedTexts } from '../../src/core/embeddings.js';
+import { cosineSimilarity, embedTexts } from '../../src/memory/embeddings.js';
 
 describe('cosineSimilarity', () => {
   it('returns 1 for identical vectors', () => {

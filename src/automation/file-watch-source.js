@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ConfigError } from '../support/errors.js';
-import { logger } from './logger.js';
+import { resolveLogger } from '../support/logger.js';
 
 export function createFileWatchSource(options = {}) {
   const {
@@ -15,7 +15,9 @@ export function createFileWatchSource(options = {}) {
     filter,
     type = 'file-change',
     _backend = defaultBackend,
+    logger,
   } = options;
+  const componentLogger = resolveLogger(logger).child({ component: 'fileWatchSource' });
 
   const list = paths == null ? [] : Array.isArray(paths) ? paths : [paths];
   if (list.length === 0) {
@@ -56,7 +58,7 @@ export function createFileWatchSource(options = {}) {
     try {
       emitFn(event);
     } catch (err) {
-      logger.warn(`file-watch-source emit threw: ${err.message}`);
+      componentLogger.warn({ error: err, eventType: event?.type }, 'Emit threw');
     }
   }
 
@@ -102,15 +104,15 @@ export function createFileWatchSource(options = {}) {
   return {
     start(emit) {
       if (started) {
-        logger.warn('file-watch-source already started; ignoring');
+        componentLogger.warn({}, 'Source already started; ignoring');
         return;
       }
       started = true;
       emitFn = emit;
       try {
-        stopBackend = _backend({ paths: absPaths, recursive, usePolling, pollIntervalMs }, onRaw);
+        stopBackend = _backend({ paths: absPaths, recursive, usePolling, pollIntervalMs }, onRaw, componentLogger);
       } catch (err) {
-        logger.warn(`file-watch-source backend start threw: ${err.message}`);
+        componentLogger.warn({ error: err }, 'Backend start threw');
       }
     },
     stop() {
@@ -119,7 +121,7 @@ export function createFileWatchSource(options = {}) {
         try {
           stopBackend();
         } catch (err) {
-          logger.warn(`file-watch-source backend stop threw: ${err.message}`);
+          componentLogger.warn({ error: err }, 'Backend stop threw');
         }
       }
       stopBackend = null;
@@ -135,19 +137,19 @@ export function createFileWatchSource(options = {}) {
   };
 }
 
-function defaultBackend({ paths, recursive, usePolling, pollIntervalMs }, onRaw) {
-  if (usePolling) return startPolling({ paths, recursive, pollIntervalMs }, onRaw);
-  return startNativeWatch({ paths, recursive }, onRaw);
+function defaultBackend({ paths, recursive, usePolling, pollIntervalMs }, onRaw, logger) {
+  if (usePolling) return startPolling({ paths, recursive, pollIntervalMs }, onRaw, logger);
+  return startNativeWatch({ paths, recursive }, onRaw, logger);
 }
 
-function startNativeWatch({ paths, recursive }, onRaw) {
+function startNativeWatch({ paths, recursive }, onRaw, logger) {
   const watchers = [];
   for (const p of paths) {
     let stat;
     try {
       stat = fs.statSync(p);
     } catch (err) {
-      logger.warn(`file-watch-source: cannot watch ${p}: ${err.message}`);
+      logger.warn({ error: err, path: p }, 'Cannot watch path');
       continue;
     }
     const isDir = stat.isDirectory();
@@ -156,10 +158,10 @@ function startNativeWatch({ paths, recursive }, onRaw) {
         const abs = isDir && filename ? path.resolve(p, filename) : p;
         onRaw(abs, eventType === 'rename' ? 'rename' : 'change');
       });
-      watcher.on('error', (err) => logger.warn(`file-watch-source watcher error on ${p}: ${err.message}`));
+      watcher.on('error', (err) => logger.warn({ error: err, path: p }, 'Watcher emitted an error event'));
       watchers.push(watcher);
     } catch (err) {
-      logger.warn(`file-watch-source: fs.watch failed on ${p}: ${err.message}`);
+      logger.warn({ error: err, path: p }, 'fs.watch failed');
     }
   }
   return () => {
@@ -173,7 +175,7 @@ function startNativeWatch({ paths, recursive }, onRaw) {
   };
 }
 
-function startPolling({ paths, recursive, pollIntervalMs }, onRaw) {
+function startPolling({ paths, recursive, pollIntervalMs }, onRaw, logger) {
   const watched = new Set();
   const watchedDirs = new Set();
   function watchOne(file) {
@@ -195,7 +197,7 @@ function startPolling({ paths, recursive, pollIntervalMs }, onRaw) {
     try {
       stat = fs.statSync(p);
     } catch (err) {
-      logger.warn(`file-watch-source: cannot poll ${p}: ${err.message}`);
+      logger.warn({ error: err, path: p }, 'Cannot poll path');
       return;
     }
     if (!stat.isDirectory()) {
@@ -207,7 +209,7 @@ function startPolling({ paths, recursive, pollIntervalMs }, onRaw) {
     try {
       entries = fs.readdirSync(p, { withFileTypes: true });
     } catch (err) {
-      logger.warn(`file-watch-source: cannot read dir ${p}: ${err.message}`);
+      logger.warn({ error: err, path: p }, 'Cannot read directory');
       return;
     }
     for (const entry of entries) {

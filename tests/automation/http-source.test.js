@@ -3,9 +3,18 @@ import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import http from 'node:http';
 import crypto from 'node:crypto';
-import { createHttpSource } from '../../src/core/http-source.js';
-import { logger } from '../../src/core/logger.js';
-import { createDaemon } from '../../src/core/daemon.js';
+import { createHttpSource } from '../../src/automation/http-source.js';
+import { createDaemon } from '../../src/automation/daemon.js';
+import { resolveLogger } from '../../src/support/logger.js';
+
+function createRecordingLogger() {
+  const records = [];
+  const target = {};
+  for (const level of ['debug', 'info', 'warn', 'error']) {
+    target[level] = (context, message) => records.push({ level, context, message });
+  }
+  return { logger: resolveLogger(target), records };
+}
 
 // Appendix B test helpers
 
@@ -175,6 +184,13 @@ test('returns a source object with start, stop, and address', () => {
   assert.equal(src.address(), null);
 });
 
+test('createHttpSource works without an injected logger, using the resolved default', () => {
+  const ft = fakeTransport();
+  const src = createHttpSource({ port: 0, healthPath: '/health', _transport: ft.transport });
+  assert.doesNotThrow(() => src.start(() => {}));
+  src.stop();
+});
+
 // Task 2 Tests
 
 test('start passes the resolved config to the transport and captures onRequest', () => {
@@ -196,21 +212,17 @@ test('address() reflects the onListening callback', () => {
   assert.equal(src.address(), null);
 });
 
-test('a second start warns and does not start the transport twice', () => {
+test('a second start routes a warning through the injected logger and does not start the transport twice', () => {
   const ft = fakeTransport();
-  const warns = [];
-  const orig = logger.warn;
-  logger.warn = (m) => warns.push(m);
-  try {
-    const src = createHttpSource({ port: 0, healthPath: '/health', _transport: ft.transport });
-    src.start(() => {});
-    src.start(() => {});
-    assert.equal(ft.starts(), 1);
-    assert.ok(warns.some((m) => /already started/.test(m)));
-    src.stop();
-  } finally {
-    logger.warn = orig;
-  }
+  const { logger, records } = createRecordingLogger();
+  const src = createHttpSource({ port: 0, healthPath: '/health', _transport: ft.transport, logger });
+  src.start(() => {});
+  src.start(() => {});
+  assert.equal(ft.starts(), 1);
+  const entry = records.find((record) => record.message === 'Source already started; ignoring');
+  assert.equal(entry.level, 'warn');
+  assert.equal(entry.context.component, 'httpSource');
+  src.stop();
 });
 
 test('stop is idempotent and safe before start', () => {
@@ -471,27 +483,46 @@ test('respond() with an object spec sets status, headers, and a JSON body', asyn
   src.stop();
 });
 
-test('a second respond() call is ignored', async () => {
+test('a second respond() call is ignored, and routes a warning through the injected logger', async () => {
   const ft = fakeTransport();
-  const warns = [];
-  const orig = logger.warn;
-  logger.warn = (m) => warns.push(m);
-  try {
-    const src = createHttpSource({ port: 0, routes: [{ path: '/c', type: 'c' }], _transport: ft.transport });
-    src.start((e) => {
-      e.respond({ status: 200, body: { first: true } });
-      e.respond({ status: 500, body: { second: true } });
-    });
-    const res = mockRes();
-    ft.onRequest()(mockReq({ method: 'POST', url: '/c' }), res);
-    await tick();
-    assert.equal(res.statusCode, 200);
-    assert.deepEqual(JSON.parse(res.body), { first: true });
-    assert.ok(warns.some((m) => /respond called more than once/.test(m)));
-    src.stop();
-  } finally {
-    logger.warn = orig;
-  }
+  const { logger, records } = createRecordingLogger();
+  const src = createHttpSource({ port: 0, routes: [{ path: '/c', type: 'c' }], _transport: ft.transport, logger });
+  src.start((e) => {
+    e.respond({ status: 200, body: { first: true } });
+    e.respond({ status: 500, body: { second: true } });
+  });
+  const res = mockRes();
+  ft.onRequest()(mockReq({ method: 'POST', url: '/c' }), res);
+  await tick();
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(JSON.parse(res.body), { first: true });
+  const entry = records.find((record) => record.message === 'Respond called more than once; ignoring');
+  assert.equal(entry.level, 'warn');
+  assert.equal(entry.context.component, 'httpSource');
+  src.stop();
+});
+
+test('an unexpected request-pipeline failure routes a warning through the injected logger', async () => {
+  const ft = fakeTransport();
+  const { logger, records } = createRecordingLogger();
+  const src = createHttpSource({ port: 0, routes: [{ path: '/c', type: 'c' }], _transport: ft.transport, logger });
+  src.start(() => {});
+  const req = mockReq({ method: 'POST', url: '/c' });
+  Object.defineProperty(req, 'headers', {
+    get() {
+      throw new Error('boom');
+    },
+  });
+  const res = mockRes();
+  ft.onRequest()(req, res);
+  await tick();
+
+  assert.equal(res.statusCode, 500);
+  assert.equal(records[0].level, 'warn');
+  assert.equal(records[0].context.component, 'httpSource');
+  assert.equal(records[0].context.error.name, 'Error');
+  assert.equal(records[0].message, 'Request handler failed');
+  src.stop();
 });
 
 test('a request times out with 504 when the handler never responds', async () => {

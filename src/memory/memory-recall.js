@@ -2,9 +2,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { resolveSafePath } from '../support/path-safety.js';
+import { resolveLogger } from '../support/logger.js';
 import { embedTexts, cosineSimilarity } from './embeddings.js';
 import { lexicalRank } from './lexical-rank.js';
-import logger from './logger.js';
 
 const SIDECAR_NAME = '.embeddings.json';
 
@@ -34,22 +34,22 @@ function hashText(text, model) {
   return crypto.createHash('sha256').update(`${model}\0${text}`).digest('hex');
 }
 
-async function readSidecar(sidecarPath) {
+async function readSidecar(sidecarPath, logger) {
   try {
     const parsed = JSON.parse(await fs.readFile(sidecarPath, 'utf8'));
     if (parsed && typeof parsed === 'object' && parsed.entries) return parsed.entries;
   } catch (err) {
     // missing or corrupt: treat as empty
-    logger.debug(`memory-recall: failed to read/parse sidecar at ${sidecarPath}: ${err.message}`);
+    logger.debug({ error: err, sidecarPath }, 'Sidecar read failed; treating cache as empty');
   }
   return {};
 }
 
-async function writeSidecar(sidecarPath, entries) {
+async function writeSidecar(sidecarPath, entries, logger) {
   try {
     await fs.writeFile(sidecarPath, JSON.stringify({ entries }), 'utf8');
   } catch (err) {
-    logger.debug(`memory-recall: sidecar write failed: ${err.message}`);
+    logger.debug({ error: err, sidecarPath }, 'Sidecar write failed');
   }
 }
 
@@ -64,6 +64,7 @@ async function rankWithEmbeddings({
   trustedPaths,
   restricted = true,
   signal,
+  logger,
   _embed,
 }) {
   let sidecarPath;
@@ -72,7 +73,7 @@ async function rankWithEmbeddings({
   } catch {
     sidecarPath = null;
   }
-  const cached = sidecarPath ? await readSidecar(sidecarPath) : {};
+  const cached = sidecarPath ? await readSidecar(sidecarPath, logger) : {};
 
   const toEmbed = [];
   for (const c of corpus) {
@@ -99,7 +100,7 @@ async function rankWithEmbeddings({
   // Only rewrite the sidecar when something actually changed (new/edited file
   // embedded, or a deleted file pruned): a pure cache-hit recall touches nothing.
   const changed = toEmbed.length > 0 || Object.keys(nextEntries).length !== Object.keys(cached).length;
-  if (sidecarPath && changed) await writeSidecar(sidecarPath, nextEntries);
+  if (sidecarPath && changed) await writeSidecar(sidecarPath, nextEntries, logger);
 
   const results = corpus
     .map((c) => ({ name: c.name, score: c.vector ? cosineSimilarity(queryVec, c.vector) : 0, body: c.body }))
@@ -108,12 +109,12 @@ async function rankWithEmbeddings({
   return { results, usage, ranker: 'embeddings', total: corpus.length };
 }
 
-async function loadCorpus(memoryDir, trustedPaths, restricted = true) {
+async function loadCorpus(memoryDir, trustedPaths, restricted = true, logger) {
   let names;
   try {
     names = await fs.readdir(memoryDir);
   } catch (err) {
-    logger.debug(`memory-recall: failed to read memory directory "${memoryDir}": ${err.message}`);
+    logger.debug({ error: err, memoryDir }, 'Failed to read memory directory');
     return [];
   }
   const corpus = [];
@@ -123,14 +124,14 @@ async function loadCorpus(memoryDir, trustedPaths, restricted = true) {
     try {
       resolved = resolveSafePath(path.join(memoryDir, fname), trustedPaths, { restricted });
     } catch (err) {
-      logger.debug(`memory-recall: path check failed for "${fname}": ${err.message}`);
+      logger.debug({ error: err, fileName: fname }, 'Memory file path check failed');
       continue;
     }
     let raw;
     try {
       raw = await fs.readFile(resolved, 'utf8');
     } catch (err) {
-      logger.debug(`memory-recall: failed to read file "${resolved}": ${err.message}`);
+      logger.debug({ error: err, filePath: resolved }, 'Failed to read memory file');
       continue;
     }
     const { description, body } = parseMemoryFile(raw);
@@ -161,9 +162,11 @@ export async function recallMemories({
   trustedPaths,
   restricted = true,
   signal,
+  logger,
   _embed = embedTexts,
 } = {}) {
-  const corpus = await loadCorpus(memoryDir, trustedPaths, restricted);
+  const componentLogger = resolveLogger(logger).child({ component: 'memoryRecall' });
+  const corpus = await loadCorpus(memoryDir, trustedPaths, restricted, componentLogger);
   if (corpus.length === 0) {
     return { results: [], usage: null, ranker: 'lexical', total: 0 };
   }
@@ -180,12 +183,13 @@ export async function recallMemories({
         trustedPaths,
         restricted,
         signal,
+        logger: componentLogger,
         _embed,
       });
     } catch (err) {
       // A caller-initiated abort should propagate, not silently degrade to lexical.
       if (signal?.aborted || err?.aborted) throw err;
-      logger.debug(`memory-recall: embeddings path failed, using lexical: ${err.message}`);
+      componentLogger.debug({ error: err }, 'Embeddings ranking failed; falling back to lexical');
     }
   }
   return rankLexical(corpus, query, limit);

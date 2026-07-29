@@ -19,7 +19,7 @@ import {
 import { sanitizeAssistantReasoning } from '../core/reasoning.js';
 import { ToolRegistry } from '../registries/tool-registry.js';
 import { ConfigError } from '../support/errors.js';
-import { createSessionRecorder } from '../core/session-recorder.js';
+import { createSessionRecorder } from '../recording/session-recorder.js';
 import { loadEnvironmentConfig } from '../config/environment.js';
 import { SkillRegistry } from '../registries/skill-registry.js';
 import { resolveLogger } from '../support/logger.js';
@@ -438,7 +438,7 @@ class Agent {
   startRecording(opts = {}) {
     if (this.#recorder) this.#recorder.close().catch(() => {});
     this.#recordConfig = this.#normalizeRecordConfig(opts);
-    this.#recorder = createSessionRecorder({ ...this.#recordConfig, model: this.model });
+    this.#recorder = createSessionRecorder({ ...this.#recordConfig, model: this.model, logger: this.logger });
     return this.#recorder.path;
   }
 
@@ -511,7 +511,7 @@ class Agent {
   #maybeStartRecorder() {
     if (!this.#recordConfig || this.#recorder) return;
     try {
-      this.#recorder = createSessionRecorder({ ...this.#recordConfig, model: this.model });
+      this.#recorder = createSessionRecorder({ ...this.#recordConfig, model: this.model, logger: this.logger });
     } catch (err) {
       this.logger.warn({ component: 'agent', error: err }, 'Failed to start session recorder');
       this.#recordConfig = null;

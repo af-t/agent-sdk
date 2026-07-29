@@ -3,10 +3,19 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { createFileWatchSource } from '../../src/core/file-watch-source.js';
-import { logger } from '../../src/core/logger.js';
-import { createDaemon } from '../../src/core/daemon.js';
+import { createFileWatchSource } from '../../src/automation/file-watch-source.js';
+import { createDaemon } from '../../src/automation/daemon.js';
+import { resolveLogger } from '../../src/support/logger.js';
 import { createTestTempDir } from '../support/temp.js';
+
+function createRecordingLogger() {
+  const records = [];
+  const target = {};
+  for (const level of ['debug', 'info', 'warn', 'error']) {
+    target[level] = (context, message) => records.push({ level, context, message });
+  }
+  return { logger: resolveLogger(target), records };
+}
 
 // A fake backend captures onRaw so tests drive synthetic fs events.
 function fakeBackend() {
@@ -211,20 +220,23 @@ test('stop is idempotent and safe before start', () => {
   assert.equal(fb.stops(), 1);
 });
 
-test('a second start warns and does not start the backend twice', () => {
+test('a second start routes a warning through the injected logger and does not start the backend twice', () => {
   const fb = fakeBackend();
-  const warns = [];
-  const orig = logger.warn;
-  logger.warn = (m) => warns.push(m);
-  try {
-    const src = createFileWatchSource({ paths: 'a', _backend: fb.backend });
-    src.start(() => {});
-    src.start(() => {});
-    assert.ok(warns.some((m) => /already started/.test(m)));
-    src.stop();
-  } finally {
-    logger.warn = orig;
-  }
+  const { logger, records } = createRecordingLogger();
+  const src = createFileWatchSource({ paths: 'a', _backend: fb.backend, logger });
+  src.start(() => {});
+  src.start(() => {});
+  const entry = records.find((record) => record.message === 'Source already started; ignoring');
+  assert.equal(entry.level, 'warn');
+  assert.equal(entry.context.component, 'fileWatchSource');
+  src.stop();
+});
+
+test('createFileWatchSource works without an injected logger, using the resolved default', () => {
+  const fb = fakeBackend();
+  const src = createFileWatchSource({ paths: 'a', _backend: fb.backend });
+  assert.doesNotThrow(() => src.start(() => {}));
+  src.stop();
 });
 
 test('real fs.watch backend emits on a real file change, then stops cleanly', async (t) => {

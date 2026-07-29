@@ -9,7 +9,17 @@ import {
   normalizeTriggers,
   buildReasons,
   parseDecision,
-} from '../../src/core/copilot.js';
+} from '../../src/automation/copilot.js';
+import { resolveLogger } from '../../src/support/logger.js';
+
+function createRecordingLogger() {
+  const records = [];
+  const target = {};
+  for (const level of ['debug', 'info', 'warn', 'error']) {
+    target[level] = (context, message) => records.push({ level, context, message });
+  }
+  return { logger: resolveLogger(target), records };
+}
 
 test('subscribe registers a persistent listener and returns a disposer', async () => {
   const agent = new Agent({ apiKey: 'x', model: 'm' });
@@ -232,6 +242,26 @@ test('buildReasons swallows throwing custom predicate', () => {
   assert.equal(buildReasons(ctxWith({ turn: 2 }), t).length, 0);
 });
 
+test('buildReasons routes a thrown custom trigger through the injected logger', () => {
+  const { logger, records } = createRecordingLogger();
+  const t = normalizeTriggers({
+    toolError: false,
+    everyNTurns: false,
+    nearMaxTurns: false,
+    custom: [
+      () => {
+        throw new Error('bad');
+      },
+    ],
+  });
+  buildReasons(ctxWith({ turn: 2 }), t, logger);
+
+  assert.equal(records[0].level, 'warn');
+  assert.equal(records[0].context.component, 'copilot');
+  assert.equal(records[0].context.error.name, 'Error');
+  assert.equal(records[0].message, 'Custom trigger threw');
+});
+
 const flush = () => new Promise((r) => setTimeout(r, 15));
 
 test('parseDecision coerces malformed/unknown to none, validates steer prompt', () => {
@@ -299,6 +329,31 @@ test('supervisor throw is best-effort: run unaffected, decision coerced to none'
   await flush();
   assert.deepEqual(primary.steers, []);
   assert.equal(decisions[0].action, 'none');
+});
+
+test('createCopilot routes a supervisor failure through an injected logger', async () => {
+  const primary = fakePrimary();
+  const supervisor = fakeSupervisor(() => {
+    throw new Error('supervisor down');
+  });
+  const { logger, records } = createRecordingLogger();
+  const copilot = createCopilot({ primary, supervisor, logger });
+  copilot.start();
+  await primary.emit({ toolEnd: { toolCallId: 'a1', name: 'runShell', durationMs: 3, error: 'x' } });
+  await primary.emit({ turnEnd: { turn: 1, terminal: false } });
+  await flush();
+
+  const entry = records.find((record) => record.message === 'Supervisor run threw');
+  assert.equal(entry.level, 'warn');
+  assert.equal(entry.context.component, 'copilot');
+  assert.equal(entry.context.error.name, 'Error');
+});
+
+test('createCopilot works without an injected logger, using the resolved default', () => {
+  const primary = fakePrimary();
+  const copilot = createCopilot({ primary, supervisor: fakeSupervisor() });
+  assert.doesNotThrow(() => copilot.start());
+  copilot.stop();
 });
 
 test('overlap guard: only one evaluation while one is in flight', async () => {

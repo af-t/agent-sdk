@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import Agent from '../../agent/agent.js';
 import { LIMITS } from '../../support/payload.js';
-import { createTraceWriter } from '../../core/trace-writer.js';
+import { createTraceWriter } from '../../recording/trace-writer.js';
 
 const description =
   'Delegate a specific task to a specialized sub-agent. Use this for complex research, repetitive operations, or tasks with high-volume output to keep the main session history clean. Side effect: spawns a subagent that may itself touch the filesystem and shell. Avoid parallel delegateTask calls targeting overlapping work.';

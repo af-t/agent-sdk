@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createFileWatchSource } from '../../src/core/file-watch-source.js';
+import { createFileWatchSource } from '../../src/automation/file-watch-source.js';
 import { createTestTempDir } from '../support/temp.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

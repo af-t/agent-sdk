@@ -1,4 +1,4 @@
-import { recallMemories } from '../../core/memory-recall.js';
+import { recallMemories } from '../../memory/memory-recall.js';
 
 const description =
   'Search your stored memories by meaning and return the most relevant ones in full. ' +
@@ -33,6 +33,7 @@ const execute = async ({ query, limit }, ctx = {}) => {
     trustedPaths: agent.trustedPaths,
     restricted: agent.restricted !== false,
     signal: ctx.signal,
+    logger: ctx.logger,
   });
 
   if (usage && agent.usage) {

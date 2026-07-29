@@ -5,7 +5,7 @@ import path from 'node:path';
 import { ConfigError } from '../../src/support/errors.js';
 import { ToolRegistry } from '../../src/registries/tool-registry.js';
 import { SkillRegistry } from '../../src/registries/skill-registry.js';
-import { Recording } from '../../src/core/recording.js';
+import { Recording } from '../../src/recording/recording.js';
 import { createBuiltinTools } from '../../src/tools/index.js';
 import { createTestTempDir } from '../support/temp.js';
 

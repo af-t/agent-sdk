@@ -1,8 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { logger } from '../../src/core/logger.js';
 import Agent from '../../src/agent/agent.js';
-import { createDaemon, createTimerSource } from '../../src/core/daemon.js';
+import { createDaemon, createTimerSource } from '../../src/automation/daemon.js';
+import { resolveLogger } from '../../src/support/logger.js';
+
+function createRecordingLogger() {
+  const records = [];
+  const target = {};
+  for (const level of ['debug', 'info', 'warn', 'error']) {
+    target[level] = (context, message) => records.push({ level, context, message });
+  }
+  return { logger: resolveLogger(target), records };
+}
 
 function fakeAgent({ running = false } = {}) {
   let _running = running;
@@ -265,13 +274,15 @@ test('an unknown action type is ignored without crashing', async () => {
   await daemon.stop();
 });
 
-test('queue backpressure warns once past the soft cap', async () => {
+test('queue backpressure routes a warning through the injected logger, once past the soft cap', async () => {
   const agent = fakeAgent();
   let release;
   const gate = new Promise((r) => (release = r));
   let first = true;
+  const { logger, records } = createRecordingLogger();
   const daemon = createDaemon({
     agent,
+    logger,
     handler: async () => {
       if (first) {
         first = false;
@@ -280,9 +291,6 @@ test('queue backpressure warns once past the soft cap', async () => {
       return null;
     },
   });
-  const warns = [];
-  const origWarn = logger.warn;
-  logger.warn = (m) => warns.push(m);
   try {
     daemon.start();
     daemon.emit({ type: 'blocker' });
@@ -290,14 +298,19 @@ test('queue backpressure warns once past the soft cap', async () => {
     for (let i = 0; i < 1001; i++) daemon.emit({ type: 'flood', data: i });
     release();
     await tick(30);
-    assert.ok(
-      warns.some((m) => /queue exceeded/.test(m)),
-      `expected a backpressure warning, got: ${JSON.stringify(warns)}`,
-    );
+    const entry = records.find((record) => record.message === 'Queue exceeded soft cap; handler may be too slow');
+    assert.ok(entry, `expected a backpressure warning, got: ${JSON.stringify(records)}`);
+    assert.equal(entry.level, 'warn');
+    assert.equal(entry.context.component, 'daemon');
   } finally {
-    logger.warn = origWarn;
     await daemon.stop();
   }
+});
+
+test('createDaemon works without an injected logger, using the resolved default', async () => {
+  const daemon = createDaemon({ agent: fakeAgent(), handler: () => null });
+  assert.doesNotThrow(() => daemon.start());
+  await daemon.stop();
 });
 
 test('createTimerSource validates its inputs', () => {

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { lexicalRank } from '../../src/core/lexical-rank.js';
+import { lexicalRank } from '../../src/memory/lexical-rank.js';
 
 describe('lexicalRank', () => {
   it('scores the document sharing query terms highest', () => {

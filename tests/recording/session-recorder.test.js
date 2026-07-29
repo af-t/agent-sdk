@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { createSessionRecorder } from '../../src/core/session-recorder.js';
+import { createSessionRecorder } from '../../src/recording/session-recorder.js';
+import { resolveLogger } from '../../src/support/logger.js';
 
 const ownedDirs = new Set();
 
@@ -16,6 +17,15 @@ function tmpDir() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'recorder-'));
   ownedDirs.add(dir);
   return dir;
+}
+
+function createRecordingLogger() {
+  const records = [];
+  const target = {};
+  for (const level of ['debug', 'info', 'warn', 'error']) {
+    target[level] = (context, message) => records.push({ level, context, message });
+  }
+  return { logger: resolveLogger(target), records };
 }
 
 function readRecords(dir) {
@@ -204,5 +214,34 @@ test('redact returning falsy drops the record; a throwing redact drops it and ke
     recs.some((x) => x.type === 'assistant' && x.content === 'survives'),
     'recording stays alive after a redact throw',
   );
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a throwing redact hook routes a warning through the injected logger', async () => {
+  const dir = tmpDir();
+  const { logger, records } = createRecordingLogger();
+  const r = createSessionRecorder({
+    dir,
+    level: 'full',
+    logger,
+    redact: (rec) => {
+      if (rec.type === 'response') throw new Error('redact boom');
+      return rec;
+    },
+  });
+  r.response(1, { choices: [] });
+  await r.close();
+
+  const entry = records.find((rec) => rec.message === 'Redact hook threw; dropping record');
+  assert.equal(entry.level, 'warn');
+  assert.equal(entry.context.component, 'sessionRecorder');
+  assert.equal(entry.context.error.name, 'Error');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('creates a session recorder without an injected logger, using the resolved default', async () => {
+  const dir = tmpDir();
+  const r = createSessionRecorder({ dir, level: 'events' });
+  await r.close();
   fs.rmSync(dir, { recursive: true, force: true });
 });

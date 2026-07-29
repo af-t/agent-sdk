@@ -3,7 +3,17 @@ import assert from 'node:assert/strict';
 import fs, { readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { recallMemories, parseMemoryFile } from '../../src/core/memory-recall.js';
+import { recallMemories, parseMemoryFile } from '../../src/memory/memory-recall.js';
+import { resolveLogger } from '../../src/support/logger.js';
+
+function createRecordingLogger() {
+  const records = [];
+  const target = {};
+  for (const level of ['debug', 'info', 'warn', 'error']) {
+    target[level] = (context, message) => records.push({ level, context, message });
+  }
+  return { logger: resolveLogger(target), records };
+}
 
 describe('parseMemoryFile', () => {
   it('strips frontmatter and extracts the description', () => {
@@ -226,5 +236,24 @@ describe('recallMemories (embeddings path)', () => {
     } finally {
       await fs.rm(d2, { recursive: true, force: true });
     }
+  });
+});
+
+describe('recallMemories logger injection', () => {
+  it('routes a directory-read failure through the injected logger', async () => {
+    const { logger, records } = createRecordingLogger();
+    const missing = path.join(os.tmpdir(), 'recall-missing-dir-that-does-not-exist');
+    const out = await recallMemories({ memoryDir: missing, query: 'x', logger });
+
+    assert.deepEqual(out.results, []);
+    const entry = records.find((r) => r.message === 'Failed to read memory directory');
+    assert.equal(entry.level, 'debug');
+    assert.equal(entry.context.component, 'memoryRecall');
+    assert.equal(entry.context.error.name, 'Error');
+  });
+
+  it('falls back to a resolved default logger, not a shared singleton, when none is injected', async () => {
+    const missing = path.join(os.tmpdir(), 'recall-missing-dir-default-logger');
+    await assert.doesNotReject(() => recallMemories({ memoryDir: missing, query: 'x' }));
   });
 });
