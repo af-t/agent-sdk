@@ -174,4 +174,33 @@ describe('Agent: toolStart / toolEnd notify events', () => {
     const wireAssistant = payload.messages.find((m) => m.role === 'assistant');
     assert.ok(wireAssistant && 'reasoning_details' in wireAssistant);
   });
+
+  it('routes turnEnd only to subscribed callbacks, never to a plain notify callback', async () => {
+    global.fetch = async () =>
+      makeSseResponse([
+        'data: {"choices":[{"delta":{"content":"done"},"finish_reason":"stop"}],"usage":null}',
+        'data: [DONE]',
+      ]);
+
+    const agent = new Agent({ apiKey: 'sk-test' });
+    const subscribeEvents = [];
+    const notifyEvents = [];
+    agent.subscribe((event) => subscribeEvents.push(event));
+
+    await agent.run('go', (event) => notifyEvents.push(event));
+
+    // Both branches of #broadcast's dispatch predicate include
+    // subscribedCallbacks, so a subscribe()-only listener sees every event
+    // and cannot tell the branches apart. Only a plain notify callback,
+    // which the predicate excludes on a turnEnd event, distinguishes them.
+    assert.ok(
+      notifyEvents.some((event) => event.contentDelta),
+      'a plain notify callback still receives ordinary events',
+    );
+    assert.ok(!notifyEvents.some((event) => event.turnEnd), 'a plain notify callback must never receive turnEnd');
+    assert.ok(
+      subscribeEvents.some((event) => event.turnEnd),
+      'a subscribed callback still receives turnEnd',
+    );
+  });
 });
