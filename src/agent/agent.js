@@ -101,6 +101,7 @@ class Agent {
       emptyTurnRecovery,
       sessionId,
       logger,
+      transport,
       skillRegistry: suppliedSkillRegistry,
     } = options;
 
@@ -119,10 +120,12 @@ class Agent {
     this.#baseUrl = baseUrl || config.baseUrl || 'https://openrouter.ai/api/v1';
     this.dialect = resolveApiDialect(this.#baseUrl);
     this.#sessionId = sessionId ?? crypto.randomUUID();
+    this._transport = transport;
     this.requestClient = new RequestClient({
       apiKey: this.#apiKey,
       baseUrl: this.#baseUrl,
       model,
+      transport,
       logger: this.logger,
       retryOptions: { attempts: config.maxRetries },
     });
@@ -376,7 +379,7 @@ class Agent {
         }
       }
       agent.tools.onBeforeExecute(({ context }) => {
-        const rec = recording.toolResult(context?.tool_call_id);
+        const rec = recording.toolResult(context?.toolCallId);
         if (!rec) return;
         if (rec.error !== undefined) throw new Error(rec.error);
         return { override: rec.output };
@@ -399,7 +402,7 @@ class Agent {
       apiKey: this.#apiKey,
       baseUrl: this.#baseUrl,
       model: this.model,
-      tools: this.tools,
+      tools: this.tools.clone(),
       restricted: this.restricted,
       systemPrompt: this.systemPrompt,
       maxTurns: this.maxTurns,
@@ -407,6 +410,7 @@ class Agent {
       storagePaths: { pluginsDir: this._pluginsDir },
       logger: childLogger,
       skillRegistry: this.skillRegistry,
+      transport: this._transport,
     });
     // This list mirrors the public settings returned by resolveModelSettings.
     const carry = [
@@ -631,9 +635,8 @@ class Agent {
       if (this.provider) {
         if (this.provider.order !== undefined) providerPayload.order = this.provider.order;
         if (this.provider.only !== undefined) providerPayload.only = this.provider.only;
-        // OpenRouter names this wire field `ignore`.
-        const ignoreVal = this.provider.ignore !== undefined ? this.provider.ignore : this.provider.avoid;
-        if (ignoreVal !== undefined) providerPayload.ignore = ignoreVal;
+        // OpenRouter names the canonical SDK `avoid` setting `ignore` on the wire.
+        if (this.provider.avoid !== undefined) providerPayload.ignore = this.provider.avoid;
         if (this.provider.sort !== undefined) providerPayload.sort = this.provider.sort;
         if (this.provider.allowFallbacks !== undefined) providerPayload.allow_fallbacks = this.provider.allowFallbacks;
         if (this.provider.requireParameters !== undefined)

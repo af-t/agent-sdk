@@ -11,8 +11,7 @@
 ## Secrets and logging
 
 - [ ] API keys are private fields or scoped values, not serializable properties.
-- [ ] Child environments pass through `removeSecrets` or
-      `sanitizeChildEnvironment`.
+- [ ] Every child environment passes through `sanitizeChildEnvironment`.
 - [ ] Unsafe loader and startup environment variables are removed.
 - [ ] Structured log context and messages are redacted.
 - [ ] Logs do not contain commands, credentials, environment values, or

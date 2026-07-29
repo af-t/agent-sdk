@@ -531,4 +531,39 @@ describe('manageTodos tool', () => {
     assert.ok(JSON.parse(raw).length === 1);
     await assert.rejects(() => fsP.stat(agentTodoFile), { code: 'ENOENT' });
   });
+
+  it('gives migration guidance for legacy todo field names', async () => {
+    const legacyFile = path.join(tmpDir, 'legacy-todos.json');
+    await fs.writeFile(
+      legacyFile,
+      JSON.stringify([
+        {
+          id: 'legacy',
+          text: 'Migrate me',
+          completed: false,
+          priority: 'medium',
+          category: 'general',
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-01T00:00:00.000Z',
+          due_date: null,
+        },
+      ]),
+      'utf8',
+    );
+
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
+    await assert.rejects(() => mod.execute({ action: 'list', todoFile: legacyFile }), {
+      message: /created_at.*createdAt.*updated_at.*updatedAt.*due_date.*dueDate/,
+    });
+  });
+
+  it('rejects a todo file whose JSON root is not an array', async () => {
+    const invalidFile = path.join(tmpDir, 'invalid-todos.json');
+    await fs.writeFile(invalidFile, JSON.stringify({ todos: [] }), 'utf8');
+
+    const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
+    await assert.rejects(() => mod.execute({ action: 'list', todoFile: invalidFile }), {
+      message: /Todo file must contain a JSON array/,
+    });
+  });
 });

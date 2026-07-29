@@ -59,14 +59,11 @@ export function resolveModelSettings(options, config) {
   };
 }
 
-// order and only are accepted either at the top level or inside provider.
-export function resolveProviderRouting({ order, only, provider }, config) {
-  const ignore = provider?.ignore || provider?.avoid || config.provider.avoid;
+export function resolveProviderRouting({ provider }, config) {
   return {
-    order: order || provider?.order || config.provider.order,
-    only: only || provider?.only || config.provider.only,
-    ignore,
-    avoid: ignore,
+    order: provider?.order || config.provider.order,
+    only: provider?.only || config.provider.only,
+    avoid: provider?.avoid || config.provider.avoid,
     sort: provider?.sort || config.provider.sort,
     allowFallbacks: firstDefined(provider?.allowFallbacks, config.provider.allowFallbacks),
     requireParameters: firstDefined(provider?.requireParameters, config.provider.requireParameters),

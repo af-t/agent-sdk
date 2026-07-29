@@ -128,16 +128,16 @@ describe('BackgroundJobs: timers', () => {
 });
 
 describe('BackgroundJobs: kill', () => {
-  it('returns not_found for an unknown id', () => {
-    assert.deepEqual(makeJobs().kill('bg-nope'), { ok: false, status: 'not_found' });
+  it('returns notFound for an unknown id', () => {
+    assert.deepEqual(makeJobs().kill('bg-nope'), { ok: false, status: 'notFound' });
   });
 
-  it('returns already_finished for a job that is no longer running', () => {
+  it('returns alreadyFinished for a job that is no longer running', () => {
     const jobs = makeJobs();
     jobs.register({ id: 'bg-x', kind: 'bash', status: 'crashed', startedAt: Date.now() });
     const res = jobs.kill('bg-x');
     assert.equal(res.ok, false);
-    assert.equal(res.status, 'already_finished');
+    assert.equal(res.status, 'alreadyFinished');
     assert.equal(res.jobStatus, 'crashed');
   });
 

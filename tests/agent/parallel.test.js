@@ -49,7 +49,7 @@ describe('Agent: parallel tool scheduler', () => {
     global.fetch = originalFetch;
   });
 
-  it('runs two parallelSafe tools concurrently (both in-flight at once)', async () => {
+  it('runs two independent tools concurrently (both in-flight at once)', async () => {
     global.fetch = llmStubReturning(
       [
         { id: 'a', name: 'SlowSafe', arguments: '{"id":1}' },

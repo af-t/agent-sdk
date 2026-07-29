@@ -105,6 +105,16 @@ Numeric environment values are parsed as numbers. Invalid numeric values now
 raise `ConfigError`. The configuration object and its nested objects are
 frozen.
 
+Constructor provider routing also uses one nested shape. Move top-level
+`order` and `only` into `provider.order` and `provider.only`, and rename
+`provider.ignore` to `provider.avoid`. OpenRouter still receives `ignore` in
+the provider wire payload.
+
+Existing todo JSON must also be updated before calling `manageTodos`. Rename
+`created_at`, `updated_at`, and `due_date` to `createdAt`, `updatedAt`, and
+`dueDate`. The tool rejects legacy records so it cannot silently mix the two
+formats.
+
 ## Event names
 
 SDK-authored event envelopes use camel case. Provider tool-call objects inside
@@ -125,11 +135,17 @@ Event metadata follows the same rule. For example, `tool_call_id`,
 `duration_ms`, and `finish_reason` became `toolCallId`, `durationMs`, and
 `finishReason` when they are part of an SDK event.
 
+Tool execution context now exposes `toolCallId`. Provider messages and tool
+results still use the wire field `tool_call_id`. Background job stop results
+use `notFound` and `alreadyFinished`.
+
 ## Recordings
 
 The persisted event vocabulary changed with the event envelope. Sessions
 recorded by earlier builds no longer replay in this version. Start a fresh
-recording after upgrading.
+recording after upgrading. The recording discriminators `session_start`,
+`turn_snapshot`, and `session_end` became `sessionStart`, `turnSnapshot`, and
+`sessionEnd`.
 
 Provider-shaped request payloads, response bodies, `agent.messages` entries,
 and provider tool-call objects keep their wire spelling. This exception does

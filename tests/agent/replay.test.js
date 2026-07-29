@@ -89,7 +89,7 @@ test('a full-level run records request/response and applies redact', async (t) =
   }
 });
 
-test('agent threads tool_call_id into the tool ctx', async () => {
+test('agent threads toolCallId into the tool context', async () => {
   const Agent = (await import('../../src/agent/agent.js')).default;
   const agent = new Agent({ apiKey: 'sk-test', injectors: NO_INJECTORS });
   let seenId;
@@ -98,7 +98,7 @@ test('agent threads tool_call_id into the tool ctx', async () => {
     description: 'echo',
     inputSchema: { type: 'object', properties: {} },
     execute: async (_input, ctx) => {
-      seenId = ctx.tool_call_id;
+      seenId = ctx.toolCallId;
       return 'ok';
     },
   });
@@ -123,7 +123,7 @@ test('agent threads tool_call_id into the tool ctx', async () => {
 
   const out = await agent.run('go');
   assert.equal(out, 'done');
-  assert.equal(seenId, 'callX', 'ctx.tool_call_id must equal the assistant tool call id');
+  assert.equal(seenId, 'callX', 'ctx.toolCallId must equal the assistant tool call id');
 });
 
 function writeFullFixture(t, lines) {
@@ -135,7 +135,7 @@ function writeFullFixture(t, lines) {
 
 function fullFixtureLines() {
   return [
-    { t: 'x', type: 'session_start', id: 's1', level: 'full', model: 'm' },
+    { t: 'x', type: 'sessionStart', id: 's1', level: 'full', model: 'm' },
     { t: 'x', type: 'request', turn: 1, payload: { messages: [] } },
     {
       t: 'x',
@@ -159,13 +159,13 @@ function fullFixtureLines() {
     { t: 'x', type: 'request', turn: 2, payload: { messages: [] } },
     { t: 'x', type: 'response', turn: 2, raw: { choices: [{ message: { content: 'done' } }] } },
     { t: 'x', type: 'assistant', turn: 2, content: 'done', reasoning: '' },
-    { t: 'x', type: 'session_end', reason: 'closed' },
+    { t: 'x', type: 'sessionEnd', reason: 'closed' },
   ];
 }
 
 test('Agent.replay throws on a non-full recording', async (t) => {
   const Agent = (await import('../../src/agent/agent.js')).default;
-  const { file } = writeFullFixture(t, [{ t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' }]);
+  const { file } = writeFullFixture(t, [{ t: 'x', type: 'sessionStart', id: 's1', level: 'snapshots', model: 'm' }]);
   const rec = await Recording.load(file);
   assert.throws(() => Agent.replay(rec), /full/);
 });

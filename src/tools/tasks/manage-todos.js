@@ -9,7 +9,23 @@ const readTodos = async (filePath, trustedPaths = new Set()) => {
   try {
     const safePath = resolveSafePath(filePath, trustedPaths);
     const data = await fs.readFile(safePath, 'utf8');
-    return JSON.parse(data);
+    const todos = JSON.parse(data);
+    if (!Array.isArray(todos)) {
+      throw new Error('Todo file must contain a JSON array.');
+    }
+    if (
+      todos.some(
+        (todo) =>
+          todo &&
+          typeof todo === 'object' &&
+          ['created_at', 'updated_at', 'due_date'].some((field) => Object.hasOwn(todo, field)),
+      )
+    ) {
+      throw new Error(
+        'This todo file uses removed fields. Rename created_at to createdAt, updated_at to updatedAt, and due_date to dueDate before using manageTodos.',
+      );
+    }
+    return todos;
   } catch (error) {
     // A missing file represents an empty todo list.
     if (error.code === 'ENOENT') {

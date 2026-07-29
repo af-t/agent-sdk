@@ -294,6 +294,26 @@ describe('runShell: command injection fuzzing', () => {
 describe('runShell: environment sanitization', () => {
   const mod = runShell;
 
+  it('removes inherited startup injection variables in restricted mode', async () => {
+    const result = await mod.execute(
+      { command: 'env', timeout: 5000 },
+      {
+        agent: {
+          restricted: true,
+          config: {
+            environment: {
+              PATH: process.env.PATH || '/usr/bin',
+              LD_PRELOAD: '',
+              NODE_PATH: '/tmp/untrusted-node-modules',
+            },
+          },
+        },
+      },
+    );
+
+    assert.doesNotMatch(result, /^(?:LD_PRELOAD|NODE_PATH)=/m);
+  });
+
   it('strips sensitive keys like OPENROUTER_API_KEY from custom env', async () => {
     const secretValue = 'sk-or-v1-this-is-a-test-secret-12345';
     const customEnv = {

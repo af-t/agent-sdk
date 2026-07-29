@@ -11,6 +11,11 @@ const fileTools = [readFile, writeFile, editFile, findFiles, listFiles];
 const unsupportedStartLine = ['start', 'line'].join('_');
 
 describe('file tool input validation', () => {
+  it('warns against same-path writes in one model turn', () => {
+    assert.match(writeFile.description, /do not submit.*same path.*one turn/i);
+    assert.match(editFile.description, /do not submit.*same path.*one turn/i);
+  });
+
   it('rejects snake_case input fields during schema validation', async () => {
     const registry = new ToolRegistry();
     registry.registerMany(fileTools);

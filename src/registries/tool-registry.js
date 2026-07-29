@@ -6,6 +6,28 @@ import { resolveLogger } from '../support/logger.js';
 const DEFAULT_INPUT_SCHEMA = Object.freeze({ type: 'object', properties: {} });
 const UNSUPPORTED_INPUT_SCHEMA_KEY = ['input', 'schema'].join('_');
 const UNSUPPORTED_OUTPUT_LIMIT_KEY = ['output', 'limit'].join('_');
+const REMOVED_PARALLEL_SAFE_KEY = 'parallelSafe';
+
+function validateSchemaValue(schema, value, parameterName, toolName) {
+  const valid =
+    !schema.type ||
+    (schema.type === 'array'
+      ? Array.isArray(value)
+      : schema.type === 'object'
+        ? value !== null && typeof value === 'object' && !Array.isArray(value)
+        : typeof value === schema.type);
+  if (!valid) {
+    const article = schema.type === 'array' || schema.type === 'object' ? 'an' : 'a';
+    throw new ToolError(`Parameter "${parameterName}" must be ${article} ${schema.type}`, { toolName });
+  }
+  if (schema.enum && !schema.enum.includes(value)) {
+    throw new ToolError(`Parameter "${parameterName}" must be one of [${schema.enum.join(', ')}]`, { toolName });
+  }
+  if (schema.type === 'object') validateToolInput(schema, value, toolName);
+  if (schema.type === 'array' && schema.items) {
+    value.forEach((item, index) => validateSchemaValue(schema.items, item, `${parameterName}[${index}]`, toolName));
+  }
+}
 
 function validateToolInput(inputSchema, input, toolName, { allowOutputLimit = false } = {}) {
   const { required = [], properties = {} } = inputSchema || DEFAULT_INPUT_SCHEMA;
@@ -29,26 +51,7 @@ function validateToolInput(inputSchema, input, toolName, { allowOutputLimit = fa
       continue;
     }
     if (value === undefined || value === null) continue;
-    const valid =
-      !property.type ||
-      (property.type === 'array'
-        ? Array.isArray(value)
-        : property.type === 'object'
-          ? typeof value === 'object' && !Array.isArray(value)
-          : typeof value === property.type);
-    if (!valid) {
-      const article = property.type === 'array' || property.type === 'object' ? 'an' : 'a';
-      throw new ToolError(`Parameter "${name}" must be ${article} ${property.type}`, { toolName });
-    }
-    if (property.enum && !property.enum.includes(value)) {
-      throw new ToolError(`Parameter "${name}" must be one of [${property.enum.join(', ')}]`, { toolName });
-    }
-    if (property.type === 'object') validateToolInput(property, value, toolName);
-    if (property.type === 'array' && property.items) {
-      for (const item of value) {
-        if (property.items.type === 'object') validateToolInput(property.items, item, toolName);
-      }
-    }
+    validateSchemaValue(property, value, name, toolName);
   }
 }
 
@@ -84,6 +87,9 @@ export class ToolRegistry {
       throw new Error(`Unsupported key: ${UNSUPPORTED_INPUT_SCHEMA_KEY}`);
     if (Object.hasOwn(tool || {}, UNSUPPORTED_OUTPUT_LIMIT_KEY))
       throw new Error(`Unsupported key: ${UNSUPPORTED_OUTPUT_LIMIT_KEY}`);
+    if (Object.hasOwn(tool || {}, REMOVED_PARALLEL_SAFE_KEY)) {
+      throw new Error('parallelSafe was removed. Tool calls in one turn may run concurrently.');
+    }
     const { name, description, inputSchema = DEFAULT_INPUT_SCHEMA, execute } = tool || {};
     if (typeof name !== 'string') throw new Error('Tool must have a name');
     if (typeof description !== 'string') throw new Error('Tool must have a description');
@@ -95,6 +101,19 @@ export class ToolRegistry {
   registerMany(tools) {
     for (const tool of tools) this.register(tool);
   }
+
+  clone() {
+    const registry = new ToolRegistry({
+      restricted: this.restricted,
+      logger: this.logger,
+      mcpClientFactory: this.mcpClientFactory,
+    });
+    registry.registerMany(this.#tools.values());
+    for (const callback of this.#hooks.beforeExecute) registry.onBeforeExecute(callback);
+    for (const callback of this.#hooks.afterExecute) registry.onAfterExecute(callback);
+    return registry;
+  }
+
   unregister(name) {
     return this.#tools.delete(name);
   }

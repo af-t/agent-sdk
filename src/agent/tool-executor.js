@@ -76,7 +76,7 @@ export class ToolExecutor {
     // the shape it is supposed to, and the id is worth keeping even when the
     // rest of the call is too malformed to run, so the tool-result message
     // still pairs with the assistant's tool_calls entry.
-    const tool_call_id = toolCall?.id;
+    const toolCallId = toolCall?.id;
 
     let name;
     let input;
@@ -90,13 +90,13 @@ export class ToolExecutor {
       return {
         role: 'tool',
         content: `Error: Invalid arguments: ${parseErr.message}`,
-        tool_call_id,
+        tool_call_id: toolCallId,
         durationMs: undefined,
         richParts: [],
       };
     }
 
-    await broadcast?.({ toolStart: { toolCallId: tool_call_id, name, input } });
+    await broadcast?.({ toolStart: { toolCallId, name, input } });
 
     this.logger.debug({ tool: name }, 'Executing tool');
     const started = Date.now();
@@ -104,14 +104,14 @@ export class ToolExecutor {
     let richParts = [];
     let toolError;
     try {
-      const result = await this.registry.execute(name, input, { agent, logger, maxToolOutput, signal, tool_call_id });
+      const result = await this.registry.execute(name, input, { agent, logger, maxToolOutput, signal, toolCallId });
       ({ output, richParts } = extractOutput(result, multimodalUnsupported));
     } catch (err) {
       toolError = err;
     }
     const durationMs = Date.now() - started;
 
-    const endEvent = { toolCallId: tool_call_id, name, durationMs };
+    const endEvent = { toolCallId, name, durationMs };
     if (toolError) endEvent.error = toolError.message;
     else endEvent.output = output;
     await broadcast?.({ toolEnd: endEvent });
@@ -121,12 +121,12 @@ export class ToolExecutor {
       return {
         role: 'tool',
         content: `Error: ${toolError.message ?? toolError}`,
-        tool_call_id,
+        tool_call_id: toolCallId,
         durationMs,
         richParts: [],
       };
     }
 
-    return { role: 'tool', content: output, tool_call_id, durationMs, richParts };
+    return { role: 'tool', content: output, tool_call_id: toolCallId, durationMs, richParts };
   }
 }

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { Recording } from '../../src/recording/recording.js';
+import { ToolRegistry } from '../../src/registries/tool-registry.js';
 import { resolveLogger } from '../../src/support/logger.js';
 import { createTestTempDir } from '../support/temp.js';
 
@@ -16,16 +17,16 @@ function writeFixture(t, lines) {
 
 test('load parses meta, events, and snapshots and skips malformed lines', async (t) => {
   const { file } = writeFixture(t, [
-    { t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' },
+    { t: 'x', type: 'sessionStart', id: 's1', level: 'snapshots', model: 'm' },
     { t: 'x', type: 'toolCalls', turn: 1, calls: [{ id: 'c1', name: 'Echo' }] },
     {
       t: 'x',
-      type: 'turn_snapshot',
+      type: 'turnSnapshot',
       turn: 1,
       messages: [{ role: 'user', content: 'hi' }],
       usage: { cost: 1, tokens: 2 },
     },
-    { t: 'x', type: 'session_end', reason: 'closed' },
+    { t: 'x', type: 'sessionEnd', reason: 'closed' },
   ]);
   fs.appendFileSync(file, 'not json\n');
 
@@ -41,7 +42,7 @@ test('load parses meta, events, and snapshots and skips malformed lines', async 
 });
 
 test('load routes a malformed line through an injected logger', async (t) => {
-  const { file } = writeFixture(t, [{ t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' }]);
+  const { file } = writeFixture(t, [{ t: 'x', type: 'sessionStart', id: 's1', level: 'snapshots', model: 'm' }]);
   fs.appendFileSync(file, 'not json\n');
 
   const records = [];
@@ -61,7 +62,7 @@ test('load routes a malformed line through an injected logger', async (t) => {
 });
 
 test('load falls back to a resolved default logger when none is injected', async (t) => {
-  const { file } = writeFixture(t, [{ t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' }]);
+  const { file } = writeFixture(t, [{ t: 'x', type: 'sessionStart', id: 's1', level: 'snapshots', model: 'm' }]);
   fs.appendFileSync(file, 'not json\n');
 
   await assert.doesNotReject(() => Recording.load(file));
@@ -70,10 +71,10 @@ test('load falls back to a resolved default logger when none is injected', async
 test('forkAt seeds a new independent Agent from the snapshot', async (t) => {
   const Agent = (await import('../../src/agent/agent.js')).default;
   const { file } = writeFixture(t, [
-    { t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' },
+    { t: 'x', type: 'sessionStart', id: 's1', level: 'snapshots', model: 'm' },
     {
       t: 'x',
-      type: 'turn_snapshot',
+      type: 'turnSnapshot',
       turn: 2,
       messages: [
         { role: 'user', content: [{ type: 'text', text: 'hi' }] },
@@ -97,7 +98,15 @@ test('forkAt seeds a new independent Agent from the snapshot', async (t) => {
   assert.equal(child.messages.length, 2);
   assert.equal(child.messages[1].content, 'hello');
   assert.deepEqual(child.usage, { cost: 0.3, tokens: 7 });
-  assert.equal(child.tools, parent.tools, 'fork shares the parent tool registry');
+  assert.notEqual(child.tools, parent.tools);
+  child.registerTools({
+    name: 'BranchOnly',
+    description: 'Only the fork can call this tool.',
+    inputSchema: { type: 'object', properties: {} },
+    execute: async () => 'branch',
+  });
+  assert.ok(child.tools.listTools().some((tool) => tool.name === 'Echo'));
+  assert.ok(!parent.tools.listTools().some((tool) => tool.name === 'BranchOnly'));
 
   child.messages.push({ role: 'user', content: 'new branch' });
   assert.equal(parent.messages.length, 0, 'forking must not push into the parent');
@@ -111,11 +120,101 @@ test('forkAt seeds a new independent Agent from the snapshot', async (t) => {
   assert.throws(() => parent.forkAt(rec, 99), /no snapshot/i);
 });
 
+test('cleaning a fork leaves parent MCP clients open', async (t) => {
+  const Agent = (await import('../../src/agent/agent.js')).default;
+  const { file } = writeFixture(t, [
+    { t: 'x', type: 'sessionStart', id: 's1', level: 'snapshots', model: 'm' },
+    { t: 'x', type: 'turnSnapshot', turn: 1, messages: [], usage: { cost: 0, tokens: 0 } },
+  ]);
+  let closeCalls = 0;
+  const client = {
+    async connectAndGetTools() {
+      return [
+        {
+          name: 'echo',
+          description: 'Echo text.',
+          inputSchema: {
+            type: 'object',
+            properties: { text: { type: 'string' } },
+            required: ['text'],
+          },
+        },
+      ];
+    },
+    async executeTool(_name, input) {
+      return { content: [{ type: 'text', text: input.text }] };
+    },
+    async close() {
+      closeCalls += 1;
+    },
+  };
+  const tools = new ToolRegistry({ mcpClientFactory: () => client });
+  await tools.connectMcpServer({ name: 'remote', command: 'unused' });
+  const parent = new Agent({ apiKey: 'sk-test', tools });
+  t.after(() => parent.cleanup());
+  const child = parent.forkAt(await Recording.load(file), 1);
+
+  await child.cleanup();
+
+  assert.equal(closeCalls, 0);
+  assert.equal(await parent.tools.execute('remote.echo', { text: 'still open' }), 'still open');
+  await parent.cleanup();
+  assert.equal(closeCalls, 1);
+});
+
+test('forkAt keeps the parent transport injection', async (t) => {
+  const Agent = (await import('../../src/agent/agent.js')).default;
+  const { file } = writeFixture(t, [
+    { t: 'x', type: 'sessionStart', id: 's1', level: 'snapshots', model: 'm' },
+    { t: 'x', type: 'turnSnapshot', turn: 1, messages: [], usage: { cost: 0, tokens: 0 } },
+  ]);
+  let calls = 0;
+  const parent = new Agent({
+    apiKey: 'sk-test',
+    transport: async () => {
+      calls += 1;
+      return {
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            choices: [{ message: { role: 'assistant', content: 'fork response' }, finish_reason: 'stop' }],
+            usage: { cost: 0, total_tokens: 1 },
+          }),
+      };
+    },
+  });
+  t.after(() => parent.cleanup());
+  const child = parent.forkAt(await Recording.load(file), 1);
+  t.after(() => child.cleanup());
+  const originalFetch = global.fetch;
+  let globalCalls = 0;
+  global.fetch = async () => {
+    globalCalls += 1;
+    return {
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          choices: [{ message: { role: 'assistant', content: 'global response' }, finish_reason: 'stop' }],
+          usage: { cost: 0, total_tokens: 1 },
+        }),
+    };
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  assert.equal(await child.run('continue'), 'fork response');
+  assert.equal(calls, 1);
+  assert.equal(globalCalls, 0);
+});
+
 test('forkAt shares the SkillRegistry used by loadSkill', async (t) => {
   const createAgent = (await import('../../src/index.js')).default;
   const { file } = writeFixture(t, [
-    { t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' },
-    { t: 'x', type: 'turn_snapshot', turn: 1, messages: [], usage: { cost: 0, tokens: 0 } },
+    { t: 'x', type: 'sessionStart', id: 's1', level: 'snapshots', model: 'm' },
+    { t: 'x', type: 'turnSnapshot', turn: 1, messages: [], usage: { cost: 0, tokens: 0 } },
   ]);
   const parent = await createAgent({ apiKey: 'sk-test' });
   await parent.skillRegistry._ensureDiscovered();
@@ -132,10 +231,10 @@ test('forkAt shares the SkillRegistry used by loadSkill', async (t) => {
 test('forkAt inherits parent appName', async (t) => {
   const Agent = (await import('../../src/agent/agent.js')).default;
   const { file } = writeFixture(t, [
-    { t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' },
+    { t: 'x', type: 'sessionStart', id: 's1', level: 'snapshots', model: 'm' },
     {
       t: 'x',
-      type: 'turn_snapshot',
+      type: 'turnSnapshot',
       turn: 1,
       messages: [{ role: 'user', content: 'hi' }],
       usage: { cost: 0, tokens: 0 },
@@ -152,10 +251,10 @@ test('forkAt inherits parent appName', async (t) => {
 test('forkAt creates an Agent child logger', async (t) => {
   const Agent = (await import('../../src/agent/agent.js')).default;
   const { file } = writeFixture(t, [
-    { t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' },
+    { t: 'x', type: 'sessionStart', id: 's1', level: 'snapshots', model: 'm' },
     {
       t: 'x',
-      type: 'turn_snapshot',
+      type: 'turnSnapshot',
       turn: 1,
       messages: [{ role: 'user', content: 'hi' }],
       usage: { cost: 0, tokens: 0 },
@@ -186,10 +285,10 @@ test('forkAt creates an Agent child logger', async (t) => {
 test('forkAt forwards parent pluginsDir', async (t) => {
   const Agent = (await import('../../src/agent/agent.js')).default;
   const { file } = writeFixture(t, [
-    { t: 'x', type: 'session_start', id: 's1', level: 'snapshots', model: 'm' },
+    { t: 'x', type: 'sessionStart', id: 's1', level: 'snapshots', model: 'm' },
     {
       t: 'x',
-      type: 'turn_snapshot',
+      type: 'turnSnapshot',
       turn: 1,
       messages: [{ role: 'user', content: 'hi' }],
       usage: { cost: 0, tokens: 0 },
@@ -204,7 +303,7 @@ test('forkAt forwards parent pluginsDir', async (t) => {
 
 test('renderTrace reconstructs the human trace from recorded events', async (t) => {
   const { file } = writeFixture(t, [
-    { t: 'x', type: 'session_start', id: 's1', level: 'events', model: 'm' },
+    { t: 'x', type: 'sessionStart', id: 's1', level: 'events', model: 'm' },
     { t: 'x', type: 'assistant', turn: 1, content: 'I will read the file', reasoning: 'thinking about the task' },
     { t: 'x', type: 'toolCalls', turn: 1, calls: [{ id: 'abc', name: 'readFile' }] },
     { t: 'x', type: 'toolStart', turn: 1, toolCallId: 'abc', name: 'readFile', input: { path: '/x.txt' } },
@@ -226,7 +325,7 @@ test('renderTrace reconstructs the human trace from recorded events', async (t) 
 
 test('renderTrace shows tool errors', async (t) => {
   const { file } = writeFixture(t, [
-    { t: 'x', type: 'session_start', id: 's1', level: 'events', model: 'm' },
+    { t: 'x', type: 'sessionStart', id: 's1', level: 'events', model: 'm' },
     { t: 'x', type: 'toolCalls', turn: 1, calls: [{ id: 'e1', name: 'runShell' }] },
     { t: 'x', type: 'toolEnd', turn: 1, toolCallId: 'e1', name: 'runShell', durationMs: 5, error: 'boom' },
   ]);
@@ -236,7 +335,7 @@ test('renderTrace shows tool errors', async (t) => {
 
 test('reads request/response payloads and tool results from a full recording', async (t) => {
   const { file } = writeFixture(t, [
-    { t: 'x', type: 'session_start', id: 's1', level: 'full', model: 'm' },
+    { t: 'x', type: 'sessionStart', id: 's1', level: 'full', model: 'm' },
     { t: 'x', type: 'request', turn: 1, payload: { model: 'm', messages: [{ role: 'user', content: 'hi' }] } },
     {
       t: 'x',
@@ -247,7 +346,7 @@ test('reads request/response payloads and tool results from a full recording', a
     { t: 'x', type: 'toolEnd', turn: 1, toolCallId: 'c1', name: 'Echo', durationMs: 4, output: 'echoed' },
     { t: 'x', type: 'toolEnd', turn: 1, toolCallId: 'c2', name: 'runShell', durationMs: 9, error: 'boom' },
     { t: 'x', type: 'response', turn: 2, raw: { choices: [{ message: { content: 'done' } }] } },
-    { t: 'x', type: 'session_end', reason: 'closed' },
+    { t: 'x', type: 'sessionEnd', reason: 'closed' },
   ]);
 
   const rec = await Recording.load(file);

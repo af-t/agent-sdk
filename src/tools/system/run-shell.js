@@ -22,6 +22,7 @@ async function getPty(logger) {
           const proc = pty.spawn('echo', ['1'], {
             cols: 80,
             rows: 24,
+            env: sanitizeChildEnvironment(process.env),
           });
           let hasData = false;
           const timer = setTimeout(() => {
@@ -575,6 +576,7 @@ const execute = async ({ command, workingDirectory, env, timeout = 300000, backg
     for (const key of SAFE_ENV_KEYS) {
       if (key in baseEnvironment) safeEnv[key] = baseEnvironment[key];
     }
+    safeEnv = sanitizeChildEnvironment(safeEnv);
     if (requestedEnvironment !== baseEnvironment) {
       Object.assign(safeEnv, sanitizeChildEnvironment(requestedEnvironment));
     }

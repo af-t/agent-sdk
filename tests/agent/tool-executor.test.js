@@ -113,7 +113,7 @@ describe('ToolExecutor: successful execution', () => {
     assert.equal(result.tool_call_id, 'c1');
   });
 
-  it('forwards agent, logger, maxToolOutput, signal, and tool_call_id to the registry', async () => {
+  it('forwards agent, logger, maxToolOutput, signal, and toolCallId to the registry', async () => {
     const { logger } = createRecordingLogger();
     const registry = { execute: mock.fn(async () => 'ok') };
     const executor = new ToolExecutor({ registry, logger });
@@ -130,7 +130,7 @@ describe('ToolExecutor: successful execution', () => {
     assert.equal(call.arguments[2].logger, toolLogger);
     assert.equal(call.arguments[2].maxToolOutput, 42);
     assert.equal(call.arguments[2].signal, controller.signal);
-    assert.equal(call.arguments[2].tool_call_id, 'c1');
+    assert.equal(call.arguments[2].toolCallId, 'c1');
   });
 
   it('broadcasts toolStart before execution and toolEnd with the output after', async () => {

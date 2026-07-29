@@ -5,7 +5,8 @@ import { hashContent } from './file-state.js';
 
 const MAX_WRITE_SIZE = 10 * 1024 * 1024;
 
-const description = 'Create a file or replace it when overwrite is true. Prefer editFile for partial changes.';
+const description =
+  'Create a file or replace it when overwrite is true. Prefer editFile for partial changes. Do not submit more than one writeFile or editFile call for the same path in one turn.';
 const inputSchema = {
   type: 'object',
   additionalProperties: false,

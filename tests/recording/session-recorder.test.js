@@ -37,7 +37,7 @@ function readRecords(dir) {
     .map((l) => JSON.parse(l));
 }
 
-test('writes session_start, event records, and session_end', async () => {
+test('writes sessionStart, event records, and sessionEnd', async () => {
   const dir = tmpDir();
   const r = createSessionRecorder({ dir, level: 'events', model: 'm' });
   r.recordAssistant(1, {
@@ -52,7 +52,7 @@ test('writes session_start, event records, and session_end', async () => {
 
   const recs = readRecords(dir);
   const types = recs.map((x) => x.type);
-  assert.equal(recs[0].type, 'session_start');
+  assert.equal(recs[0].type, 'sessionStart');
   assert.equal(recs[0].model, 'm');
   assert.ok(types.includes('toolCalls'), 'expected toolCalls record');
   assert.ok(types.includes('toolStart'), 'expected toolStart record');
@@ -62,11 +62,11 @@ test('writes session_start, event records, and session_end', async () => {
   assert.equal(assistantRecs[0].turn, 1);
   assert.equal(assistantRecs[1].content, 'final');
   assert.equal(assistantRecs[1].turn, 2);
-  assert.equal(recs[recs.length - 1].type, 'session_end');
+  assert.equal(recs[recs.length - 1].type, 'sessionEnd');
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('writes turn_snapshot only at level snapshots and deep-copies state', async () => {
+test('writes turnSnapshot only at level snapshots and deep-copies state', async () => {
   const dir = tmpDir();
   const r = createSessionRecorder({ dir, level: 'snapshots' });
   const messages = [{ role: 'user', content: 'hi' }];
@@ -75,7 +75,7 @@ test('writes turn_snapshot only at level snapshots and deep-copies state', async
   await r.close();
 
   const recs = readRecords(dir);
-  const snap = recs.find((x) => x.type === 'turn_snapshot');
+  const snap = recs.find((x) => x.type === 'turnSnapshot');
   assert.ok(snap);
   assert.equal(snap.turn, 1);
   assert.equal(snap.messages.length, 1, 'snapshot must be a deep copy taken at call time');
@@ -89,7 +89,7 @@ test('events level does not write snapshots', async () => {
   r.snapshot(1, [{ role: 'user', content: 'hi' }], { cost: 0, tokens: 0 });
   await r.close();
   const recs = readRecords(dir);
-  assert.ok(!recs.some((x) => x.type === 'turn_snapshot'));
+  assert.ok(!recs.some((x) => x.type === 'turnSnapshot'));
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -125,7 +125,7 @@ test('unknown level falls back to snapshots', async () => {
   await r.close();
   const recs = readRecords(dir);
   assert.ok(
-    recs.some((x) => x.type === 'turn_snapshot'),
+    recs.some((x) => x.type === 'turnSnapshot'),
     'bogus level should behave like snapshots',
   );
   fs.rmSync(dir, { recursive: true, force: true });

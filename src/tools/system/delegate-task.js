@@ -57,7 +57,7 @@ const execute = async ({ description, prompt, persona, id, background = false },
       baseUrl: agent.baseUrl,
       model: agent.model,
       provider: agent.provider,
-      tools: agent.tools,
+      tools: agent.tools.clone(),
       skillRegistry: agent.skillRegistry,
       systemPrompt: persona,
       maxCompletionTokens: agent.maxCompletionTokens || LIMITS.maxSubagentCompletionTokens,
@@ -67,6 +67,7 @@ const execute = async ({ description, prompt, persona, id, background = false },
       storagePaths: agent._storagePaths ?? undefined,
       appName: agent.appName,
       logger: agent.logger.child({ component: 'agent', agent: 'subagent', subagentId: resolvedId }),
+      transport: agent._transport,
     });
     if (typeof agent._sendForTest === 'function') {
       subagent._sendForTest = agent._sendForTest;

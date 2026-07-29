@@ -1,11 +1,11 @@
 import { ConfigError } from './errors.js';
 
 const LEVELS = ['debug', 'info', 'warn', 'error'];
-const SECRET_KEY_PATTERN = /authorization|api[_-]?key|secret|token|password/i;
+const SECRET_KEY_PATTERN = /authorization|api[_-]?key|secret|token|password|(?:auth|credentials?)$/i;
 const SECRET_PATTERNS = [
-  /(Authorization:\s*Bearer\s+)[a-zA-Z0-9._-]+/gi,
+  /(Authorization:\s*(?:Bearer|Basic)\s+)[a-zA-Z0-9+/=._-]+/gi,
   /(Bearer\s+)[a-zA-Z0-9._-]+/g,
-  /(sk-(?:or|ant)-)[a-zA-Z0-9_-]+/g,
+  /(sk-(?:[a-zA-Z0-9]+-)?)[a-zA-Z0-9_-]+/g,
   /(tvly-)[a-zA-Z0-9_-]+/g,
   /([?&](?:api_key|key|token|apikey)=)[^&\s]+/gi,
   /((?:API_KEY|SECRET|TOKEN|PASSWORD)[^=]*=\s*['"]?)[^'"\s]+/gi,

@@ -374,6 +374,41 @@ describe('McpClientWrapper: functional', () => {
   });
 
   it(
+    'removes startup injection variables from restricted child environments',
+    { skip: !nodeAvailable ? 'node not spawnable' : undefined },
+    async (t) => {
+      const inherited = {
+        BASH_ENV: process.env.BASH_ENV,
+        LD_PRELOAD: process.env.LD_PRELOAD,
+        NODE_OPTIONS: process.env.NODE_OPTIONS,
+        NODE_PATH: process.env.NODE_PATH,
+      };
+      process.env.BASH_ENV = '/tmp/inherited-bash-env';
+      process.env.LD_PRELOAD = '';
+      process.env.NODE_OPTIONS = '--no-warnings';
+      process.env.NODE_PATH = '/tmp/inherited-node-modules';
+      t.after(() => {
+        for (const [key, value] of Object.entries(inherited)) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      });
+
+      const wrapper = new McpClientWrapper({
+        command: process.execPath,
+        args: [path.join(fixturesDir, 'mock-mcp-environment.js')],
+        env: { PYTHONPATH: '/tmp/supplied-python-path' },
+        restricted: true,
+      });
+      t.after(() => wrapper.close());
+
+      await wrapper.connectAndGetTools();
+
+      assert.deepEqual(wrapper.client.serverInfo.unsafeKeys, []);
+    },
+  );
+
+  it(
     'connectAndGetTools() returns array of tool definitions',
     { skip: !nodeAvailable ? 'node not spawnable' : undefined },
     async () => {

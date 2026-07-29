@@ -138,7 +138,7 @@ function applyEdit(content, edit, i, map, origLineCount) {
 }
 
 const description =
-  'Apply ordered replace, insert, or delete actions to a file. The file is written only when every action succeeds. Prefer oldText because it stays anchored to content. Line numbers are adjusted after earlier insertions and deletions, but cannot address a line rewritten earlier in the same call. Put line-based actions in top-to-bottom order.';
+  'Apply ordered replace, insert, or delete actions to a file. The file is written only when every action succeeds. Prefer oldText because it stays anchored to content. Line numbers are adjusted after earlier insertions and deletions, but cannot address a line rewritten earlier in the same call. Put line-based actions in top-to-bottom order. Do not submit more than one writeFile or editFile call for the same path in one turn.';
 
 const inputSchema = {
   type: 'object',

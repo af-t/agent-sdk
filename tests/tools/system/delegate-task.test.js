@@ -3,11 +3,26 @@ import { describe, it, before, after, mock } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createTestTempDir } from '../../support/temp.js';
+import { ToolRegistry } from '../../../src/registries/tool-registry.js';
 import { resolveLogger } from '../../../src/support/logger.js';
 
 const noopLogger = resolveLogger(
   Object.fromEntries(['debug', 'info', 'warn', 'error'].map((level) => [level, () => {}])),
 );
+
+function makeStreamResponse(content) {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content }, finish_reason: 'stop' }] })}\n\n`),
+      );
+      controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+      controller.close();
+    },
+  });
+  return { ok: true, status: 200, body };
+}
 
 function createFakeAgent(t, overrides = {}) {
   const subagents = new Map();
@@ -21,7 +36,7 @@ function createFakeAgent(t, overrides = {}) {
     apiKey: 'sk-test-key',
     model: 'test-model',
     provider: {},
-    tools: {},
+    tools: new ToolRegistry({ logger: noopLogger }),
     usage: { cost: 0, tokens: 0 },
     subagents,
     _storagePaths: { tmpDir },
@@ -113,7 +128,36 @@ describe('delegateTask execution', () => {
     assert.strictEqual(sub.maxTokens, undefined);
   });
 
-  it('shares the parent SkillRegistry when it shares the parent tools', async (t) => {
+  it('subagent keeps the parent transport injection', async (t) => {
+    while (Agent.prototype.run.mock) Agent.prototype.run.mock.restore();
+    const tmpDir = createTestTempDir(t, 'delegate-transport-');
+    let calls = 0;
+    const parent = new Agent({
+      apiKey: 'sk-test-key',
+      storagePaths: { tmpDir },
+      transport: async () => {
+        calls += 1;
+        return makeStreamResponse('delegated response');
+      },
+    });
+    t.after(() => parent.cleanup());
+    const originalFetch = global.fetch;
+    let globalCalls = 0;
+    global.fetch = async () => {
+      globalCalls += 1;
+      return makeStreamResponse('global response');
+    };
+    t.after(() => {
+      global.fetch = originalFetch;
+    });
+
+    const result = await mod.execute({ description: 'Task', prompt: 'Work', id: 'transport-child' }, { agent: parent });
+    assert.match(result, /^delegated response/);
+    assert.equal(calls, 1);
+    assert.equal(globalCalls, 0);
+  });
+
+  it('uses the parent SkillRegistry with isolated tool definitions', async (t) => {
     mock.method(Agent.prototype, 'run', async () => 'done');
     const createAgent = (await import('../../../src/index.js')).default;
     const parent = await createAgent({ apiKey: 'sk-test-key' });
@@ -127,10 +171,18 @@ describe('delegateTask execution', () => {
     await mod.execute({ description: 'Task', prompt: 'Work', id: 'shared-skills' }, { agent: parent });
     const child = parent.subagents.get('shared-skills');
     assert.equal(child.skillRegistry, parent.skillRegistry);
+    assert.notEqual(child.tools, parent.tools);
     assert.match(
       await child.tools.execute('loadSkill', { action: 'load', argument: 'delegate-marker' }, { agent: child }),
       /delegate marker body/,
     );
+    child.registerTools({
+      name: 'ChildOnly',
+      description: 'Only the child can call this tool.',
+      inputSchema: { type: 'object', properties: {} },
+      execute: async () => 'child',
+    });
+    assert.ok(!parent.tools.listTools().some((tool) => tool.name === 'ChildOnly'));
   });
 
   it('subagent defaults maxCompletionTokens to MAX_COMPLETION_TOKENS_SUBAGENT', async (t) => {
@@ -228,7 +280,6 @@ describe('delegateTask execution', () => {
   });
 
   it('inherits the parent tool registry including custom tools', async (t) => {
-    const { ToolRegistry } = await import('../../../src/registries/tool-registry.js');
     const parentTools = new ToolRegistry();
     parentTools.register({
       name: 'CustomTestTool',

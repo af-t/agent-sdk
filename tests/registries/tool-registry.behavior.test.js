@@ -231,6 +231,40 @@ describe('ToolRegistry', () => {
     await assert.rejects(() => registry.execute('t', { p: {} }, {}), { message: /must be an array/ });
   });
 
+  it('validates primitive array items', async () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 't',
+      description: 'd',
+      inputSchema: {
+        type: 'object',
+        properties: { tags: { type: 'array', items: { type: 'string' } } },
+      },
+      execute: async () => 'ok',
+    });
+
+    await assert.rejects(() => registry.execute('t', { tags: ['safe', 4] }, {}), {
+      message: /Parameter "tags\[1\]" must be a string/,
+    });
+  });
+
+  it('validates enum constraints on array items', async () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 't',
+      description: 'd',
+      inputSchema: {
+        type: 'object',
+        properties: { modes: { type: 'array', items: { enum: ['read', 'write'] } } },
+      },
+      execute: async () => 'ok',
+    });
+
+    await assert.rejects(() => registry.execute('t', { modes: ['read', 'delete'] }, {}), {
+      message: /Parameter "modes\[1\]" must be one of \[read, write\]/,
+    });
+  });
+
   it('validate parameter type: object', async () => {
     const registry = new ToolRegistry();
     registry.register({
@@ -472,14 +506,17 @@ test('ToolRegistry does not expose isParallelSafe', () => {
   assert.equal(typeof reg.isParallelSafe, 'undefined');
 });
 
-test('register() ignores the unsupported parallelSafe field without throwing', () => {
+test('register() explains why the removed parallelSafe field is rejected', () => {
   const reg = new ToolRegistry();
-  reg.register({
-    name: 'noop',
-    description: 'd',
-    inputSchema: { type: 'object', properties: {} },
-    execute: async () => 'ok',
-    parallelSafe: false,
-  });
-  assert.ok(reg.getDefinitions().find((t) => t.function.name === 'noop'));
+  assert.throws(
+    () =>
+      reg.register({
+        name: 'noop',
+        description: 'd',
+        inputSchema: { type: 'object', properties: {} },
+        execute: async () => 'ok',
+        parallelSafe: false,
+      }),
+    /parallelSafe.*removed.*concurrently/i,
+  );
 });

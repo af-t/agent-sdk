@@ -76,6 +76,27 @@ test('passes the logger and signal while stripping outputLimit', async () => {
   assert.ok(calls[0].context.logger);
 });
 
+test('clone inherits existing hooks without sharing later hooks', async () => {
+  const registry = new ToolRegistry();
+  const calls = [];
+  registry.register({
+    name: 'probe',
+    description: 'Return a marker.',
+    inputSchema: { type: 'object', properties: {} },
+    execute: async () => 'tool',
+  });
+  registry.onBeforeExecute(() => {
+    calls.push('parent-hook');
+  });
+  const clone = registry.clone();
+  clone.onBeforeExecute(() => ({ override: 'child override' }));
+
+  assert.equal(await clone.execute('probe'), 'child override');
+  assert.deepEqual(calls, ['parent-hook']);
+  assert.equal(await registry.execute('probe'), 'tool');
+  assert.deepEqual(calls, ['parent-hook', 'parent-hook']);
+});
+
 test('maps MCP schemas and closes only owned clients', async () => {
   const client = {
     async connectAndGetTools() {

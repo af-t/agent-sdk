@@ -253,9 +253,8 @@ export class RunLoop {
       if (signal?.aborted) throw callerAbortError();
 
       const message = response.message;
-      if (!message) {
-        this.#logger.warn({}, 'Model returned no message, so the run is stopping');
-        break;
+      if (!message || typeof message !== 'object' || Array.isArray(message)) {
+        throw new Error('Model response did not include a valid message');
       }
 
       let { content, tool_calls } = message;
@@ -330,7 +329,7 @@ export class RunLoop {
         // Before termination, late background exits enter history. autoWake
         // resumes the model so it can act on them.
         if (drainBackgroundExits(this.#backgroundJobs, messages) && agent.autoWake) continue;
-        break;
+        return content;
       }
 
       const toolContext = {

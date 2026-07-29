@@ -1,6 +1,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 
 const FIXTURES = path.resolve('tests/fixtures/find-test-dir');
@@ -267,6 +268,46 @@ describe('findFiles: abort signal handling', () => {
     const mod = await import('../../../src/tools/files/find-files.js');
     const result = await mod.findFiles.execute({ path: FIXTURES_ABORT, pattern: 'world', mode: 'content' });
     assert.ok(typeof result === 'string');
+  });
+});
+
+describe('findFiles: child process environment', () => {
+  it('removes secrets and startup injection variables from helper commands', async () => {
+    const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'find-files-env-'));
+    const auditPath = path.join(temporaryDirectory, 'environment.txt');
+    const whichPath = path.join(temporaryDirectory, 'which');
+    const original = {
+      PATH: process.env.PATH,
+      FIND_FILES_AUDIT_PATH: process.env.FIND_FILES_AUDIT_PATH,
+      OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+      NODE_PATH: process.env.NODE_PATH,
+    };
+
+    try {
+      await fs.writeFile(whichPath, '#!/bin/sh\n/usr/bin/env > "$FIND_FILES_AUDIT_PATH"\nexit 1\n', 'utf8');
+      await fs.chmod(whichPath, 0o755);
+      process.env.PATH = `${temporaryDirectory}:${original.PATH}`;
+      process.env.FIND_FILES_AUDIT_PATH = auditPath;
+      process.env.OPENROUTER_API_KEY = 'find-files-secret';
+      process.env.NODE_PATH = '/tmp/find-files-injected-modules';
+
+      const mod = await import('../../../src/tools/files/find-files.js');
+      await mod.findFiles.execute({ path: FIXTURES, pattern: 'alpha', mode: 'name' });
+
+      const helperEnvironment = await fs.readFile(auditPath, 'utf8');
+      assert.doesNotMatch(helperEnvironment, /OPENROUTER_API_KEY|find-files-secret/);
+      assert.doesNotMatch(helperEnvironment, /NODE_PATH|find-files-injected-modules/);
+      assert.match(
+        helperEnvironment,
+        new RegExp(`^PATH=${temporaryDirectory.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:`, 'm'),
+      );
+    } finally {
+      for (const [key, value] of Object.entries(original)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      await fs.rm(temporaryDirectory, { recursive: true, force: true });
+    }
   });
 });
 

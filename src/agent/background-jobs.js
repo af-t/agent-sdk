@@ -159,8 +159,8 @@ export class BackgroundJobs {
   // real exit event still comes from the process itself.
   kill(id) {
     const job = this.#jobs.get(id);
-    if (!job) return { ok: false, status: 'not_found' };
-    if (job.status !== 'running') return { ok: false, status: 'already_finished', jobStatus: job.status };
+    if (!job) return { ok: false, status: 'notFound' };
+    if (job.status !== 'running') return { ok: false, status: 'alreadyFinished', jobStatus: job.status };
 
     if (job.kind === 'timer') {
       if (job.timer) clearTimeout(job.timer);

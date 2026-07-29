@@ -53,12 +53,12 @@ test('a tool-using run writes events and a turn snapshot to a session file', asy
       .split('\n')
       .map((l) => JSON.parse(l));
     const types = recs.map((x) => x.type);
-    assert.ok(types.includes('session_start'), 'expected session_start');
+    assert.ok(types.includes('sessionStart'), 'expected sessionStart');
     assert.ok(types.includes('toolCalls'), 'expected toolCalls');
     assert.ok(types.includes('toolStart'), 'expected toolStart');
     assert.ok(types.includes('toolEnd'), 'expected toolEnd');
-    assert.ok(types.includes('turn_snapshot'), 'default record level is snapshots');
-    const snap = recs.find((x) => x.type === 'turn_snapshot');
+    assert.ok(types.includes('turnSnapshot'), 'default record level is snapshots');
+    const snap = recs.find((x) => x.type === 'turnSnapshot');
     assert.ok(Array.isArray(snap.messages) && snap.messages.length > 0);
   } finally {
     global.fetch = orig;
@@ -128,7 +128,7 @@ test('non-streaming run (no notify) still records assistant and toolCalls', asyn
     assert.ok(types.includes('toolCalls'), 'non-streaming must record toolCalls');
     assert.ok(types.includes('toolStart'), 'expected toolStart');
     assert.ok(types.includes('toolEnd'), 'expected toolEnd');
-    assert.ok(types.includes('turn_snapshot'), 'expected turn_snapshot');
+    assert.ok(types.includes('turnSnapshot'), 'expected turnSnapshot');
 
     const trace = (await Recording.load(path.join(dir, file))).renderTrace();
     assert.match(trace, /=== turn 1 ===/);

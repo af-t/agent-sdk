@@ -51,7 +51,7 @@ export function createSessionRecorder({ dir, level = 'snapshots', model, redact,
     }
   }
 
-  write({ t: now(), type: 'session_start', id, level, model });
+  write({ t: now(), type: 'sessionStart', id, level, model });
 
   // The run loop records assistant content and tool calls in both transport modes.
   function recordAssistant(turn, message) {
@@ -103,11 +103,11 @@ export function createSessionRecorder({ dir, level = 'snapshots', model, redact,
   function snapshot(turn, messages, usage) {
     if (!alive || lvl < LEVELS.snapshots) return;
     if (typeof turn === 'number') curTurn = turn;
-    write({ t: now(), type: 'turn_snapshot', turn, messages: structuredClone(messages), usage: { ...usage } });
+    write({ t: now(), type: 'turnSnapshot', turn, messages: structuredClone(messages), usage: { ...usage } });
   }
 
   function close() {
-    write({ t: now(), type: 'session_end', reason: 'closed' });
+    write({ t: now(), type: 'sessionEnd', reason: 'closed' });
     alive = false;
     return new Promise((resolve) => stream.end(resolve));
   }

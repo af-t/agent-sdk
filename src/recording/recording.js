@@ -30,13 +30,13 @@ export class Recording {
         componentLogger.warn({ filePath, line: i + 1 }, 'Skipping malformed line while loading a recording');
         continue;
       }
-      if (rec.type === 'session_start') {
+      if (rec.type === 'sessionStart') {
         id = rec.id;
         level = rec.level;
         model = rec.model;
-      } else if (rec.type === 'turn_snapshot') {
+      } else if (rec.type === 'turnSnapshot') {
         snapshots.push(rec);
-      } else if (rec.type !== 'session_end') {
+      } else if (rec.type !== 'sessionEnd') {
         events.push(rec);
       }
     }

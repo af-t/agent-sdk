@@ -91,6 +91,27 @@ describe('Agent facade contract', () => {
     assert.equal(await agent.run('hello'), 'done');
   });
 
+  it('uses the transport supplied to createAgent', async () => {
+    let injectedCalls = 0;
+    global.fetch = async () => {
+      throw new Error('The global transport must not be used');
+    };
+    const agent = await createAgent({
+      apiKey: 'test-key',
+      model: 'test/model',
+      transport: async () => {
+        injectedCalls += 1;
+        return makeJsonResponse({
+          choices: [{ message: { role: 'assistant', content: 'injected response' }, finish_reason: 'stop' }],
+          usage: { cost: 0, total_tokens: 1 },
+        });
+      },
+    });
+
+    assert.equal(await agent.run('hello'), 'injected response');
+    assert.equal(injectedCalls, 1);
+  });
+
   it('registers a single tool passed on its own', async () => {
     const agent = new Agent({ apiKey: 'test-key', model: 'test/model' });
     agent.registerTools(echoTool);
@@ -216,11 +237,13 @@ describe('Agent', () => {
       assert.equal(agent.model, 'gpt-4');
     });
 
-    it('accepts provider order and only options', () => {
+    it('accepts nested provider order and only options', () => {
       const agent = new Agent({
         apiKey: 'sk-key',
-        order: ['openai', 'anthropic'],
-        only: ['openai'],
+        provider: {
+          order: ['openai', 'anthropic'],
+          only: ['openai'],
+        },
       });
       assert.deepEqual(agent.provider.order, ['openai', 'anthropic']);
       assert.deepEqual(agent.provider.only, ['openai']);
@@ -958,7 +981,7 @@ describe('run(): tool_call id normalization', () => {
       description: 'probe',
       inputSchema: { type: 'object', properties: {}, required: [] },
       execute: async (input, ctx) => {
-        ctxId = ctx.tool_call_id;
+        ctxId = ctx.toolCallId;
         return 'ok';
       },
     });

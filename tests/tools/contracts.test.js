@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createBuiltinTools } from '../../src/tools/index.js';
+import { builtInTools, createBuiltinTools } from '../../src/tools/index.js';
 
 const CANONICAL_NAMES = [
   'readFile',
@@ -47,6 +47,15 @@ describe('built-in tool contracts', () => {
       tools.map((tool) => tool.name),
       CANONICAL_NAMES,
     );
+  });
+
+  it('exports the complete canonical list used by the factory', () => {
+    assert.deepEqual(
+      builtInTools.map((tool) => tool.name),
+      CANONICAL_NAMES,
+    );
+    assert.deepEqual(createBuiltinTools(), builtInTools);
+    assert.notStrictEqual(createBuiltinTools(), builtInTools);
   });
 
   it('exposes nothing beyond name, description, inputSchema, and execute', () => {

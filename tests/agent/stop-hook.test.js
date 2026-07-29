@@ -271,7 +271,7 @@ describe('Agent: finishReason capture (streaming SSE)', () => {
     agent.subscribe((e) => {
       if (e.turnEnd) ends.push(e.turnEnd);
     });
-    // subscribe() forces streaming; _sendForTest is honored by #sendStream.
+    // subscribe() selects streaming, while _sendForTest supplies the response.
     const stub = queue([() => empty(), () => text('streamed')]);
     agent._sendForTest = stub;
 

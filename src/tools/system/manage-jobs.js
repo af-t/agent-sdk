@@ -37,10 +37,10 @@ const execute = async (input, ctx = {}) => {
       throw new Error('manageJobs stop requires `jobId`.');
     }
     const res = agent.backgroundJobs.kill(jobId);
-    if (res.status === 'not_found') {
+    if (res.status === 'notFound') {
       return `Job ${jobId} not found.`;
     }
-    if (res.status === 'already_finished') {
+    if (res.status === 'alreadyFinished') {
       return `Job ${jobId} already finished (${res.jobStatus}); nothing to stop.`;
     }
     return `Stopped ${jobId} (${res.kind}).`;

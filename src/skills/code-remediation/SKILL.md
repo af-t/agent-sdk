@@ -70,10 +70,10 @@ Never spread the host environment directly into a child process. Remove
 secrets from inherited values and sanitize caller-supplied values:
 
 ```js
-import { removeSecrets, sanitizeChildEnvironment } from '../../support/environment.js';
+import { sanitizeChildEnvironment } from '../../support/environment.js';
 
 const environment = {
-  ...removeSecrets(process.env),
+  ...sanitizeChildEnvironment(process.env),
   ...sanitizeChildEnvironment(options.env || {}),
 };
 ```

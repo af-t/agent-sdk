@@ -13,9 +13,12 @@ import { scheduleWakeup } from './system/schedule-wakeup.js';
 import { fetchUrl } from './web/fetch-url.js';
 import { searchWeb } from './web/search-web.js';
 
-export const builtInTools = [readFile, writeFile, editFile, findFiles, listFiles];
-
-const otherStaticTools = [
+export const builtInTools = [
+  readFile,
+  writeFile,
+  editFile,
+  findFiles,
+  listFiles,
   manageTodos,
   recallMemory,
   fetchUrl,
@@ -28,5 +31,5 @@ const otherStaticTools = [
 ];
 
 export function createBuiltinTools() {
-  return [...builtInTools, ...otherStaticTools];
+  return [...builtInTools];
 }

@@ -154,13 +154,13 @@ describe('createAgent', () => {
     assert.strictEqual(agent.baseUrl, expected);
   });
 
-  it('should pass provider order from options', async () => {
-    const agent = await createAgent({ order: ['openai', 'anthropic'] });
+  it('should pass nested provider order from options', async () => {
+    const agent = await createAgent({ provider: { order: ['openai', 'anthropic'] } });
     assert.deepEqual(agent.provider.order, ['openai', 'anthropic']);
   });
 
-  it('explicit provider only option wins over env config', async () => {
-    const agent = await createAgent({ only: ['openai'] });
+  it('explicit nested provider only option wins over env config', async () => {
+    const agent = await createAgent({ provider: { only: ['openai'] } });
     assert.deepEqual(agent.provider.only, ['openai']);
   });
 

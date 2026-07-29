@@ -68,7 +68,6 @@ describe('Agent model settings and reasoning', () => {
     assert.deepEqual(agent.provider, {
       order: ['openai', 'anthropic'],
       only: ['openai'],
-      ignore: ['together'],
       avoid: ['together'],
       sort: 'throughput',
       allowFallbacks: false,

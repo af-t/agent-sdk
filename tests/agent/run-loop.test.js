@@ -430,14 +430,14 @@ describe('RunLoop: terminal turns', () => {
     assert.equal(turnEnd.turnEnd.empty, true);
   });
 
-  it('breaks out when the provider returns no message at all', async () => {
+  it('rejects when the provider returns no message at all', async () => {
     const requestClient = makeRequestClient([{ message: undefined, usage: noUsage, raw: {} }]);
     const loop = makeLoop({ requestClient });
     const agent = makeAgent();
     agent.messages.push({ role: 'user', content: [{ type: 'text', text: 'earlier' }] });
 
-    const result = await loop.run(null, makeContext(agent));
-    assert.deepEqual(result, [{ type: 'text', text: 'earlier' }]);
+    await assert.rejects(() => loop.run(null, makeContext(agent)), /valid message/);
+    assert.deepEqual(agent.messages, [{ role: 'user', content: [{ type: 'text', text: 'earlier' }] }]);
     assert.equal(requestClient.calls, 1);
   });
 
@@ -590,9 +590,7 @@ describe('RunLoop: background exits', () => {
     const result = await loop.run('start', makeContext(agent));
     assert.equal(requestClient.calls, 1, 'the run ends on the terminal turn');
     assert.match(JSON.stringify(agent.messages), /bg-late/);
-    // The reminder is the last message when the loop breaks, so it is what the
-    // run resolves to. Long-standing behavior, kept as-is.
-    assert.match(JSON.stringify(result), /Background job\(s\) exited/);
+    assert.equal(result, 'only');
     assert.equal(agent.messages.at(-2).content, 'only');
   });
 });

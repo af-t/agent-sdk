@@ -55,6 +55,36 @@ describe('structured logger', () => {
     assert.match(serialized, /REDACTED/);
   });
 
+  it('redacts auth and credential fields without removing authenticationMode', () => {
+    const value = redactLogValue({
+      auth: 'shared-auth-secret',
+      deployCredential: 'deploy-credential-secret',
+      credentials: { user: 'service', password: 'hidden' },
+      authenticationMode: 'mutual-tls',
+      note: 'Authentication mode selection is not a secret.',
+    });
+
+    assert.deepEqual(value, {
+      auth: '[REDACTED]',
+      deployCredential: '[REDACTED]',
+      credentials: '[REDACTED]',
+      authenticationMode: 'mutual-tls',
+      note: 'Authentication mode selection is not a secret.',
+    });
+  });
+
+  it('redacts Basic authorization headers and project API keys in strings', () => {
+    const value = redactLogValue(
+      'Authorization: Basic c2VydmljZTpzZWNyZXQ= failed for sk-proj-example, sk-svcacct-example, and sk-generic',
+    );
+
+    assert.doesNotMatch(value, /c2VydmljZTpzZWNyZXQ=|sk-proj-example|sk-svcacct-example|sk-generic/);
+    assert.match(value, /Authorization: Basic \[REDACTED\]/);
+    assert.match(value, /sk-proj-\[REDACTED\]/);
+    assert.match(value, /sk-svcacct-\[REDACTED\]/);
+    assert.match(value, /sk-\[REDACTED\]/);
+  });
+
   it('does not require child support', () => {
     const target = Object.fromEntries(['debug', 'info', 'warn', 'error'].map((level) => [level, () => {}]));
 

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { sanitizeChildEnvironment } from '../../support/environment.js';
 import { resolveSafePath } from '../../support/path-safety.js';
 import { LIMITS } from '../../support/payload.js';
 
@@ -20,7 +21,10 @@ function spawnCommand(args, signal) {
   return new Promise((resolve, reject) => {
     const output = [];
     const errOutput = [];
-    const child = spawn(args[0], args.slice(1), { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(args[0], args.slice(1), {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: sanitizeChildEnvironment(process.env),
+    });
     let aborted = false;
 
     const onAbort = () => {
@@ -64,7 +68,10 @@ function spawnCommand(args, signal) {
 
 function commandAvailable(cmd) {
   return new Promise((resolve) => {
-    const child = spawn('which', [cmd], { stdio: 'ignore' });
+    const child = spawn('which', [cmd], {
+      stdio: 'ignore',
+      env: sanitizeChildEnvironment(process.env),
+    });
     child.on('exit', (code) => resolve(code === 0));
     child.on('error', () => resolve(false));
   });
