@@ -59,33 +59,33 @@ describe('Agent: injector registry', () => {
 
   it('registers and unregisters an injector roundtrip', () => {
     const agent = new Agent({ apiKey: 'sk' });
-    agent.registerInjector({ name: 'demo', scope: 'per-turn', fn: () => 'x' });
+    agent.registerInjector({ name: 'demo', scope: 'per-turn', run: () => 'x' });
     agent.unregisterInjector('demo');
     // Re-register after removal should succeed (no duplicate error).
-    agent.registerInjector({ name: 'demo', scope: 'per-turn', fn: () => 'x' });
+    agent.registerInjector({ name: 'demo', scope: 'per-turn', run: () => 'x' });
   });
 
   it('throws ConfigError on invalid scope', () => {
     const agent = new Agent({ apiKey: 'sk' });
     assert.throws(
-      () => agent.registerInjector({ name: 'demo', scope: 'system', fn: () => 'x' }),
+      () => agent.registerInjector({ name: 'demo', scope: 'system', run: () => 'x' }),
       (err) => err instanceof ConfigError && /scope must be one of/i.test(err.message),
     );
   });
 
   it('throws ConfigError on duplicate name within same scope', () => {
     const agent = new Agent({ apiKey: 'sk' });
-    agent.registerInjector({ name: 'dup', scope: 'per-turn', fn: () => 'a' });
+    agent.registerInjector({ name: 'dup', scope: 'per-turn', run: () => 'a' });
     assert.throws(
-      () => agent.registerInjector({ name: 'dup', scope: 'per-turn', fn: () => 'b' }),
+      () => agent.registerInjector({ name: 'dup', scope: 'per-turn', run: () => 'b' }),
       (err) => err instanceof ConfigError && /already registered/i.test(err.message),
     );
   });
 
   it('allows same name across different scopes', () => {
     const agent = new Agent({ apiKey: 'sk' });
-    agent.registerInjector({ name: 'shared', scope: 'per-turn', fn: () => 'p' });
-    agent.registerInjector({ name: 'shared', scope: 'first-turn', fn: () => 'f' });
+    agent.registerInjector({ name: 'shared', scope: 'per-turn', run: () => 'p' });
+    agent.registerInjector({ name: 'shared', scope: 'first-turn', run: () => 'f' });
   });
 
   it('unregisterInjector is a no-op for unknown names', () => {
@@ -93,10 +93,10 @@ describe('Agent: injector registry', () => {
     agent.unregisterInjector('nonexistent');
   });
 
-  it('throws ConfigError when fn is not a function', () => {
+  it('throws ConfigError when run is not a function', () => {
     const agent = new Agent({ apiKey: 'sk' });
     assert.throws(
-      () => agent.registerInjector({ name: 'bad', scope: 'per-turn', fn: 'not a fn' }),
+      () => agent.registerInjector({ name: 'bad', scope: 'per-turn', run: 'not a fn' }),
       (err) => err instanceof ConfigError,
     );
   });
@@ -126,7 +126,7 @@ describe('Agent: first-turn vs per-turn semantics', () => {
     agent.registerInjector({
       name: 'first',
       scope: 'first-turn',
-      fn: () => {
+      run: () => {
         firstTurnCalls++;
         return 'FIRST_CONTENT';
       },
@@ -134,7 +134,7 @@ describe('Agent: first-turn vs per-turn semantics', () => {
     agent.registerInjector({
       name: 'per',
       scope: 'per-turn',
-      fn: () => {
+      run: () => {
         perTurnCalls++;
         return 'PER_CONTENT';
       },
@@ -166,7 +166,7 @@ describe('Agent: first-turn vs per-turn semantics', () => {
     agent.registerInjector({
       name: 'first',
       scope: 'first-turn',
-      fn: () => {
+      run: () => {
         firstTurnCalls++;
         return 'FIRST';
       },
@@ -244,8 +244,8 @@ describe('Agent: empty injectors yield no reminder block', () => {
       apiKey: 'sk-test',
       injectors: { date: false, memoryIndex: false, memoryHint: false, skillList: false, contextFiles: false },
     });
-    agent.registerInjector({ name: 'blank', scope: 'per-turn', fn: () => '' });
-    agent.registerInjector({ name: 'spaces', scope: 'per-turn', fn: () => '   \n\n  ' });
+    agent.registerInjector({ name: 'blank', scope: 'per-turn', run: () => '' });
+    agent.registerInjector({ name: 'spaces', scope: 'per-turn', run: () => '   \n\n  ' });
 
     await agent.run('hi');
     const part = findReminderPart(fetchStub.captured[0]);
@@ -275,7 +275,7 @@ describe('Agent: cache_control preservation with injection', () => {
       apiKey: 'sk-test',
       injectors: { date: false, contextFiles: false, memoryIndex: false, memoryHint: false, skillList: false },
     });
-    agent.registerInjector({ name: 'marker', scope: 'per-turn', fn: () => 'REMINDER_TEXT' });
+    agent.registerInjector({ name: 'marker', scope: 'per-turn', run: () => 'REMINDER_TEXT' });
 
     await agent.run('hello user');
 
@@ -308,8 +308,8 @@ describe('Agent: cache_control preservation with injection', () => {
       apiKey: 'sk-test',
       injectors: { date: false, contextFiles: false, memoryIndex: false, memoryHint: false, skillList: false },
     });
-    agent.registerInjector({ name: 'first', scope: 'first-turn', fn: () => 'FIRST_BODY' });
-    agent.registerInjector({ name: 'per', scope: 'per-turn', fn: () => 'PER_BODY' });
+    agent.registerInjector({ name: 'first', scope: 'first-turn', run: () => 'FIRST_BODY' });
+    agent.registerInjector({ name: 'per', scope: 'per-turn', run: () => 'PER_BODY' });
 
     await agent.run('hello');
 
@@ -356,7 +356,7 @@ describe('Agent: onBeforeRequest hook', () => {
     };
 
     const agent = new Agent({ apiKey: 'sk-test', injectors: { date: false } });
-    agent.registerInjector({ name: 'reminder', scope: 'per-turn', fn: () => 'INJ_TEXT' });
+    agent.registerInjector({ name: 'reminder', scope: 'per-turn', run: () => 'INJ_TEXT' });
 
     const order = [];
     agent.onBeforeRequest((p) => {
@@ -440,7 +440,7 @@ describe('Agent: onBeforeRequest hook', () => {
       agent.registerInjector({
         name: 'counter',
         scope: 'per-turn',
-        fn: () => {
+        run: () => {
           injectorCalls++;
           return 'COUNTED';
         },
@@ -479,7 +479,7 @@ describe('Agent: async injectors', () => {
     agent.registerInjector({
       name: 'async',
       scope: 'per-turn',
-      fn: async () => {
+      run: async () => {
         await new Promise((r) => setTimeout(r, 5));
         return 'ASYNC_VALUE';
       },

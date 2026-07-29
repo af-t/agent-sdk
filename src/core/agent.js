@@ -3,6 +3,8 @@ import { resolveApiDialect } from '../support/http.js';
 import { resolveSafePath } from '../support/path-safety.js';
 import { degradePayload, LIMITS, sanitizeAppName } from '../support/payload.js';
 import { callerAbortError, normalizeModelResponse, RequestClient } from '../agent/request-client.js';
+import { Lifecycle } from '../agent/lifecycle.js';
+import { ToolExecutor } from '../agent/tool-executor.js';
 import { sanitizeAssistantReasoning } from './reasoning.js';
 import { ToolRegistry } from '../registries/tool-registry.js';
 import { ConfigError } from '../support/errors.js';
@@ -36,10 +38,8 @@ const RICH_CONTENT_DROPPED =
 
 const DEFAULT_MAX_TURNS = 25;
 const BG_KILL_GRACE_MS = 2000;
-const VALID_INJECTOR_SCOPES = new Set(['first-turn', 'per-turn']);
 
 const DEFAULT_EMPTY_TURN_RETRIES = 2;
-const MAX_STOP_RECOVERY = 8;
 const DEFAULT_EMPTY_TURN_NUDGE =
   'Your previous turn produced reasoning but no response and no tool call. Provide your final answer now, or call a tool to proceed.';
 
@@ -47,8 +47,6 @@ class Agent {
   #apiKey;
   #baseUrl;
   #instructionCache;
-  #injectors = { 'first-turn': [], 'per-turn': [] };
-  #beforeRequestHooks = [];
   #running = false;
   #pending = [];
   #activeRunPromise = null;
@@ -62,9 +60,7 @@ class Agent {
   #pendingBgDrains;
   #wakeScheduled = false;
   #recorder = null;
-  #stopHooks = [];
   #recoveryHook = null;
-  #stopAttempts = 0;
   #recordConfig = null;
   #sessionId;
   #envInfo = [
@@ -145,6 +141,7 @@ class Agent {
       logger: this.logger,
       retryOptions: { attempts: config.maxRetries },
     });
+    this.lifecycle = new Lifecycle({ logger: this.logger });
 
     // Empty-turn recovery is a built-in stop hook (default on). It re-sends the
     // same payload (raw retry) then nudges, so a terminal turn that carried only
@@ -196,6 +193,7 @@ class Agent {
 
     this.messages = [];
     this.tools = tools || new ToolRegistry({ restricted: this.restricted, logger: this.logger });
+    this.toolExecutor = new ToolExecutor({ registry: this.tools, logger: this.logger });
 
     this.temperature =
       temperature !== undefined ? temperature : config.temperature !== undefined ? config.temperature : undefined;
@@ -307,7 +305,7 @@ class Agent {
       })();
 
     if (injectors?.date !== false) {
-      this.registerInjector({ name: 'date', scope: 'per-turn', fn: defaultDateInjector });
+      this.registerInjector({ name: 'date', scope: 'per-turn', run: defaultDateInjector });
     }
 
     if (injectors?.contextFiles !== false) {
@@ -315,7 +313,7 @@ class Agent {
       this.registerInjector({
         name: 'contextFiles',
         scope: 'first-turn',
-        fn: contextFilesInjector(files, () => this.trustedPaths),
+        run: contextFilesInjector(files, () => this.trustedPaths),
       });
     }
 
@@ -354,7 +352,7 @@ class Agent {
       this.registerInjector({
         name: 'memoryIndex',
         scope: 'first-turn',
-        fn: memoryIndexInjector(
+        run: memoryIndexInjector(
           () => this._memoryDir,
           () => this.trustedPaths,
         ),
@@ -365,7 +363,7 @@ class Agent {
       this.registerInjector({
         name: 'memoryHint',
         scope: 'first-turn',
-        fn: memoryHintInjector(
+        run: memoryHintInjector(
           () => this._memoryDir,
           () => this._memoryTypes,
         ),
@@ -373,13 +371,13 @@ class Agent {
     }
 
     if (injectors?.skillList !== false) {
-      this.registerInjector({ name: 'skillList', scope: 'first-turn', fn: skillListInjector(this.skillRegistry) });
+      this.registerInjector({ name: 'skillList', scope: 'first-turn', run: skillListInjector(this.skillRegistry) });
     }
     if (injectors?.pluginInstructions !== false) {
       this.registerInjector({
         name: 'pluginInstructions',
         scope: 'first-turn',
-        fn: pluginInstructionsInjector(this.skillRegistry),
+        run: pluginInstructionsInjector(this.skillRegistry),
       });
     }
   }
@@ -620,41 +618,16 @@ class Agent {
     return () => this.#bgRawListeners.delete(fn);
   }
 
-  registerInjector({ name, scope, fn } = {}) {
-    if (typeof name !== 'string' || name.length === 0) {
-      throw new ConfigError('Injector name must be a non-empty string');
-    }
-    if (!VALID_INJECTOR_SCOPES.has(scope)) {
-      const valid = [...VALID_INJECTOR_SCOPES].join(', ');
-      throw new ConfigError(`Injector scope must be one of: ${valid}. Got: ${String(scope)}`);
-    }
-    if (typeof fn !== 'function') {
-      throw new ConfigError(`Injector '${name}' requires fn to be a function`);
-    }
-    const bucket = this.#injectors[scope];
-    if (bucket.some((entry) => entry.name === name)) {
-      throw new ConfigError(`Injector '${name}' is already registered in scope '${scope}'`);
-    }
-    bucket.push({ name, fn });
+  registerInjector({ name, scope, run } = {}) {
+    return this.lifecycle.registerInjector({ name, scope, run });
   }
 
   unregisterInjector(name) {
-    for (const scope of VALID_INJECTOR_SCOPES) {
-      const bucket = this.#injectors[scope];
-      const idx = bucket.findIndex((entry) => entry.name === name);
-      if (idx !== -1) bucket.splice(idx, 1);
-    }
+    this.lifecycle.unregisterInjector(name);
   }
 
   onBeforeRequest(fn) {
-    if (typeof fn !== 'function') {
-      throw new ConfigError('onBeforeRequest expects a function');
-    }
-    this.#beforeRequestHooks.push(fn);
-    return () => {
-      const idx = this.#beforeRequestHooks.indexOf(fn);
-      if (idx !== -1) this.#beforeRequestHooks.splice(idx, 1);
-    };
+    return this.lifecycle.onBeforeRequest(fn);
   }
 
   // Register a stop hook. Hooks fire on a terminal (no-tool_calls) turn and may
@@ -663,33 +636,7 @@ class Agent {
   // user nudge and keep looping). User hooks run before the built-in recovery
   // hook; the first non-stop decision wins. Returns a disposer.
   onStop(fn) {
-    if (typeof fn !== 'function') {
-      throw new ConfigError('onStop expects a function');
-    }
-    this.#stopHooks.push(fn);
-    return () => {
-      const idx = this.#stopHooks.indexOf(fn);
-      if (idx !== -1) this.#stopHooks.splice(idx, 1);
-    };
-  }
-
-  async #runInjectors(scope) {
-    const bucket = this.#injectors[scope];
-    const ctx = { messages: this.messages, usage: this.usage, turn: this.messages.length, logger: this.logger };
-    const out = [];
-    for (const entry of bucket) {
-      let result;
-      try {
-        result = await entry.fn(ctx);
-      } catch (err) {
-        this.logger.warn({ component: 'agent', injector: entry.name, scope, error: err }, 'Agent injector failed');
-        continue;
-      }
-      if (typeof result === 'string' && result.trim().length > 0) {
-        out.push(result);
-      }
-    }
-    return out;
+    return this.lifecycle.onStop(fn);
   }
 
   #normalizeRecordConfig(opts = {}) {
@@ -731,101 +678,6 @@ class Agent {
       }
     }
     await Promise.all(promises);
-  }
-
-  // Run stop hooks in order (user hooks first, then the built-in recovery hook).
-  // The first decision whose action is not 'stop' wins.
-  async #runStopHooks(ctx) {
-    const hooks = this.#recoveryHook ? [...this.#stopHooks, this.#recoveryHook] : this.#stopHooks;
-    for (const fn of hooks) {
-      let decision;
-      try {
-        decision = await fn(ctx);
-      } catch (err) {
-        this.logger.warn({ component: 'agent', error: err }, 'Stop hook threw');
-        continue;
-      }
-      if (decision && decision.action && decision.action !== 'stop') {
-        return decision;
-      }
-    }
-    return undefined;
-  }
-
-  // Resolve a terminal (no-tool_calls) turn via stop hooks. May re-send the same
-  // payload (raw retry) and re-evaluate, request a nudge, or allow the stop. It
-  // never commits an assistant message: the caller decides based on the result.
-  // Returns { continue: true, prompt } for a nudge, otherwise
-  // { content, reasoning, tool_calls, finish_reason } to adopt.
-  async #resolveStop({ payload, isStreaming, signal, turn, content, reasoning, reasoning_details, finish_reason }) {
-    let tool_calls;
-    let lastError;
-    while (true) {
-      // Abort observed between retries: stop issuing new ones and terminate with
-      // the current message. Mirrors the run loop's between-turns signal check, so
-      // recovery never extends stop latency past a single in-flight REQUEST_TIMEOUT.
-      if (signal?.aborted) {
-        this.#stopAttempts = 0;
-        return { content, reasoning, reasoning_details, tool_calls, finish_reason };
-      }
-
-      if (this.#stopAttempts > MAX_STOP_RECOVERY) {
-        this.logger.warn(
-          { component: 'agent', maxStopRecovery: MAX_STOP_RECOVERY },
-          'Stop recovery ceiling reached; forcing stop',
-        );
-        this.#stopAttempts = 0;
-        return { content, reasoning, reasoning_details, tool_calls, finish_reason };
-      }
-
-      const decision = await this.#runStopHooks({
-        content,
-        reasoning,
-        finish_reason,
-        turn,
-        attempt: this.#stopAttempts,
-        usage: this.usage,
-        messages: this.messages,
-        lastError,
-      });
-      const action = decision?.action ?? 'stop';
-
-      if (action === 'continue') {
-        this.#stopAttempts++;
-        return { continue: true, prompt: decision.prompt };
-      }
-
-      if (action !== 'retry') {
-        // 'stop' or unknown: allow termination with the current message.
-        this.#stopAttempts = 0;
-        return { content, reasoning, reasoning_details, tool_calls, finish_reason };
-      }
-
-      // action === 'retry': re-send the identical payload.
-      this.#stopAttempts++;
-      try {
-        const retryResponse = await this.#sendModelRequest(payload, { isStreaming, signal });
-        const retryMessage = retryResponse.message;
-        content = retryMessage?.content || null;
-        reasoning = retryMessage?.reasoning || undefined;
-        reasoning_details = retryMessage?.reasoning_details || undefined;
-        tool_calls = retryMessage?.tool_calls || null;
-        finish_reason = retryResponse.finishReason;
-        lastError = null;
-      } catch (err) {
-        // A failed raw retry (incl. a hard 4xx like a history-schema 400) leaves
-        // content empty and is surfaced via lastError; the recovery hook keys off
-        // lastError to escalate straight to the nudge on the next iteration.
-        lastError = err;
-      }
-
-      const recovered = tool_calls && tool_calls.length > 0;
-      if (recovered) {
-        this.#stopAttempts = 0;
-        return { content, reasoning, reasoning_details, tool_calls, finish_reason };
-      }
-      // still empty: loop and re-evaluate hooks with the incremented attempt
-    }
   }
 
   async #buildPayload() {
@@ -935,9 +787,7 @@ class Agent {
       }
     }
 
-    for (const hook of this.#beforeRequestHooks) {
-      await hook(payload);
-    }
+    await this.lifecycle.runBeforeRequest(payload);
 
     return payload;
   }
@@ -985,99 +835,6 @@ class Agent {
       await this.#broadcast({ tool_calls: response.message.tool_calls });
     }
     return response;
-  }
-
-  async #executeOneToolCall(tc, signal) {
-    const name = tc.function.name;
-    const tool_call_id = tc.id;
-    let input;
-    try {
-      // Zero-parameter tools stream an empty arguments string; treat
-      // empty/whitespace/missing as an empty object instead of failing.
-      const rawArgs = tc.function.arguments;
-      input = rawArgs && rawArgs.trim() ? JSON.parse(rawArgs.trim()) : {};
-    } catch (parseErr) {
-      this.logger.warn({ component: 'agent', tool: name, error: parseErr }, 'Failed to parse tool arguments');
-      throw new Error(`invalid JSON arguments: ${parseErr.message}`, { cause: parseErr });
-    }
-
-    await this.#broadcast({ tool_start: { tool_call_id, name, input } });
-
-    this.logger.debug({ component: 'agent', tool: name }, 'Executing tool');
-    const started = Date.now();
-    let output;
-    let toolError;
-    const richParts = [];
-    try {
-      const result = await this.tools.execute(name, input, {
-        agent: this,
-        logger: this.logger,
-        maxToolOutput: this.maxToolOutputChars,
-        signal,
-        tool_call_id,
-      });
-      if (Array.isArray(result)) {
-        // Extract any non-text parts (multimodal blocks like image_url, file)
-        const textParts = [];
-        for (const part of result) {
-          if (part && typeof part === 'object') {
-            if (part.type === 'text') {
-              textParts.push(part.text);
-            } else if (part.type !== undefined) {
-              if (this.#multimodalUnsupported) {
-                // model cannot handle rich content: note it in text instead
-              } else {
-                richParts.push(part);
-              }
-            } else {
-              // fallback if it doesn't have a type property
-              textParts.push(JSON.stringify(part));
-            }
-          } else {
-            textParts.push(String(part));
-          }
-        }
-        if (richParts.length > 0) {
-          output = textParts.join('\n') || `[File loaded successfully as multimodal content]`;
-        } else if (
-          this.#multimodalUnsupported &&
-          result.some((p) => p && typeof p === 'object' && p.type && p.type !== 'text')
-        ) {
-          output =
-            (textParts.join('\n') || '') +
-            '\n[Multimodal content not displayed. This model does not support it. Do not attempt to describe or guess the content.]';
-        } else {
-          output = result.map((p) => (typeof p === 'string' ? p : JSON.stringify(p))).join('\n');
-        }
-      } else if (result && typeof result === 'object' && result.type) {
-        if (result.type === 'text') {
-          output = result.text;
-        } else if (this.#multimodalUnsupported) {
-          output =
-            '[Multimodal content not displayed. This model does not support it. Do not attempt to describe or guess the content.]';
-        } else {
-          richParts.push(result);
-          output = `[File loaded successfully as multimodal content]`;
-        }
-      } else {
-        output = typeof result === 'string' ? result : JSON.stringify(result);
-      }
-    } catch (err) {
-      toolError = err;
-    }
-    const duration_ms = Date.now() - started;
-
-    const payload = { tool_call_id, name, duration_ms };
-    if (toolError) payload.error = toolError.message;
-    else payload.output = output;
-
-    await this.#broadcast({ tool_end: payload });
-
-    if (toolError) {
-      toolError.duration_ms = duration_ms;
-      throw toolError;
-    }
-    return { output, richParts, duration_ms };
   }
 
   #injectBlock(block) {
@@ -1438,9 +1195,16 @@ class Agent {
 
         const isFirstTurn = wasFresh && loopCount === 1;
 
+        const injectorContext = {
+          messages: this.messages,
+          usage: this.usage,
+          turn: this.messages.length,
+          logger: this.logger,
+        };
+
         // First-turn output is persisted into this.messages (always visible in history).
         if (isFirstTurn) {
-          const firstTurnOut = await this.#runInjectors('first-turn');
+          const firstTurnOut = await this.lifecycle.applyInjectors('first-turn', injectorContext);
           const text = firstTurnOut.join('\n\n').trim();
           if (text.length > 0) {
             const block = `<system-reminder>\n${text}\n</system-reminder>`;
@@ -1454,7 +1218,7 @@ class Agent {
         // If the last message is not a user message (e.g. tool result), the block
         // is silently dropped.
         {
-          const perTurnOut = await this.#runInjectors('per-turn');
+          const perTurnOut = await this.lifecycle.applyInjectors('per-turn', injectorContext);
           const text = perTurnOut.join('\n\n').trim();
           if (text.length > 0) {
             const block = `<system-reminder>\n${text}\n</system-reminder>`;
@@ -1500,7 +1264,7 @@ class Agent {
         // lands in history as a trailing assistant message (keeps the conversation
         // continuation-safe and avoids a 400 on the next run).
         if (!tool_calls || tool_calls.length === 0) {
-          const r = await this.#resolveStop({
+          const r = await this.lifecycle.resolveStop({
             payload,
             isStreaming,
             signal,
@@ -1509,6 +1273,10 @@ class Agent {
             reasoning,
             reasoning_details,
             finish_reason,
+            usage: this.usage,
+            messages: this.messages,
+            recoveryHook: this.#recoveryHook,
+            sendModelRequest: (p, opts) => this.#sendModelRequest(p, opts),
           });
           if (r.continue) {
             await this.#broadcast({ stop_recovery: { turn: loopCount, finish_reason, reasoning } });
@@ -1563,29 +1331,23 @@ class Agent {
           break;
         }
 
-        const settled = await Promise.allSettled(tool_calls.map((tc) => this.#executeOneToolCall(tc, signal)));
+        const toolContext = {
+          agent: this,
+          logger: this.logger,
+          maxToolOutput: this.maxToolOutputChars,
+          signal,
+          multimodalUnsupported: this.#multimodalUnsupported,
+          broadcast: (event) => this.#broadcast(event),
+        };
+        const results = await Promise.all(tool_calls.map((tc) => this.toolExecutor.execute(tc, toolContext)));
 
         const richPartsOrdered = [];
         const richToolIds = [];
-        for (let i = 0; i < tool_calls.length; i++) {
-          const tc = tool_calls[i];
-          const r = settled[i];
-          const tool_call_id = tc.id;
-          if (r.status === 'fulfilled') {
-            const { output, richParts, duration_ms } = r.value;
-            this.messages.push({ role: 'tool', content: output, tool_call_id, duration_ms });
-            if (richParts.length > 0) {
-              richPartsOrdered.push(...richParts);
-              richToolIds.push(tool_call_id);
-            }
-          } else {
-            this.logger.warn({ component: 'agent', tool: tc.function.name, error: r.reason }, 'Tool call failed');
-            this.messages.push({
-              role: 'tool',
-              content: `Error: ${r.reason?.message ?? r.reason}`,
-              tool_call_id,
-              duration_ms: r.reason?.duration_ms,
-            });
+        for (const { richParts, ...toolMessage } of results) {
+          this.messages.push(toolMessage);
+          if (richParts.length > 0) {
+            richPartsOrdered.push(...richParts);
+            richToolIds.push(toolMessage.tool_call_id);
           }
         }
         if (richPartsOrdered.length > 0) {
@@ -1606,7 +1368,7 @@ class Agent {
         // Flush any steer queued during this turn's tool execution.
         await this.#drainPending();
         this.#recorder?.snapshot(loopCount, this.messages, this.usage);
-        this.#stopAttempts = 0;
+        this.lifecycle.resetStopAttempts();
         await this.#broadcast({ turn_end: { turn: loopCount, terminal: false, finish_reason } });
       }
 

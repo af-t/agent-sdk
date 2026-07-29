@@ -540,7 +540,7 @@ const agent = await createAgent();
 agent.registerInjector({
   name: 'host',
   scope: 'per-turn',
-  fn: () => `Hostname: ${os.hostname()}, load: ${os.loadavg()[0].toFixed(2)}`,
+  run: () => `Hostname: ${os.hostname()}, load: ${os.loadavg()[0].toFixed(2)}`,
 });
 
 // Remove later if you no longer want it
@@ -805,16 +805,16 @@ Queue a prompt for an already-running loop without waiting for it to finish: see
 
 ### Agent Methods
 
-| Method                                  | Description                                                                                                  |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `use(tool \| tool[])`                   | Register one or more tools after construction.                                                               |
-| `reset()`                               | Clear messages and reset accumulated usage.                                                                  |
-| `registerInjector({ name, scope, fn })` | Register a context injector. `scope` is `'first-turn'` or `'per-turn'`.                                      |
-| `unregisterInjector(name)`              | Remove a previously registered injector by name.                                                             |
-| `onBeforeRequest(fn)`                   | Hook the outgoing payload. Returns a disposer.                                                               |
-| `onBackgroundExit(fn)`                  | Register a listener for background-job completion (fired when idle). Returns a disposer.                     |
-| `steer(prompt)`                         | Queue a prompt for the active run loop (non-blocking). Returns `true` if queued, `false` when idle or empty. |
-| `cleanup()`                             | Kill running background jobs, delete tmpDir files, and shut down MCP child processes.                        |
+| Method                                   | Description                                                                                                  |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `use(tool \| tool[])`                    | Register one or more tools after construction.                                                               |
+| `reset()`                                | Clear messages and reset accumulated usage.                                                                  |
+| `registerInjector({ name, scope, run })` | Register a context injector. `scope` is `'first-turn'` or `'per-turn'`.                                      |
+| `unregisterInjector(name)`               | Remove a previously registered injector by name.                                                             |
+| `onBeforeRequest(fn)`                    | Hook the outgoing payload. Returns a disposer.                                                               |
+| `onBackgroundExit(fn)`                   | Register a listener for background-job completion (fired when idle). Returns a disposer.                     |
+| `steer(prompt)`                          | Queue a prompt for the active run loop (non-blocking). Returns `true` if queued, `false` when idle or empty. |
+| `cleanup()`                              | Kill running background jobs, delete tmpDir files, and shut down MCP child processes.                        |
 
 ### ToolRegistry
 

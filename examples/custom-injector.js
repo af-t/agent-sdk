@@ -8,7 +8,7 @@ const agent = await createAgent();
 agent.registerInjector({
   name: 'host-metrics',
   scope: 'per-turn',
-  fn: () => {
+  run: () => {
     const load = os.loadavg()[0].toFixed(2);
     const uptimeMin = Math.round(os.uptime() / 60);
     return `Host metrics: load1=${load}, uptime=${uptimeMin}m, hostname=${os.hostname()}`;

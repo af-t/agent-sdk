@@ -68,7 +68,7 @@ describe('createAgent', () => {
       agent.registerInjector({
         name: 'failing-log-test',
         scope: 'per-turn',
-        fn: () => {
+        run: () => {
           throw new Error('Bearer hidden-token');
         },
       });
@@ -80,7 +80,7 @@ describe('createAgent', () => {
 
     const record = records.find((entry) => entry.message === 'Agent injector failed');
     assert.equal(record?.level, 'warn');
-    assert.equal(record?.context.component, 'agent');
+    assert.equal(record?.context.component, 'lifecycle');
     assert.equal(record?.context.injector, 'failing-log-test');
     const serialized = JSON.stringify(record);
     assert.doesNotMatch(serialized, /hidden-token/);
