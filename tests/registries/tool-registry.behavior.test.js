@@ -467,7 +467,7 @@ describe('ToolRegistry', () => {
   });
 });
 
-test('ToolRegistry no longer exposes isParallelSafe', () => {
+test('ToolRegistry does not expose isParallelSafe', () => {
   const reg = new ToolRegistry();
   assert.equal(typeof reg.isParallelSafe, 'undefined');
 });

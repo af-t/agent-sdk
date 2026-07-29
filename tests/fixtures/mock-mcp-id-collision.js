@@ -1,6 +1,6 @@
 // On tools/list, this fixture first sends a server-to-client request that reuses
 // the client's request ID. JSON-RPC permits this because IDs use per-sender namespaces.
-// and only delivers the tools/list result after the client answers that
+// The fixture delivers the tools/list result only after the client answers that
 // request with error -32601. This sequence exercises response/request routing.
 import readline from 'node:readline';
 

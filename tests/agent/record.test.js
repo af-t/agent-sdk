@@ -72,7 +72,7 @@ test('non-streaming run (no notify) still records assistant and toolCalls', asyn
   const Agent = (await import('../../src/agent/agent.js')).default;
   const orig = global.fetch;
   let n = 0;
-  // #send calls #request which uses res.text(), not res.json()
+  // The non-streaming transport reads response text instead of calling response.json().
   global.fetch = async () => {
     n++;
     if (n === 1) {

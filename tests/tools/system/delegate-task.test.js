@@ -57,7 +57,7 @@ describe('delegateTask tool module', () => {
     assert.ok(mod.inputSchema.required.includes('description'));
   });
 
-  it('omits the removed context_files parameter', () => {
+  it('does not expose a context_files parameter', () => {
     assert.strictEqual(mod.inputSchema.properties.context_files, undefined);
   });
 
@@ -99,7 +99,7 @@ describe('delegateTask execution', () => {
     assert.ok(fakeAgent.usage.cost >= 0);
   });
 
-  it('subagent inherits parent maxCompletionTokens (not the removed maxTokens)', async (t) => {
+  it('subagent inherits parent maxCompletionTokens', async (t) => {
     mock.method(Agent.prototype, 'run', async () => 'done');
 
     let parent;
@@ -140,9 +140,9 @@ describe('delegateTask execution', () => {
     t.after(() => parent?.cleanup());
     const tmpDir = createTestTempDir(t, 'delegate-parent-');
     parent = new Agent({ apiKey: 'sk-test-key', storagePaths: { tmpDir } });
-    // Leaving the parent unlimited exposes the subagent's fallback limit.
-    // otherwise the developer's .env (OPENROUTER_MAX_COMPLETION_TOKENS) leaks in via config
-    // and the parent's value is inherited instead of the MAX_COMPLETION_TOKENS_SUBAGENT default.
+    // Clearing the parent's limit exposes the subagent's fallback. Otherwise,
+    // the parent may inherit OPENROUTER_MAX_COMPLETION_TOKENS from the
+    // developer's environment.
     parent.maxCompletionTokens = undefined;
     await mod.execute({ description: 'Task', prompt: 'Work' }, { agent: parent });
 

@@ -4,7 +4,7 @@ import Agent from '../../src/agent/agent.js';
 
 process.env.OPENROUTER_API_KEY = 'sk-test-key';
 
-describe('Agent Upgrade: modern parameters and reasoning', () => {
+describe('Agent model settings and reasoning', () => {
   let originalFetch;
 
   beforeEach(() => {
@@ -15,7 +15,7 @@ describe('Agent Upgrade: modern parameters and reasoning', () => {
     global.fetch = originalFetch;
   });
 
-  it('constructor correctly parses and sets new parameters', () => {
+  it('sets model parameters from constructor options', () => {
     const agent = new Agent({
       apiKey: 'sk-custom',
       temperature: 0.7,
@@ -77,7 +77,7 @@ describe('Agent Upgrade: modern parameters and reasoning', () => {
     });
   });
 
-  it('builds request payload with new parameters correctly', async () => {
+  it('includes model parameters in the request payload', async () => {
     let capturedPayload = null;
 
     global.fetch = async (url, opts) => {
@@ -156,7 +156,7 @@ describe('Agent Upgrade: modern parameters and reasoning', () => {
     });
   });
 
-  it('ignores the removed maxTokens option and never emits max_tokens in the payload', async () => {
+  it('does not accept maxTokens or emit max_tokens in the payload', async () => {
     let capturedPayload = null;
 
     global.fetch = async (url, opts) => {

@@ -5,7 +5,7 @@ import createAgent from '../../../src/index.js';
 import { runShell } from '../../../src/tools/system/run-shell.js';
 const { execute: runShellExecute, inputSchema: runShellSchema } = runShell;
 
-test('the runShell schema no longer exposes the on_timeout parameter', () => {
+test('the runShell schema does not expose an on_timeout parameter', () => {
   assert.strictEqual(runShellSchema.properties.on_timeout, undefined);
 });
 

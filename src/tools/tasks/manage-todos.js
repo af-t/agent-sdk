@@ -3,7 +3,7 @@ import path from 'node:path';
 import { resolveSafePath } from '../../support/path-safety.js';
 
 // The cap prevents unbounded todo-file growth.
-const MAX_TODOS = 1000;
+const MAX_ITEMS = 1000;
 
 const readTodos = async (filePath, trustedPaths = new Set()) => {
   try {
@@ -117,8 +117,8 @@ const execute = async (
           throw new Error('Parameter "text" is required to add a new todo.');
         }
 
-        if (todos.length >= MAX_TODOS) {
-          throw new Error(`Maximum todo limit reached (${MAX_TODOS}). Delete some todos first.`);
+        if (todos.length >= MAX_ITEMS) {
+          throw new Error(`Maximum todo limit reached (${MAX_ITEMS}). Delete some todos first.`);
         }
 
         const newTodo = {

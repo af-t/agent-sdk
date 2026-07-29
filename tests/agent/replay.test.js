@@ -67,7 +67,8 @@ test('a full-level run records request/response and applies redact', async (t) =
       inputSchema: { type: 'object', properties: { msg: { type: 'string' } } },
       execute: async ({ msg }) => msg,
     });
-    await agent.run('go'); // no notify -> non-streaming #send path
+    // Omitting the notify callback selects the non-streaming transport.
+    await agent.run('go');
     await agent.cleanup();
 
     const file = fs.readdirSync(dir).find((f) => f.endsWith('.jsonl'));

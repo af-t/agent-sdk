@@ -71,7 +71,7 @@ describe('Agent facade contract', () => {
     assert.equal(createAgentNamed, createAgent);
   });
 
-  it('registers tools through registerTools and no longer answers to use()', async () => {
+  it('registers tools through registerTools without a use method', async () => {
     global.fetch = async () =>
       makeJsonResponse({
         choices: [{ message: { content: 'done', reasoning: null, tool_calls: null } }],
@@ -756,7 +756,7 @@ describe('Agent: storagePaths option', () => {
     assert.ok(agent._memoryDir.endsWith(path.join('.config', 'test', 'memory')));
   });
 
-  it('ignores the removed top-level memoryDir option (defaults to appName memory dir)', () => {
+  it('does not accept a top-level memoryDir option', () => {
     const agent = new Agent({ apiKey: 'sk-test', memoryDir: '.custom/memory' });
     assert.strictEqual(agent._memoryDir, path.resolve('.agent-sdk/memory'));
   });
