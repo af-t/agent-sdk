@@ -67,9 +67,7 @@ const SAFE_ENV_KEYS = [
   'LC_ALL',
   'PWD',
   'OLDPWD',
-  'NODE_PATH',
   'TMPDIR',
-  'LD_PRELOAD',
   'PREFIX',
   'PAGER',
 ];

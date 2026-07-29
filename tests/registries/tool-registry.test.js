@@ -97,6 +97,25 @@ test('clone inherits existing hooks without sharing later hooks', async () => {
   assert.deepEqual(calls, ['parent-hook', 'parent-hook']);
 });
 
+test('cloning derives child loggers from the original logger, not from each clone', () => {
+  const derivedFrom = [];
+  const makeLogger = (depth) => ({
+    debug() {},
+    info() {},
+    warn() {},
+    error() {},
+    child() {
+      derivedFrom.push(depth);
+      return makeLogger(depth + 1);
+    },
+  });
+
+  const registry = new ToolRegistry({ logger: makeLogger(0) });
+  registry.clone().clone();
+
+  assert.deepEqual(derivedFrom, [0, 0, 0]);
+});
+
 test('maps MCP schemas and closes only owned clients', async () => {
   const client = {
     async connectAndGetTools() {

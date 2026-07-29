@@ -5,7 +5,7 @@ const SECRET_KEY_PATTERN = /authorization|api[_-]?key|secret|token|password|(?:a
 const SECRET_PATTERNS = [
   /(Authorization:\s*(?:Bearer|Basic)\s+)[a-zA-Z0-9+/=._-]+/gi,
   /(Bearer\s+)[a-zA-Z0-9._-]+/g,
-  /(sk-(?:[a-zA-Z0-9]+-)?)[a-zA-Z0-9_-]+/g,
+  /(\bsk-(?:[a-zA-Z0-9]+-)?)[a-zA-Z0-9_-]+/g,
   /(tvly-)[a-zA-Z0-9_-]+/g,
   /([?&](?:api_key|key|token|apikey)=)[^&\s]+/gi,
   /((?:API_KEY|SECRET|TOKEN|PASSWORD)[^=]*=\s*['"]?)[^'"\s]+/gi,

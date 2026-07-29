@@ -85,6 +85,20 @@ describe('structured logger', () => {
     assert.match(value, /sk-\[REDACTED\]/);
   });
 
+  it('leaves ordinary words ending in sk untouched', () => {
+    const value = redactLogValue({
+      message: 'Failed to read tests/fixtures/task-1-brief.md',
+      path: '/home/user/my-task-notes/data.json',
+      detail: 'disk-usage-check and risk-score both completed',
+    });
+
+    assert.deepEqual(value, {
+      message: 'Failed to read tests/fixtures/task-1-brief.md',
+      path: '/home/user/my-task-notes/data.json',
+      detail: 'disk-usage-check and risk-score both completed',
+    });
+  });
+
   it('does not require child support', () => {
     const target = Object.fromEntries(['debug', 'info', 'warn', 'error'].map((level) => [level, () => {}]));
 

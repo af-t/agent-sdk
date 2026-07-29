@@ -59,9 +59,11 @@ export class ToolRegistry {
   #tools = new Map();
   #mcpClients = [];
   #hooks = { beforeExecute: [], afterExecute: [] };
+  #loggerSource;
 
   constructor({ restricted = true, logger, mcpClientFactory } = {}) {
     this.restricted = restricted !== false;
+    this.#loggerSource = logger;
     this.logger = resolveLogger(logger).child({ component: 'toolRegistry' });
     this.mcpClientFactory = mcpClientFactory || ((config) => new McpClientWrapper(config));
   }
@@ -105,7 +107,7 @@ export class ToolRegistry {
   clone() {
     const registry = new ToolRegistry({
       restricted: this.restricted,
-      logger: this.logger,
+      logger: this.#loggerSource,
       mcpClientFactory: this.mcpClientFactory,
     });
     registry.registerMany(this.#tools.values());

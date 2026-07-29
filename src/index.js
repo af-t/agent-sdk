@@ -20,7 +20,7 @@ export async function createAgent(options = {}) {
   let tools = options.tools;
   if (!tools) {
     tools = new ToolRegistry({ restricted, logger });
-    for (const tool of createBuiltinTools(skillRegistry)) {
+    for (const tool of createBuiltinTools()) {
       tools.register(tool);
     }
   }
