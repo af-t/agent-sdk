@@ -55,7 +55,7 @@ async function getPty(logger) {
   return _ptyModule;
 }
 
-// Child processes inherit only these environment variables.
+// In restricted mode, child processes inherit only these environment variables.
 const SAFE_ENV_KEYS = [
   'HOME',
   'USER',
@@ -73,7 +73,7 @@ const SAFE_ENV_KEYS = [
   'PAGER',
 ];
 
-// These command forms remain blocked when restricted mode is disabled.
+// Restricted mode blocks these command forms.
 const BLOCKED_COMMANDS = [
   'rm -rf /',
   'rm -rf /*',
@@ -107,7 +107,7 @@ const BLOCKED_COMMANDS = [
   'echo "*/1 * * * *"', // cron persistence attempt
 ];
 
-// These operations remain executable but emit a warning.
+// Restricted mode warns about these command forms without blocking them.
 const SUSPICIOUS_PATTERNS = [
   /\b(kill|pkill|killall)\b/,
   /\bsudo\b/,

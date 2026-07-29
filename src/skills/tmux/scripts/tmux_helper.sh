@@ -214,7 +214,7 @@ session_read_all() {
     return 1
   fi
 
-  tmux capture-pane -t "$name" -p 2>/dev/null
+  tmux capture-pane -t "$name" -p -S - 2>/dev/null
   local rc=$?
   if [[ $rc -ne 0 ]]; then
     echo "FAIL: Could not read from session '$name'"

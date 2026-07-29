@@ -15,10 +15,10 @@ const agent = await createAgent({
 
 // User hooks run before built-in recovery. A hook can stop, retry the same
 // payload, or continue with another prompt.
-const off = agent.onStop(({ content, reasoning, finish_reason, turn, attempt }) => {
+const off = agent.onStop(({ content, reasoning, finishReason, turn, attempt }) => {
   const preview = (content ?? '').slice(0, 60);
   console.log(
-    `[onStop] turn=${turn} attempt=${attempt} finish_reason=${finish_reason} ` +
+    `[onStop] turn=${turn} attempt=${attempt} finishReason=${finishReason} ` +
       `reasoning=${reasoning ? 'yes' : 'no'} content="${preview}"`,
   );
   if ((content == null || content.trim() === '') && attempt === 0) {

@@ -347,13 +347,17 @@ Streaming and subscription callbacks receive camel-case SDK events:
 | Event field      | Meaning                                   |
 | ---------------- | ----------------------------------------- |
 | `contentDelta`   | New assistant text                        |
+| `content`        | Assistant text accumulated so far         |
 | `reasoningDelta` | New reasoning text                        |
+| `reasoning`      | Reasoning text accumulated so far         |
+| `toolCalls`      | Complete provider tool-call objects       |
 | `toolStart`      | Tool name, call ID, and input             |
 | `toolEnd`        | Tool result or error and duration         |
 | `steerApplied`   | Number of queued steering prompts applied |
 | `stopRecovery`   | Empty-turn recovery attempt               |
 | `turnEnd`        | Terminal or tool-producing turn boundary  |
 
+Objects inside `toolCalls` retain the provider's wire spelling.
 `turnEnd` is sent to subscribers, not the one-run `notify` callback.
 
 ## Project structure

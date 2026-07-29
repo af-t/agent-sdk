@@ -156,6 +156,20 @@ describe('Agent: stop hooks & empty-turn recovery', () => {
     assert.equal(hasText(agent.messages, 'CUSTOM-NUDGE'), true, 'custom hook took precedence over built-in retry');
   });
 
+  it('onStop exposes finishReason without a snake-case alias', async () => {
+    const agent = new Agent({ apiKey: 'sk-test' });
+    let context;
+    agent.onStop((value) => {
+      context = value;
+    });
+    agent._sendForTest = queue([() => text('done', 'length')]);
+
+    await agent.run('hi');
+
+    assert.equal(context.finishReason, 'length');
+    assert.equal(Object.hasOwn(context, 'finish_reason'), false);
+  });
+
   it('is bounded by the recovery ceiling when a hook always retries', async () => {
     const agent = new Agent({ apiKey: 'sk-test' });
     agent.onStop(() => ({ action: 'retry' }));

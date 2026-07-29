@@ -219,7 +219,16 @@ export class Lifecycle {
       }
 
       const decision = await this.#runStopHooks(
-        { content, reasoning, finish_reason, turn, attempt: this.#stopAttempts, usage, messages, lastError },
+        {
+          content,
+          reasoning,
+          finishReason: finish_reason,
+          turn,
+          attempt: this.#stopAttempts,
+          usage,
+          messages,
+          lastError,
+        },
         recoveryHook,
       );
       const action = decision?.action ?? 'stop';
