@@ -364,7 +364,7 @@ class Agent {
       // finds a tool before the override hook supplies its output
       const known = new Set(agent.tools.listTools().map((t) => t.name));
       for (const ev of recording.events) {
-        if (ev.type !== 'tool_calls') continue;
+        if (ev.type !== 'toolCalls') continue;
         for (const c of ev.calls) {
           if (known.has(c.name)) continue;
           agent.tools.register({
@@ -522,7 +522,7 @@ class Agent {
     this.#recorder?.record(event, this.currentTurn);
     const promises = [];
     const targets =
-      event && event.turn_end
+      event && event.turnEnd
         ? this.#subscribedCallbacks
         : new Set([...this.#notifyCallbacks, ...this.#subscribedCallbacks]);
     for (const notify of targets) {
@@ -567,7 +567,7 @@ class Agent {
       if (msg.role === 'assistant') {
         return sanitizeAssistantReasoning(msg, this.dialect);
       }
-      // Tool messages carry internal history/UI metadata (duration_ms) that must
+      // Tool messages carry internal history/UI metadata (durationMs) that must
       // not reach the provider. Rebuild the exact wire shape rather than clone +
       // delete (which deopts V8 to dictionary mode), so no internal field leaks.
       if (msg.role === 'tool') {

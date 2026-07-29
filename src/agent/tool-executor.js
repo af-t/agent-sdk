@@ -91,12 +91,12 @@ export class ToolExecutor {
         role: 'tool',
         content: `Error: Invalid arguments: ${parseErr.message}`,
         tool_call_id,
-        duration_ms: undefined,
+        durationMs: undefined,
         richParts: [],
       };
     }
 
-    await broadcast?.({ tool_start: { tool_call_id, name, input } });
+    await broadcast?.({ toolStart: { toolCallId: tool_call_id, name, input } });
 
     this.logger.debug({ tool: name }, 'Executing tool');
     const started = Date.now();
@@ -109,12 +109,12 @@ export class ToolExecutor {
     } catch (err) {
       toolError = err;
     }
-    const duration_ms = Date.now() - started;
+    const durationMs = Date.now() - started;
 
-    const endEvent = { tool_call_id, name, duration_ms };
+    const endEvent = { toolCallId: tool_call_id, name, durationMs };
     if (toolError) endEvent.error = toolError.message;
     else endEvent.output = output;
-    await broadcast?.({ tool_end: endEvent });
+    await broadcast?.({ toolEnd: endEvent });
 
     if (toolError) {
       this.logger.warn({ tool: name, error: toolError }, 'Tool call failed');
@@ -122,11 +122,11 @@ export class ToolExecutor {
         role: 'tool',
         content: `Error: ${toolError.message ?? toolError}`,
         tool_call_id,
-        duration_ms,
+        durationMs,
         richParts: [],
       };
     }
 
-    return { role: 'tool', content: output, tool_call_id, duration_ms, richParts };
+    return { role: 'tool', content: output, tool_call_id, durationMs, richParts };
   }
 }

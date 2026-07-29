@@ -30,7 +30,7 @@ export function renderWindow(win, traceCap) {
   for (const t of win) {
     fmt.step({ content: t.content, reasoning: t.reasoning });
     if (t.toolCalls) {
-      out += fmt.step({ tool_calls: t.toolCalls });
+      out += fmt.step({ toolCalls: t.toolCalls });
       for (const ev of t.toolEvents) out += fmt.step(ev);
     }
   }
@@ -183,18 +183,18 @@ export function createCopilot({
       if (!event || typeof event !== 'object') return;
       if (typeof event.content === 'string') cur.content = event.content;
       if (typeof event.reasoning === 'string') cur.reasoning = event.reasoning;
-      if (event.tool_calls) {
-        cur.toolCalls = event.tool_calls;
-        cur.callSigs = event.tool_calls.map(
+      if (event.toolCalls) {
+        cur.toolCalls = event.toolCalls;
+        cur.callSigs = event.toolCalls.map(
           (c) => `${c.function?.name || c.name || '?'}:${c.function?.arguments || ''}`,
         );
       }
-      if (event.tool_start) cur.toolEvents.push({ tool_start: event.tool_start });
-      if (event.tool_end) {
-        cur.toolEvents.push({ tool_end: event.tool_end });
-        if (event.tool_end.error !== undefined) cur.hadError = true;
+      if (event.toolStart) cur.toolEvents.push({ toolStart: event.toolStart });
+      if (event.toolEnd) {
+        cur.toolEvents.push({ toolEnd: event.toolEnd });
+        if (event.toolEnd.error !== undefined) cur.hadError = true;
       }
-      if (event.turn_end) finalizeTurn(event.turn_end);
+      if (event.turnEnd) finalizeTurn(event.turnEnd);
     } catch (err) {
       logger.warn(`copilot event handler threw: ${err.message}`);
     }

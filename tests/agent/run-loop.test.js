@@ -63,7 +63,7 @@ function makeToolExecutor(run = async () => 'ok') {
         role: 'tool',
         content: String(result),
         tool_call_id: toolCall.id,
-        duration_ms: 1,
+        durationMs: 1,
         richParts: [],
       };
     },
@@ -192,7 +192,7 @@ describe('RunLoop: queued steering', () => {
     assert.deepEqual(requestClient.prompts, ['start', 'focus on tests']);
   });
 
-  it('broadcasts steer_applied with the number of drained prompts', async () => {
+  it('broadcasts steerApplied with the number of drained prompts', async () => {
     const requestClient = makeRequestClient([reply({ content: 'first' }), reply({ content: 'done' })]);
     const loop = makeLoop({ requestClient });
     const agent = makeAgent();
@@ -203,9 +203,9 @@ describe('RunLoop: queued steering', () => {
     loop.steer('two');
     await runPromise;
 
-    const steerEvents = agent.events.filter((e) => e.steer_applied);
+    const steerEvents = agent.events.filter((e) => e.steerApplied);
     assert.equal(steerEvents.length, 1);
-    assert.equal(steerEvents[0].steer_applied.count, 2);
+    assert.equal(steerEvents[0].steerApplied.count, 2);
   });
 
   it('refuses a steer when idle, and empty prompts while running', async () => {
@@ -285,7 +285,7 @@ describe('RunLoop: tool turns', () => {
     assert.deepEqual(roles, ['user', 'assistant', 'tool', 'assistant']);
     assert.equal(lifecycle.resets, 1, 'a tool turn clears the stop-recovery budget');
 
-    const turnEnds = agent.events.filter((e) => e.turn_end).map((e) => e.turn_end);
+    const turnEnds = agent.events.filter((e) => e.turnEnd).map((e) => e.turnEnd);
     assert.deepEqual(
       turnEnds.map((t) => [t.turn, t.terminal]),
       [
@@ -330,7 +330,7 @@ describe('RunLoop: tool turns', () => {
       role: 'tool',
       content: 'image desc',
       tool_call_id: toolCall.id,
-      duration_ms: 1,
+      durationMs: 1,
       richParts: [richPart],
     }));
     const requestClient = makeRequestClient([callTool('probe'), reply({ content: 'done' })]);
@@ -426,8 +426,8 @@ describe('RunLoop: terminal turns', () => {
       agent.messages.map((m) => m.role),
       ['user'],
     );
-    const turnEnd = agent.events.find((e) => e.turn_end);
-    assert.equal(turnEnd.turn_end.empty, true);
+    const turnEnd = agent.events.find((e) => e.turnEnd);
+    assert.equal(turnEnd.turnEnd.empty, true);
   });
 
   it('breaks out when the provider returns no message at all', async () => {
@@ -459,7 +459,7 @@ describe('RunLoop: terminal turns', () => {
     // An empty terminal turn commits no assistant message, so the nudge merges
     // into the trailing user message rather than starting a new one.
     assert.deepEqual(requestClient.prompts, ['start', 'start\ntry again']);
-    assert.ok(agent.events.some((e) => e.stop_recovery));
+    assert.ok(agent.events.some((e) => e.stopRecovery));
   });
 
   it('gives the stop hooks the recovery hook and a raw resend', async () => {
@@ -680,8 +680,8 @@ describe('RunLoop: injectors and payloads', () => {
 
     await loop.run('start', makeContext(agent, { isStreaming: true }));
     assert.equal(requestClient.options[0].stream, true);
-    const announced = agent.events.find((e) => e.tool_calls);
-    assert.equal(announced.tool_calls[0].function.name, 'probe');
+    const announced = agent.events.find((e) => e.toolCalls);
+    assert.equal(announced.toolCalls[0].function.name, 'probe');
   });
 
   it('closes the rich-content window after a send, and on failure', async () => {

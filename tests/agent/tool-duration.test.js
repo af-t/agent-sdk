@@ -47,7 +47,7 @@ function makeAgent(execute) {
   return agent;
 }
 
-test('a successful tool call persists a numeric duration_ms in history', async () => {
+test('a successful tool call persists a numeric durationMs in history', async () => {
   const agent = makeAgent(async () => 'ok');
   agent._sendForTest = makeSend();
 
@@ -57,11 +57,11 @@ test('a successful tool call persists a numeric duration_ms in history', async (
   const toolMsg = agent.messages.find((m) => m.role === 'tool');
   assert.ok(toolMsg, 'a tool message is recorded in history');
   assert.equal(toolMsg.content, 'ok');
-  assert.equal(typeof toolMsg.duration_ms, 'number', 'history retains duration_ms');
-  assert.ok(toolMsg.duration_ms >= 0, 'duration_ms is non-negative');
+  assert.equal(typeof toolMsg.durationMs, 'number', 'history retains durationMs');
+  assert.ok(toolMsg.durationMs >= 0, 'durationMs is non-negative');
 });
 
-test('duration_ms is stripped from the tool message before it reaches the provider', async () => {
+test('durationMs is stripped from the tool message before it reaches the provider', async () => {
   const payloads = [];
   const agent = makeAgent(async () => 'ok');
   agent._sendForTest = makeSend((p) => payloads.push(p));
@@ -74,14 +74,14 @@ test('duration_ms is stripped from the tool message before it reaches the provid
   const wireTool = second.messages.find((m) => m.role === 'tool');
   assert.ok(wireTool, 'tool message present in the outgoing payload');
   assert.deepEqual(wireTool.content, [{ type: 'text', text: 'ok', cache_control: { type: 'ephemeral' } }]);
-  assert.ok(!('duration_ms' in wireTool), 'duration_ms must not be sent to the provider');
+  assert.ok(!('durationMs' in wireTool), 'durationMs must not be sent to the provider');
 
   // History itself still carries it: the strip is payload-only, not destructive.
   const histTool = agent.messages.find((m) => m.role === 'tool');
-  assert.equal(typeof histTool.duration_ms, 'number', 'history is untouched by the strip');
+  assert.equal(typeof histTool.durationMs, 'number', 'history is untouched by the strip');
 });
 
-test('a failed tool call still persists duration_ms in history', async () => {
+test('a failed tool call still persists durationMs in history', async () => {
   const agent = makeAgent(async () => {
     throw new Error('kaboom');
   });
@@ -92,6 +92,6 @@ test('a failed tool call still persists duration_ms in history', async () => {
   const toolMsg = agent.messages.find((m) => m.role === 'tool');
   assert.ok(toolMsg, 'an error tool message is recorded');
   assert.match(toolMsg.content, /Error: kaboom/);
-  assert.equal(typeof toolMsg.duration_ms, 'number', 'the error path also records duration_ms');
-  assert.ok(toolMsg.duration_ms >= 0);
+  assert.equal(typeof toolMsg.durationMs, 'number', 'the error path also records durationMs');
+  assert.ok(toolMsg.durationMs >= 0);
 });

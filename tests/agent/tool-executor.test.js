@@ -44,7 +44,7 @@ describe('ToolExecutor: malformed arguments', () => {
     assert.equal(registry.execute.mock.callCount(), 0);
   });
 
-  it('does not broadcast tool_start or tool_end for a malformed call', async () => {
+  it('does not broadcast toolStart or toolEnd for a malformed call', async () => {
     const { logger } = createRecordingLogger();
     const registry = { execute: mock.fn(async () => 'ignored') };
     const executor = new ToolExecutor({ registry, logger });
@@ -133,7 +133,7 @@ describe('ToolExecutor: successful execution', () => {
     assert.equal(call.arguments[2].tool_call_id, 'c1');
   });
 
-  it('broadcasts tool_start before execution and tool_end with the output after', async () => {
+  it('broadcasts toolStart before execution and toolEnd with the output after', async () => {
     const { logger } = createRecordingLogger();
     const registry = { execute: mock.fn(async () => 'done') };
     const executor = new ToolExecutor({ registry, logger });
@@ -142,13 +142,13 @@ describe('ToolExecutor: successful execution', () => {
     await executor.execute({ id: 'c1', function: { name: 'Echo', arguments: '{"a":1}' } }, context);
 
     assert.equal(context.events.length, 2);
-    assert.deepEqual(context.events[0], { tool_start: { tool_call_id: 'c1', name: 'Echo', input: { a: 1 } } });
-    assert.equal(context.events[1].tool_end.tool_call_id, 'c1');
-    assert.equal(context.events[1].tool_end.output, 'done');
-    assert.equal(typeof context.events[1].tool_end.duration_ms, 'number');
+    assert.deepEqual(context.events[0], { toolStart: { toolCallId: 'c1', name: 'Echo', input: { a: 1 } } });
+    assert.equal(context.events[1].toolEnd.toolCallId, 'c1');
+    assert.equal(context.events[1].toolEnd.output, 'done');
+    assert.equal(typeof context.events[1].toolEnd.durationMs, 'number');
   });
 
-  it('measures a non-negative duration_ms for a successful call', async () => {
+  it('measures a non-negative durationMs for a successful call', async () => {
     const { logger } = createRecordingLogger();
     const registry = { execute: mock.fn(async () => new Promise((resolve) => setTimeout(() => resolve('ok'), 5))) };
     const executor = new ToolExecutor({ registry, logger });
@@ -156,8 +156,8 @@ describe('ToolExecutor: successful execution', () => {
 
     const result = await executor.execute({ id: 'c1', function: { name: 'Slow', arguments: '{}' } }, context);
 
-    assert.equal(typeof result.duration_ms, 'number');
-    assert.ok(result.duration_ms >= 0);
+    assert.equal(typeof result.durationMs, 'number');
+    assert.ok(result.durationMs >= 0);
   });
 
   it('runs two calls concurrently rather than one after another', async () => {
@@ -200,11 +200,11 @@ describe('ToolExecutor: execution failure', () => {
 
     assert.equal(result.role, 'tool');
     assert.match(result.content, /Error: kaboom/);
-    assert.equal(typeof result.duration_ms, 'number');
+    assert.equal(typeof result.durationMs, 'number');
     assert.deepEqual(result.richParts, []);
   });
 
-  it('still broadcasts tool_start and a tool_end carrying the error', async () => {
+  it('still broadcasts toolStart and a toolEnd carrying the error', async () => {
     const { logger } = createRecordingLogger();
     const registry = {
       execute: mock.fn(async () => {
@@ -217,8 +217,8 @@ describe('ToolExecutor: execution failure', () => {
     await executor.execute({ id: 'c1', function: { name: 'Broken', arguments: '{}' } }, context);
 
     assert.equal(context.events.length, 2);
-    assert.ok(context.events[0].tool_start);
-    assert.equal(context.events[1].tool_end.error, 'kaboom');
+    assert.ok(context.events[0].toolStart);
+    assert.equal(context.events[1].toolEnd.error, 'kaboom');
   });
 
   it('forwards an abort signal so a tool can observe cancellation itself', async () => {

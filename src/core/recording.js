@@ -56,7 +56,7 @@ export class Recording {
   }
 
   toolResult(toolCallId) {
-    const r = this.events.find((e) => e.type === 'tool_end' && e.tool_call_id === toolCallId);
+    const r = this.events.find((e) => e.type === 'toolEnd' && e.toolCallId === toolCallId);
     if (!r) return null;
     return r.error !== undefined ? { error: r.error } : { output: r.output };
   }
@@ -68,16 +68,16 @@ export class Recording {
     for (const rec of this.events) {
       if (rec.type === 'assistant') {
         out += fmt.step({ content: rec.content, reasoning: rec.reasoning });
-      } else if (rec.type === 'tool_calls') {
-        out += fmt.step({ tool_calls: rec.calls.map((c) => ({ function: { name: c.name } })) });
-      } else if (rec.type === 'tool_start') {
-        out += fmt.step({ tool_start: { tool_call_id: rec.tool_call_id, name: rec.name, input: rec.input } });
-      } else if (rec.type === 'tool_end') {
+      } else if (rec.type === 'toolCalls') {
+        out += fmt.step({ toolCalls: rec.calls.map((c) => ({ function: { name: c.name } })) });
+      } else if (rec.type === 'toolStart') {
+        out += fmt.step({ toolStart: { toolCallId: rec.toolCallId, name: rec.name, input: rec.input } });
+      } else if (rec.type === 'toolEnd') {
         out += fmt.step({
-          tool_end: {
-            tool_call_id: rec.tool_call_id,
+          toolEnd: {
+            toolCallId: rec.toolCallId,
             name: rec.name,
-            duration_ms: rec.duration_ms,
+            durationMs: rec.durationMs,
             output: rec.output,
             error: rec.error,
           },

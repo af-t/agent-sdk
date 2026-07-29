@@ -35,8 +35,8 @@ test('writes session_start, event records, and session_end', async () => {
     reasoning: 'thinking',
     tool_calls: [{ id: 'c1', function: { name: 'Echo' } }],
   });
-  r.record({ tool_start: { tool_call_id: 'c1', name: 'Echo', input: { msg: 'hi' } } }, 1);
-  r.record({ tool_end: { tool_call_id: 'c1', name: 'Echo', duration_ms: 5, output: 'hi' } }, 1);
+  r.record({ toolStart: { toolCallId: 'c1', name: 'Echo', input: { msg: 'hi' } } }, 1);
+  r.record({ toolEnd: { toolCallId: 'c1', name: 'Echo', durationMs: 5, output: 'hi' } }, 1);
   r.recordAssistant(2, { content: 'final' });
   await r.close();
 
@@ -44,9 +44,9 @@ test('writes session_start, event records, and session_end', async () => {
   const types = recs.map((x) => x.type);
   assert.equal(recs[0].type, 'session_start');
   assert.equal(recs[0].model, 'm');
-  assert.ok(types.includes('tool_calls'), 'expected tool_calls record');
-  assert.ok(types.includes('tool_start'), 'expected tool_start record');
-  assert.ok(types.includes('tool_end'), 'expected tool_end record');
+  assert.ok(types.includes('toolCalls'), 'expected toolCalls record');
+  assert.ok(types.includes('toolStart'), 'expected toolStart record');
+  assert.ok(types.includes('toolEnd'), 'expected toolEnd record');
   const assistantRecs = recs.filter((x) => x.type === 'assistant');
   assert.equal(assistantRecs[0].content, 'calling tool');
   assert.equal(assistantRecs[0].turn, 1);
@@ -88,7 +88,7 @@ test('operations after close do not throw', async () => {
   const r = createSessionRecorder({ dir, level: 'snapshots' });
   await r.close();
   assert.doesNotThrow(() => {
-    r.record({ tool_end: { tool_call_id: 'x', name: 'X', duration_ms: 1, output: 'y' } }, 1);
+    r.record({ toolEnd: { toolCallId: 'x', name: 'X', durationMs: 1, output: 'y' } }, 1);
     r.recordAssistant(1, { content: 'late' });
     r.snapshot(2, [{ role: 'user', content: 'x' }], { cost: 0, tokens: 0 });
   });
@@ -98,7 +98,7 @@ test('operations after close do not throw', async () => {
 test('records steer events', async () => {
   const dir = tmpDir();
   const r = createSessionRecorder({ dir, level: 'events' });
-  r.record({ steer_applied: { count: 2 } }, 3);
+  r.record({ steerApplied: { count: 2 } }, 3);
   await r.close();
   const recs = readRecords(dir);
   const steer = recs.find((x) => x.type === 'steer');

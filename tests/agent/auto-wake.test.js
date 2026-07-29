@@ -140,8 +140,8 @@ test('Bug B: autoWakeNotify callback is invoked during auto-wake run', async () 
 
   const agent = await makeAgent({ autoWake: true, autoWakeNotify: notifyFn });
 
-  // Use a tool call to generate non-turn_end events that #broadcast sends
-  // to #notifyCallbacks (turn_end only goes to subscribedCallbacks).
+  // Use a tool call to generate non-turnEnd events that #broadcast sends
+  // to #notifyCallbacks (turnEnd only goes to subscribedCallbacks).
   agent.registerTools({
     name: 'ack',
     description: 'ack',
@@ -181,7 +181,7 @@ test('Bug B: autoWakeNotify callback is invoked during auto-wake run', async () 
   // Wait for the auto-wake microtask and run to complete.
   await new Promise((r) => setTimeout(r, 3000));
 
-  // The notify callback should have received tool_start/tool_end events.
+  // The notify callback should have received toolStart/toolEnd events.
   assert.ok(events.length > 0, 'autoWakeNotify should have been called during auto-wake run');
 });
 
@@ -192,7 +192,7 @@ test('Bug B: autoWakeNotify can be set after construction', async () => {
   // Set the notify callback post-construction.
   agent.autoWakeNotify = (event) => events.push(event);
 
-  // Use a tool call so the notify receives tool_start/tool_end events.
+  // Use a tool call so the notify receives toolStart/toolEnd events.
   agent.registerTools({
     name: 'ack',
     description: 'ack',

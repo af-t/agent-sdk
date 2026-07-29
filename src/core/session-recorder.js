@@ -52,7 +52,7 @@ export function createSessionRecorder({ dir, level = 'snapshots', model, redact 
 
   write({ t: now(), type: 'session_start', id, level, model });
 
-  // assistant + tool_calls recorded from the run loop
+  // assistant + toolCalls recorded from the run loop
   // so capture is identical in stream and non-stream modes
   function recordAssistant(turn, message) {
     if (!alive || !message) return;
@@ -64,7 +64,7 @@ export function createSessionRecorder({ dir, level = 'snapshots', model, redact 
     }
     if (message.tool_calls && message.tool_calls.length) {
       const calls = message.tool_calls.map((tc) => ({ id: tc.id, name: tc.function?.name || tc.name || '?' }));
-      write({ t: now(), type: 'tool_calls', turn: curTurn, calls });
+      write({ t: now(), type: 'toolCalls', turn: curTurn, calls });
     }
   }
 
@@ -72,19 +72,19 @@ export function createSessionRecorder({ dir, level = 'snapshots', model, redact 
   function record(event, turn) {
     if (!alive || !event || typeof event !== 'object') return;
     if (typeof turn === 'number') curTurn = turn;
-    if (event.tool_start) {
-      const { tool_call_id, name, input } = event.tool_start;
-      write({ t: now(), type: 'tool_start', turn: curTurn, tool_call_id, name, input });
+    if (event.toolStart) {
+      const { toolCallId, name, input } = event.toolStart;
+      write({ t: now(), type: 'toolStart', turn: curTurn, toolCallId, name, input });
     }
-    if (event.tool_end) {
-      const { tool_call_id, name, duration_ms, output, error } = event.tool_end;
-      const rec = { t: now(), type: 'tool_end', turn: curTurn, tool_call_id, name, duration_ms };
+    if (event.toolEnd) {
+      const { toolCallId, name, durationMs, output, error } = event.toolEnd;
+      const rec = { t: now(), type: 'toolEnd', turn: curTurn, toolCallId, name, durationMs };
       if (error !== undefined) rec.error = error;
       else rec.output = output;
       write(rec);
     }
-    if (event.steer_applied) {
-      write({ t: now(), type: 'steer', turn: curTurn, count: event.steer_applied.count });
+    if (event.steerApplied) {
+      write({ t: now(), type: 'steer', turn: curTurn, count: event.steerApplied.count });
     }
   }
 

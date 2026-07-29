@@ -54,9 +54,9 @@ test('a tool-using run writes events and a turn snapshot to a session file', asy
       .map((l) => JSON.parse(l));
     const types = recs.map((x) => x.type);
     assert.ok(types.includes('session_start'), 'expected session_start');
-    assert.ok(types.includes('tool_calls'), 'expected tool_calls');
-    assert.ok(types.includes('tool_start'), 'expected tool_start');
-    assert.ok(types.includes('tool_end'), 'expected tool_end');
+    assert.ok(types.includes('toolCalls'), 'expected toolCalls');
+    assert.ok(types.includes('toolStart'), 'expected toolStart');
+    assert.ok(types.includes('toolEnd'), 'expected toolEnd');
     assert.ok(types.includes('turn_snapshot'), 'default record level is snapshots');
     const snap = recs.find((x) => x.type === 'turn_snapshot');
     assert.ok(Array.isArray(snap.messages) && snap.messages.length > 0);
@@ -65,7 +65,7 @@ test('a tool-using run writes events and a turn snapshot to a session file', asy
   }
 });
 
-test('non-streaming run (no notify) still records assistant and tool_calls', async (t) => {
+test('non-streaming run (no notify) still records assistant and toolCalls', async (t) => {
   let agent;
   t.after(() => agent?.cleanup());
   const dir = createTestTempDir(t, 'agentrec-ns-');
@@ -125,14 +125,74 @@ test('non-streaming run (no notify) still records assistant and tool_calls', asy
       .map((l) => JSON.parse(l));
     const types = recs.map((x) => x.type);
     assert.ok(types.includes('assistant'), 'non-streaming must record assistant');
-    assert.ok(types.includes('tool_calls'), 'non-streaming must record tool_calls');
-    assert.ok(types.includes('tool_start'), 'expected tool_start');
-    assert.ok(types.includes('tool_end'), 'expected tool_end');
+    assert.ok(types.includes('toolCalls'), 'non-streaming must record toolCalls');
+    assert.ok(types.includes('toolStart'), 'expected toolStart');
+    assert.ok(types.includes('toolEnd'), 'expected toolEnd');
     assert.ok(types.includes('turn_snapshot'), 'expected turn_snapshot');
 
     const trace = (await Recording.load(path.join(dir, file))).renderTrace();
     assert.match(trace, /=== turn 1 ===/);
     assert.match(trace, /\[assistant\]/);
+  } finally {
+    global.fetch = orig;
+  }
+});
+
+test('a recorded session persists a camel-case envelope, and leaves the wire alone', async (t) => {
+  let agent;
+  t.after(() => agent?.cleanup());
+  const dir = createTestTempDir(t, 'agentrec-camel-');
+  const Agent = (await import('../../src/agent/agent.js')).default;
+  const orig = global.fetch;
+  let n = 0;
+  global.fetch = async () => {
+    n++;
+    if (n === 1) {
+      return makeSse([
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"Echo","arguments":"{\\"msg\\":\\"hi\\"}"}}]}}],"usage":null}',
+        'data: [DONE]',
+      ]);
+    }
+    return makeSse([
+      'data: {"choices":[{"delta":{"content":"done"},"finish_reason":"stop"}],"usage":null}',
+      'data: [DONE]',
+    ]);
+  };
+
+  try {
+    agent = new Agent({ apiKey: 'sk-test', record: { dir, level: 'full' } });
+    agent.registerTools({
+      name: 'Echo',
+      description: 'echo',
+      inputSchema: { type: 'object', properties: { msg: { type: 'string' } } },
+      execute: async ({ msg }) => msg,
+    });
+    await agent.run('go', () => {});
+    await agent.cleanup();
+
+    const file = fs.readdirSync(dir).find((f) => f.endsWith('.jsonl'));
+    const recording = await Recording.load(path.join(dir, file));
+
+    // Every persisted event the SDK authors is camel case at the top level.
+    // `payload`, `raw`, and `calls` carry provider-shaped data and are exempt.
+    for (const event of recording.events) {
+      assert.ok(!event.type.includes('_'), `persisted type "${event.type}" must be camel case`);
+      for (const key of Object.keys(event)) {
+        if (key === 'payload' || key === 'raw' || key === 'calls') continue;
+        assert.ok(!key.includes('_'), `key "${key}" on a ${event.type} record must be camel case`);
+      }
+    }
+
+    const toolEndRecord = recording.events.find((e) => e.type === 'toolEnd');
+    assert.ok(toolEndRecord, 'expected a toolEnd record');
+    assert.equal(typeof toolEndRecord.toolCallId, 'string');
+    assert.equal(typeof toolEndRecord.durationMs, 'number');
+
+    // The wire is untouched: the follow-up request still carries the
+    // provider-required tool_call_id.
+    const secondRequest = recording.requestAt(2);
+    const wireTool = secondRequest.messages.find((m) => m.role === 'tool');
+    assert.ok(wireTool && 'tool_call_id' in wireTool);
   } finally {
     global.fetch = orig;
   }

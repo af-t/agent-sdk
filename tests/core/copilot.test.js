@@ -32,11 +32,11 @@ test('subscribe throws on non-function', () => {
   assert.throws(() => agent.subscribe(123), TypeError);
 });
 
-test('run loop broadcasts turn_end with terminal flag', async () => {
+test('run loop broadcasts turnEnd with terminal flag', async () => {
   const agent = new Agent({ apiKey: 'x', model: 'm' });
   const ends = [];
   agent.subscribe((e) => {
-    if (e.turn_end) ends.push(e.turn_end);
+    if (e.turnEnd) ends.push(e.turnEnd);
   });
   agent._sendForTest = async () => ({ choices: [{ message: { content: 'done' } }] });
   await agent.run('hi');
@@ -142,7 +142,7 @@ test('renderWindow formats turns with tool calls and results', () => {
       content: 'thinking then acting',
       reasoning: '',
       toolCalls: [{ function: { name: 'runShell', arguments: '{}' } }],
-      toolEvents: [{ tool_end: { tool_call_id: 'a1', name: 'runShell', duration_ms: 5, error: 'boom' } }],
+      toolEvents: [{ toolEnd: { toolCallId: 'a1', name: 'runShell', durationMs: 5, error: 'boom' } }],
       callSigs: ['runShell:{}'],
     },
   ];
@@ -254,7 +254,7 @@ test('gate closed => supervisor never called', async () => {
     triggers: { toolError: false, everyNTurns: false, nearMaxTurns: false, repeatedCall: false },
   });
   copilot.start();
-  await primary.emit({ turn_end: { turn: 2, terminal: false } });
+  await primary.emit({ turnEnd: { turn: 2, terminal: false } });
   await flush();
   assert.equal(supervisor.lastInput, undefined);
   assert.deepEqual(primary.steers, []);
@@ -266,8 +266,8 @@ test('toolError trigger => supervisor steers the primary', async () => {
   const decisions = [];
   const copilot = createCopilot({ primary, supervisor, onDecision: (d) => decisions.push(d) });
   copilot.start();
-  await primary.emit({ tool_end: { tool_call_id: 'a1', name: 'runShell', duration_ms: 3, error: 'denied' } });
-  await primary.emit({ turn_end: { turn: 1, terminal: false } });
+  await primary.emit({ toolEnd: { toolCallId: 'a1', name: 'runShell', durationMs: 3, error: 'denied' } });
+  await primary.emit({ turnEnd: { turn: 1, terminal: false } });
   await flush();
   assert.deepEqual(primary.steers, ['retry with sudo']);
   assert.equal(decisions[0].action, 'steer');
@@ -280,8 +280,8 @@ test('abort decision aborts the run signal', async () => {
   const supervisor = fakeSupervisor('{"action":"abort","reason":"unrecoverable"}');
   const copilot = createCopilot({ primary, supervisor });
   const signal = copilot.start();
-  await primary.emit({ tool_end: { tool_call_id: 'a1', name: 'runShell', duration_ms: 3, error: 'x' } });
-  await primary.emit({ turn_end: { turn: 1, terminal: false } });
+  await primary.emit({ toolEnd: { toolCallId: 'a1', name: 'runShell', durationMs: 3, error: 'x' } });
+  await primary.emit({ turnEnd: { turn: 1, terminal: false } });
   await flush();
   assert.equal(signal.aborted, true);
 });
@@ -294,8 +294,8 @@ test('supervisor throw is best-effort: run unaffected, decision coerced to none'
   const decisions = [];
   const copilot = createCopilot({ primary, supervisor, onDecision: (d) => decisions.push(d) });
   copilot.start();
-  await primary.emit({ tool_end: { tool_call_id: 'a1', name: 'runShell', duration_ms: 3, error: 'x' } });
-  await primary.emit({ turn_end: { turn: 1, terminal: false } });
+  await primary.emit({ toolEnd: { toolCallId: 'a1', name: 'runShell', durationMs: 3, error: 'x' } });
+  await primary.emit({ turnEnd: { turn: 1, terminal: false } });
   await flush();
   assert.deepEqual(primary.steers, []);
   assert.equal(decisions[0].action, 'none');
@@ -321,10 +321,10 @@ test('overlap guard: only one evaluation while one is in flight', async () => {
   };
   const copilot = createCopilot({ primary, supervisor });
   copilot.start();
-  await primary.emit({ tool_end: { tool_call_id: 'a1', name: 'B', duration_ms: 1, error: 'x' } });
-  await primary.emit({ turn_end: { turn: 1, terminal: false } });
-  await primary.emit({ tool_end: { tool_call_id: 'a2', name: 'B', duration_ms: 1, error: 'x' } });
-  await primary.emit({ turn_end: { turn: 2, terminal: false } });
+  await primary.emit({ toolEnd: { toolCallId: 'a1', name: 'B', durationMs: 1, error: 'x' } });
+  await primary.emit({ turnEnd: { turn: 1, terminal: false } });
+  await primary.emit({ toolEnd: { toolCallId: 'a2', name: 'B', durationMs: 1, error: 'x' } });
+  await primary.emit({ turnEnd: { turn: 2, terminal: false } });
   await flush();
   assert.equal(calls, 1, 'second evaluation skipped while first in flight');
   release();

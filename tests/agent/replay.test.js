@@ -152,9 +152,9 @@ function fullFixtureLines() {
       },
     },
     { t: 'x', type: 'assistant', turn: 1, content: 'let me echo', reasoning: '' },
-    { t: 'x', type: 'tool_calls', turn: 1, calls: [{ id: 'c1', name: 'Echo' }] },
-    { t: 'x', type: 'tool_start', turn: 1, tool_call_id: 'c1', name: 'Echo', input: { msg: 'hi' } },
-    { t: 'x', type: 'tool_end', turn: 1, tool_call_id: 'c1', name: 'Echo', duration_ms: 3, output: 'recorded-echo' },
+    { t: 'x', type: 'toolCalls', turn: 1, calls: [{ id: 'c1', name: 'Echo' }] },
+    { t: 'x', type: 'toolStart', turn: 1, toolCallId: 'c1', name: 'Echo', input: { msg: 'hi' } },
+    { t: 'x', type: 'toolEnd', turn: 1, toolCallId: 'c1', name: 'Echo', durationMs: 3, output: 'recorded-echo' },
     { t: 'x', type: 'request', turn: 2, payload: { messages: [] } },
     { t: 'x', type: 'response', turn: 2, raw: { choices: [{ message: { content: 'done' } }] } },
     { t: 'x', type: 'assistant', turn: 2, content: 'done', reasoning: '' },
@@ -275,7 +275,7 @@ test('Agent.replay uses the SkillRegistry bound to loadSkill', async (t) => {
 test('Agent.replay reproduces a recorded tool error', async (t) => {
   const Agent = (await import('../../src/agent/agent.js')).default;
   const lines = fullFixtureLines();
-  const te = lines.find((l) => l.type === 'tool_end');
+  const te = lines.find((l) => l.type === 'toolEnd');
   delete te.output;
   te.error = 'recorded failure';
   const resource = { agent: undefined };

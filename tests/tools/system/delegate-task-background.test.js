@@ -94,9 +94,9 @@ test('foreground delegateTask writes a trace file with subagent activity', async
   mock.method(Agent.prototype, 'run', async function (_prompt, notify) {
     await notify({ reasoning: 'planning' });
     await notify({ content: 'doing the work' });
-    await notify({ tool_calls: [{ id: 't1', function: { name: 'readFile', arguments: '{}' } }] });
-    await notify({ tool_start: { tool_call_id: 't1', name: 'readFile', input: { path: '/a' } } });
-    await notify({ tool_end: { tool_call_id: 't1', name: 'readFile', duration_ms: 7, output: 'body' } });
+    await notify({ toolCalls: [{ id: 't1', function: { name: 'readFile', arguments: '{}' } }] });
+    await notify({ toolStart: { toolCallId: 't1', name: 'readFile', input: { path: '/a' } } });
+    await notify({ toolEnd: { toolCallId: 't1', name: 'readFile', durationMs: 7, output: 'body' } });
     return 'final report from subagent';
   });
   let parent;
@@ -123,8 +123,8 @@ test('background delegateTask streams a trace file and its exit event carries tr
   const done = new Promise((r) => (resolveDone = r));
   mock.method(Agent.prototype, 'run', async function (_prompt, notify) {
     await notify({ content: 'bg work' });
-    await notify({ tool_calls: [{ id: 'b1', function: { name: 'runShell' } }] });
-    await notify({ tool_end: { tool_call_id: 'b1', name: 'runShell', duration_ms: 3, output: 'ok' } });
+    await notify({ toolCalls: [{ id: 'b1', function: { name: 'runShell' } }] });
+    await notify({ toolEnd: { toolCallId: 'b1', name: 'runShell', durationMs: 3, output: 'ok' } });
     return 'bg final report';
   });
   let parent;

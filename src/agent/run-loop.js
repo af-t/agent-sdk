@@ -123,7 +123,7 @@ export class RunLoop {
     if (this.#pendingPrompts.length === 0) return false;
     const items = this.#pendingPrompts.splice(0, this.#pendingPrompts.length);
     for (const parts of items) appendUserContent(context.messages, parts);
-    await context.broadcast({ steer_applied: { count: items.length } });
+    await context.broadcast({ steerApplied: { count: items.length } });
     return true;
   }
 
@@ -146,9 +146,9 @@ export class RunLoop {
       stream: isStreaming,
       onChunk: (chunk) =>
         broadcast({
-          content_delta: chunk.contentDelta || null,
+          contentDelta: chunk.contentDelta || null,
           content: chunk.content || null,
-          reasoning_delta: chunk.reasoningDelta || null,
+          reasoningDelta: chunk.reasoningDelta || null,
           reasoning: chunk.reasoning || null,
         }),
       onDegrade,
@@ -158,7 +158,7 @@ export class RunLoop {
     // Streaming assembles tool calls from many deltas, so announce them once the
     // stream is whole. The non-streaming path has no partial state to report.
     if (isStreaming && response.message?.tool_calls) {
-      await broadcast({ tool_calls: response.message.tool_calls });
+      await broadcast({ toolCalls: response.message.tool_calls });
     }
     return response;
   }
@@ -288,7 +288,7 @@ export class RunLoop {
           sendModelRequest: (retryPayload) => this.#sendRequest(retryPayload, context),
         });
         if (resolution.continue) {
-          await broadcast({ stop_recovery: { turn: loopCount, finish_reason, reasoning } });
+          await broadcast({ stopRecovery: { turn: loopCount, finishReason: finish_reason, reasoning } });
           appendUserContent(messages, normalizePrompt(resolution.prompt));
           continue;
         }
@@ -309,7 +309,7 @@ export class RunLoop {
         // trailing empty assistant message; terminate and return the content as-is.
         context.recorder?.snapshot(loopCount, messages, context.usage);
         await broadcast({
-          turn_end: { turn: loopCount, terminal: true, finish_reason, empty: true, reasoning },
+          turnEnd: { turn: loopCount, terminal: true, finishReason: finish_reason, empty: true, reasoning },
         });
         if (await this.#drainPending(context)) continue;
         // A late bg exit on this terminal turn: with autoWake, resume so the
@@ -330,7 +330,7 @@ export class RunLoop {
 
       if (!tool_calls || tool_calls.length === 0) {
         context.recorder?.snapshot(loopCount, messages, context.usage);
-        await broadcast({ turn_end: { turn: loopCount, terminal: true, finish_reason } });
+        await broadcast({ turnEnd: { turn: loopCount, terminal: true, finishReason: finish_reason } });
         // A steer delivered during the final turn keeps the loop alive.
         if (await this.#drainPending(context)) continue;
         // Fold any late bg exits into messages before terminating; with
@@ -375,7 +375,7 @@ export class RunLoop {
       await this.#drainPending(context);
       context.recorder?.snapshot(loopCount, messages, context.usage);
       this.#lifecycle.resetStopAttempts();
-      await broadcast({ turn_end: { turn: loopCount, terminal: false, finish_reason } });
+      await broadcast({ turnEnd: { turn: loopCount, terminal: false, finishReason: finish_reason } });
     }
 
     return messages[messages.length - 1].content;

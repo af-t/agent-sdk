@@ -209,7 +209,7 @@ describe('Agent: stop hooks & empty-turn recovery', () => {
   });
 });
 
-describe('Agent: finish_reason capture (streaming SSE)', () => {
+describe('Agent: finishReason capture (streaming SSE)', () => {
   let originalFetch;
   before(() => {
     originalFetch = global.fetch;
@@ -229,7 +229,7 @@ describe('Agent: finish_reason capture (streaming SSE)', () => {
     return { ok: true, status: 200, body: stream };
   }
 
-  it('captures finish_reason from the final SSE chunk into turn_end', async () => {
+  it('captures finishReason from the final SSE chunk into turnEnd', async () => {
     global.fetch = async () =>
       makeSseResponse([
         'data: {"choices":[{"delta":{"content":"hi"}}],"usage":null}',
@@ -240,7 +240,7 @@ describe('Agent: finish_reason capture (streaming SSE)', () => {
     const agent = new Agent({ apiKey: 'sk-test' });
     const ends = [];
     agent.subscribe((e) => {
-      if (e.turn_end) ends.push(e.turn_end);
+      if (e.turnEnd) ends.push(e.turnEnd);
     });
 
     const result = await agent.run('go');
@@ -248,14 +248,14 @@ describe('Agent: finish_reason capture (streaming SSE)', () => {
     assert.equal(result, 'hi');
     assert.equal(ends.length, 1);
     assert.equal(ends[0].terminal, true);
-    assert.equal(ends[0].finish_reason, 'length');
+    assert.equal(ends[0].finishReason, 'length');
   });
 
   it('drives empty-turn recovery in streaming mode too', async () => {
     const agent = new Agent({ apiKey: 'sk-test', emptyTurnRecovery: { retries: 1 } });
     const ends = [];
     agent.subscribe((e) => {
-      if (e.turn_end) ends.push(e.turn_end);
+      if (e.turnEnd) ends.push(e.turnEnd);
     });
     // subscribe() forces streaming; _sendForTest is honored by #sendStream.
     const stub = queue([() => empty(), () => text('streamed')]);

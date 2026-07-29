@@ -33,20 +33,20 @@ export function createTraceFormatter({ toolOutputCap = TRACE_TOOL_OUTPUT_CAP } =
     if (typeof event.content === 'string') lastContent = event.content;
 
     let out = '';
-    if (event.tool_calls) {
+    if (event.toolCalls) {
       out += flushTurn();
-      const names = event.tool_calls.map((tc) => tc.function?.name || tc.name || '?').join(', ');
+      const names = event.toolCalls.map((tc) => tc.function?.name || tc.name || '?').join(', ');
       out += `[tool_calls] ${names}\n`;
     }
-    if (event.tool_start) {
-      const { tool_call_id, name, input } = event.tool_start;
+    if (event.toolStart) {
+      const { toolCallId, name, input } = event.toolStart;
       const inp = truncateOutput(safeStringify(input), toolOutputCap);
-      out += `  -> ${name}#${tool_call_id} start: ${inp}\n`;
+      out += `  -> ${name}#${toolCallId} start: ${inp}\n`;
     }
-    if (event.tool_end) {
-      const { tool_call_id, name, duration_ms, output, error } = event.tool_end;
+    if (event.toolEnd) {
+      const { toolCallId, name, durationMs, output, error } = event.toolEnd;
       const body = error ? `ERROR ${error}` : truncateOutput(safeStringify(output), toolOutputCap);
-      out += `  -> ${name}#${tool_call_id} end (${duration_ms}ms): ${body}\n`;
+      out += `  -> ${name}#${toolCallId} end (${durationMs}ms): ${body}\n`;
     }
     return out;
   }

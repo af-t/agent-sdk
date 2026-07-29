@@ -156,7 +156,7 @@ console.log(result);
 const result = await agent.run('Create a README.md for this project.', (update) => {
   if (update.content) console.log('Content:', update.content);
   if (update.reasoning) console.log('Reasoning:', update.reasoning);
-  if (update.tool_calls) console.log('Tool calls:', update.tool_calls);
+  if (update.toolCalls) console.log('Tool calls:', update.toolCalls);
 });
 
 // With abort signal
@@ -207,7 +207,7 @@ if (agent.isRunning) {
 const result = await runPromise; // resolves after the steered work finishes too
 ```
 
-`steer()` returns `true` when the prompt is queued, or `false` when the agent is idle (there is no loop to steer) or the prompt is empty. When a streaming `notify` callback is set, a `{ steer_applied: { count } }` event fires each time queued prompts are drained into the conversation.
+`steer()` returns `true` when the prompt is queued, or `false` when the agent is idle (there is no loop to steer) or the prompt is empty. When a streaming `notify` callback is set, a `{ steerApplied: { count } }` event fires each time queued prompts are drained into the conversation.
 
 ### Reactive daemon
 
@@ -776,11 +776,11 @@ Factory function to create an Agent instance.
 
 ### `agent.run(prompt, notify?, options?)`
 
-| Parameter | Type            | Description                                     |
-| --------- | --------------- | ----------------------------------------------- |
-| `prompt`  | string or array | Prompt text or array of content parts           |
-| `notify`  | function        | Callback `({ content, reasoning, tool_calls })` |
-| `options` | object          | `{ signal: AbortSignal }`                       |
+| Parameter | Type            | Description                                    |
+| --------- | --------------- | ---------------------------------------------- |
+| `prompt`  | string or array | Prompt text or array of content parts          |
+| `notify`  | function        | Callback `({ content, reasoning, toolCalls })` |
+| `options` | object          | `{ signal: AbortSignal }`                      |
 
 Calling `run()` while a loop is already active does not start a second loop: the prompt is enqueued for the running loop and the in-flight run's promise is returned, so `await` still resolves with the final result.
 

@@ -435,7 +435,7 @@ describe('run(): streaming (with notify)', () => {
     global.fetch = originalFetch;
   });
 
-  it('calls notify with content_delta and accumulated content per chunk', async () => {
+  it('calls notify with contentDelta and accumulated content per chunk', async () => {
     global.fetch = async () =>
       makeSseResponse([
         'data: {"choices":[{"delta":{"content":"hel"}}],"usage":null}',
@@ -448,14 +448,14 @@ describe('run(): streaming (with notify)', () => {
     const result = await agent.run('hi', (data) => calls.push(data));
 
     assert.strictEqual(calls.length, 2);
-    assert.strictEqual(calls[0].content_delta, 'hel');
+    assert.strictEqual(calls[0].contentDelta, 'hel');
     assert.strictEqual(calls[0].content, 'hel');
-    assert.strictEqual(calls[1].content_delta, 'lo');
+    assert.strictEqual(calls[1].contentDelta, 'lo');
     assert.strictEqual(calls[1].content, 'hello');
     assert.strictEqual(result, 'hello');
   });
 
-  it('assembles tool_calls from multi-chunk stream and notifies once', async () => {
+  it('assembles toolCalls from multi-chunk stream and notifies once', async () => {
     let fetchCount = 0;
     global.fetch = async () => {
       fetchCount++;
@@ -479,11 +479,11 @@ describe('run(): streaming (with notify)', () => {
     const calls = [];
     await agent.run('run something', (data) => calls.push(data));
 
-    const tcCall = calls.find((c) => c.tool_calls);
-    assert.ok(tcCall, 'Expected a notify call with tool_calls');
-    assert.strictEqual(tcCall.tool_calls[0].id, 'call_1');
-    assert.strictEqual(tcCall.tool_calls[0].function.name, 'Echo');
-    assert.strictEqual(tcCall.tool_calls[0].function.arguments, '{"msg":"hi"}');
+    const tcCall = calls.find((c) => c.toolCalls);
+    assert.ok(tcCall, 'Expected a notify call with toolCalls');
+    assert.strictEqual(tcCall.toolCalls[0].id, 'call_1');
+    assert.strictEqual(tcCall.toolCalls[0].function.name, 'Echo');
+    assert.strictEqual(tcCall.toolCalls[0].function.arguments, '{"msg":"hi"}');
   });
 
   it('stops parsing after [DONE]: no extra notify calls', async () => {
@@ -497,9 +497,9 @@ describe('run(): streaming (with notify)', () => {
     const agent = new Agent({ apiKey: 'sk-test' });
     const calls = [];
     await agent.run('test', (data) => calls.push(data));
-    const contentCalls = calls.filter((c) => c.content_delta);
+    const contentCalls = calls.filter((c) => c.contentDelta);
     assert.strictEqual(contentCalls.length, 1);
-    assert.strictEqual(contentCalls[0].content_delta, 'hi');
+    assert.strictEqual(contentCalls[0].contentDelta, 'hi');
   });
 
   it('throws ApiError on non-ok streaming response', async () => {
@@ -1171,7 +1171,7 @@ describe('run(): steering applied in-loop', () => {
     assert.ok(roles.lastIndexOf('user') > roles.indexOf('tool'), 'steer must follow the tool result');
   });
 
-  it('emits a steer_applied notify event when a steer is drained', async () => {
+  it('emits a steerApplied notify event when a steer is drained', async () => {
     let calls = 0;
     global.fetch = async () => {
       calls++;
@@ -1195,9 +1195,9 @@ describe('run(): steering applied in-loop', () => {
     });
     const events = [];
     await agent.run('start', (d) => events.push(d));
-    const steerEvent = events.find((e) => e.steer_applied);
-    assert.ok(steerEvent, 'expected a steer_applied notify event');
-    assert.strictEqual(steerEvent.steer_applied.count, 1);
+    const steerEvent = events.find((e) => e.steerApplied);
+    assert.ok(steerEvent, 'expected a steerApplied notify event');
+    assert.strictEqual(steerEvent.steerApplied.count, 1);
   });
 
   it('a steer delivered on a no-tool-call turn keeps the loop running', async () => {
@@ -1455,7 +1455,7 @@ describe('run(): steering applied in-loop', () => {
       const agent = new Agent({ apiKey: 'sk-test', baseUrl: 'https://custom-proxy.com/api' });
       const updates = [];
       await agent.run('test', (ev) => {
-        if (ev.content_delta) updates.push(ev.content_delta);
+        if (ev.contentDelta) updates.push(ev.contentDelta);
       });
       assert.strictEqual(requestedUrl, 'https://custom-proxy.com/api/chat/completions');
       assert.strictEqual(updates.join(''), 'Stream from custom baseUrl');
