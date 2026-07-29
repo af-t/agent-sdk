@@ -337,13 +337,13 @@ scheduleWakeup({ delayMs: 60000, reason: 'pace check-in', prompt: 'resume the ta
 Register a listener for background-job completion from outside the run loop:
 
 ```javascript
-const disposer = agent.onBackgroundExit(({ id, exitCode, log }) => {
-  console.log(`Job ${id} finished (exit ${exitCode}). Log: ${log}`);
+const disposer = agent.onBackgroundExit(({ id, exitCode, logPath }) => {
+  console.log(`Job ${id} finished (exit ${exitCode}). Log: ${logPath}`);
 });
 // disposer() to unsubscribe
 ```
 
-Active background jobs are tracked in `agent.backgroundJobs` (`Map<id, BgJob>`). All running jobs receive `SIGTERM` (then `SIGKILL` after 2 s) during `agent.cleanup()`.
+Background jobs are owned by `agent.backgroundJobs`: `list()` returns every job, `get(id)` looks one up, and `kill(id)` stops a running one. All running jobs receive `SIGTERM` (then `SIGKILL` after 2 s) during `agent.cleanup()`.
 
 ## Integration into Your Project
 
@@ -790,18 +790,18 @@ Queue a prompt for an already-running loop without waiting for it to finish: see
 
 ### Agent Properties
 
-| Property         | Type         | Description                                                 |
-| ---------------- | ------------ | ----------------------------------------------------------- |
-| `messages`       | array        | Conversation history                                        |
-| `maxTurns`       | number       | Max LLM request cycles                                      |
-| `isSubagent`     | boolean      | Whether the agent is a sub-agent                            |
-| `restricted`     | boolean      | Security mode flag (set at construction)                    |
-| `tools`          | ToolRegistry | Registry of registered tools                                |
-| `usage`          | object       | `{ cost: number, tokens: number }`                          |
-| `systemPrompt`   | string       | System prompt (can be overridden)                           |
-| `isRunning`      | boolean      | Whether a run loop is currently active                      |
-| `backgroundJobs` | Map          | Active background jobs keyed by job ID (`bg-<5-hex>`)       |
-| `subagents`      | Map          | Named subagent instances keyed by ID (scoped to this agent) |
+| Property         | Type           | Description                                                     |
+| ---------------- | -------------- | --------------------------------------------------------------- |
+| `messages`       | array          | Conversation history                                            |
+| `maxTurns`       | number         | Max LLM request cycles                                          |
+| `isSubagent`     | boolean        | Whether the agent is a sub-agent                                |
+| `restricted`     | boolean        | Security mode flag (set at construction)                        |
+| `tools`          | ToolRegistry   | Registry of registered tools                                    |
+| `usage`          | object         | `{ cost: number, tokens: number }`                              |
+| `systemPrompt`   | string         | System prompt (can be overridden)                               |
+| `isRunning`      | boolean        | Whether a run loop is currently active                          |
+| `backgroundJobs` | BackgroundJobs | Background jobs started in this session (`list`, `get`, `kill`) |
+| `subagents`      | Map            | Named subagent instances keyed by ID (scoped to this agent)     |
 
 ### Agent Methods
 

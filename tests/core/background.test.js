@@ -3,11 +3,14 @@ import assert from 'node:assert/strict';
 import createAgent from '../../src/index.js';
 import { createTestTempDir } from '../support/temp.js';
 
-test('agent.backgroundJobs starts empty', async (t) => {
+test('agent.backgroundJobs starts empty and keeps its jobs private', async (t) => {
   const agent = await createAgent({ apiKey: 'x' });
   t.after(() => agent.cleanup());
-  assert.ok(agent.backgroundJobs instanceof Map);
-  assert.equal(agent.backgroundJobs.size, 0);
+  assert.deepEqual(agent.backgroundJobs.list(), []);
+  assert.equal(agent.backgroundJobs.get('bg-anything'), undefined);
+  // Jobs are registered through the collaborator, not by mutating a shared map.
+  assert.equal(agent.backgroundJobs.set, undefined);
+  assert.equal(typeof agent.backgroundJobs.register, 'function');
 });
 
 test('onBackgroundExit registers a listener and returns a disposer', async (t) => {
@@ -68,6 +71,15 @@ test('background log dir falls back to os.tmpdir/<appName>-<pid> when unconfigur
   assert.ok(agent.trustedPaths.has(dir));
 });
 
+test('cleanup removes the auto-created fallback log dir', async (t) => {
+  const agent = await createAgent({ apiKey: 'x' });
+  t.after(() => agent.cleanup());
+  const dir = agent._resolveBackgroundLogDir();
+  assert.ok(fs.existsSync(dir));
+  await agent.cleanup();
+  assert.equal(fs.existsSync(dir), false, 'an agent that created its own log dir removes it again');
+});
+
 test('pending bg exits drain into messages as a system-reminder after tool group', async (t) => {
   const agent = await createAgent({ apiKey: 'x' });
   t.after(() => agent.cleanup());
@@ -126,7 +138,7 @@ test('cleanup() kills running background jobs', async (t) => {
   const agent = await createAgent({ apiKey: 'x' });
   t.after(() => agent.cleanup());
   const child = spawn('bash', ['-c', 'sleep 30']);
-  agent.backgroundJobs.set('bg-test', {
+  agent.backgroundJobs.register({
     id: 'bg-test',
     kind: 'bash',
     child,

@@ -33,8 +33,8 @@ describe('manageJobs tool', () => {
   it('list shows only running jobs by default', async () => {
     const agent = makeAgent();
     const now = Date.now();
-    agent.backgroundJobs.set('bg-run01', { id: 'bg-run01', kind: 'bash', status: 'running', startedAt: now - 1000 });
-    agent.backgroundJobs.set('bg-fin01', {
+    agent.backgroundJobs.register({ id: 'bg-run01', kind: 'bash', status: 'running', startedAt: now - 1000 });
+    agent.backgroundJobs.register({
       id: 'bg-fin01',
       kind: 'delegate',
       status: 'exited',
@@ -50,8 +50,8 @@ describe('manageJobs tool', () => {
   it('list with all:true includes finished jobs', async () => {
     const agent = makeAgent();
     const now = Date.now();
-    agent.backgroundJobs.set('bg-run02', { id: 'bg-run02', kind: 'bash', status: 'running', startedAt: now - 1000 });
-    agent.backgroundJobs.set('bg-fin02', {
+    agent.backgroundJobs.register({ id: 'bg-run02', kind: 'bash', status: 'running', startedAt: now - 1000 });
+    agent.backgroundJobs.register({
       id: 'bg-fin02',
       kind: 'timer',
       status: 'done',
@@ -78,7 +78,7 @@ describe('manageJobs tool', () => {
 
   it('stop on an already-finished job is a no-op message', async () => {
     const agent = makeAgent();
-    agent.backgroundJobs.set('bg-done1', {
+    agent.backgroundJobs.register({
       id: 'bg-done1',
       kind: 'bash',
       status: 'exited',
@@ -99,7 +99,7 @@ describe('manageJobs tool', () => {
         if (ev === 'exit') cb();
       },
     };
-    agent.backgroundJobs.set('bg-bash1', {
+    agent.backgroundJobs.register({
       id: 'bg-bash1',
       kind: 'bash',
       status: 'running',
@@ -122,7 +122,7 @@ describe('manageJobs tool', () => {
       child: null,
       controller,
     };
-    agent.backgroundJobs.set('bg-del01', job);
+    agent.backgroundJobs.register(job);
     await manageJobs.execute({ action: 'stop', jobId: 'bg-del01' }, { agent });
     assert.equal(controller.signal.aborted, true);
     assert.equal(job.status, 'killed');
@@ -132,24 +132,9 @@ describe('manageJobs tool', () => {
     const agent = makeAgent();
     const timer = setTimeout(() => {}, 100000);
     const job = { id: 'bg-tim01', kind: 'timer', status: 'running', startedAt: Date.now(), timer };
-    agent.backgroundJobs.set('bg-tim01', job);
+    agent.backgroundJobs.register(job);
     await manageJobs.execute({ action: 'stop', jobId: 'bg-tim01' }, { agent });
     assert.equal(job.status, 'killed');
-  });
-});
-
-describe('_killBackgroundJob helper', () => {
-  it('returns not_found for unknown ids', () => {
-    const agent = makeAgent();
-    assert.equal(agent._killBackgroundJob('bg-nope').status, 'not_found');
-  });
-
-  it('returns already_finished for non-running jobs', () => {
-    const agent = makeAgent();
-    agent.backgroundJobs.set('bg-x', { id: 'bg-x', kind: 'bash', status: 'crashed', startedAt: Date.now() });
-    const res = agent._killBackgroundJob('bg-x');
-    assert.equal(res.status, 'already_finished');
-    assert.equal(res.jobStatus, 'crashed');
   });
 });
 
@@ -159,7 +144,7 @@ test('cleanup aborts a running background delegateTask controller', async (t) =>
   const tmpDir = createTestTempDir(t, 'delegate-parent-');
   parent = await createAgent({ apiKey: 'x', storagePaths: { tmpDir } });
   const controller = new AbortController();
-  parent.backgroundJobs.set('bg-clean', {
+  parent.backgroundJobs.register({
     id: 'bg-clean',
     kind: 'delegate',
     status: 'running',

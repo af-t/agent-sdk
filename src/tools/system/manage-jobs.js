@@ -37,10 +37,7 @@ const execute = async (input, ctx = {}) => {
     if (!jobId) {
       throw new Error('manageJobs stop requires `jobId`.');
     }
-    if (typeof agent._killBackgroundJob !== 'function') {
-      throw new Error('manageJobs stop requires an Agent that supports _killBackgroundJob.');
-    }
-    const res = agent._killBackgroundJob(jobId);
+    const res = agent.backgroundJobs.kill(jobId);
     if (res.status === 'not_found') {
       return `Job ${jobId} not found.`;
     }
@@ -55,7 +52,7 @@ const execute = async (input, ctx = {}) => {
 
 function listJobs(agent, all) {
   const lines = [];
-  for (const job of agent.backgroundJobs.values()) {
+  for (const job of agent.backgroundJobs.list()) {
     if (!all && job.status !== 'running') continue;
     const elapsed = ((job.endedAt ?? Date.now()) - job.startedAt) / 1000;
     let line = `${job.id} (${job.kind}): ${job.status}, ${elapsed.toFixed(1)}s`;

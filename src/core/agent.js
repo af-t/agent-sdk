@@ -2,9 +2,11 @@ import { fileURLToPath } from 'node:url';
 import { resolveApiDialect } from '../support/http.js';
 import { resolveSafePath } from '../support/path-safety.js';
 import { degradePayload, LIMITS, sanitizeAppName } from '../support/payload.js';
-import { callerAbortError, normalizeModelResponse, RequestClient } from '../agent/request-client.js';
+import { RequestClient } from '../agent/request-client.js';
 import { Lifecycle } from '../agent/lifecycle.js';
 import { ToolExecutor } from '../agent/tool-executor.js';
+import { BackgroundJobs } from '../agent/background-jobs.js';
+import { drainBackgroundExits, RunLoop } from '../agent/run-loop.js';
 import { sanitizeAssistantReasoning } from './reasoning.js';
 import { ToolRegistry } from '../registries/tool-registry.js';
 import { ConfigError } from '../support/errors.js';
@@ -26,10 +28,6 @@ function resolveStoragePath(p) {
   return path.resolve(expanded);
 }
 
-function normalizePrompt(prompt) {
-  return Array.isArray(prompt) ? prompt : [{ type: 'text', text: prompt }];
-}
-
 // Intro line of the user message that carries rich tool output. It is also how
 // the degraded payload is recognised once the parts themselves are gone.
 const RICH_CONTENT_INTRO = 'Multimodal content from the previous tool results:';
@@ -37,7 +35,6 @@ const RICH_CONTENT_DROPPED =
   '[Multimodal content could not be displayed. This model does not support it. Do not describe or guess the content.]';
 
 const DEFAULT_MAX_TURNS = 25;
-const BG_KILL_GRACE_MS = 2000;
 
 const DEFAULT_EMPTY_TURN_RETRIES = 2;
 const DEFAULT_EMPTY_TURN_NUDGE =
@@ -47,17 +44,11 @@ class Agent {
   #apiKey;
   #baseUrl;
   #instructionCache;
-  #running = false;
-  #pending = [];
-  #activeRunPromise = null;
   #multimodalUnsupported = false;
   #notifyCallbacks = new Set();
   #subscribedCallbacks = new Set();
   #pendingRichCallIds = new Set();
   #richUserMsgIdx = -1;
-  #bgExitListeners;
-  #bgRawListeners;
-  #pendingBgDrains;
   #wakeScheduled = false;
   #recorder = null;
   #recoveryHook = null;
@@ -266,10 +257,6 @@ class Agent {
     this.usage = { cost: 0, tokens: 0, cachedTokens: 0, cacheWriteTokens: 0 };
     this.subagents = new Map();
     this.fileState = new Map();
-    this.backgroundJobs = new Map();
-    this.#bgExitListeners = new Set();
-    this.#bgRawListeners = new Set();
-    this.#pendingBgDrains = [];
     this.currentTurn = 0;
     // Max request turns before forcing a break.
     // Set to 0 for unlimited (used by subagents via delegateTask).
@@ -339,6 +326,22 @@ class Agent {
       const rel = path.relative(_projectRoot, dir);
       if (rel.startsWith('..') || path.isAbsolute(rel)) this.trustedPaths.add(dir);
     }
+
+    this.backgroundJobs = new BackgroundJobs({
+      logger: this.logger,
+      // Without a configured tmp dir, background logs go to a per-process
+      // directory under the system temp dir, created on first use.
+      logDirectory: resolvedTmpDir || path.join(os.tmpdir(), `${this.appName}-${process.pid}`),
+      isBusy: () => this.isRunning,
+    });
+    this.backgroundJobs.onExit(() => this.#triggerAutoWake());
+    this.runLoop = new RunLoop({
+      requestClient: this.requestClient,
+      toolExecutor: this.toolExecutor,
+      lifecycle: this.lifecycle,
+      backgroundJobs: this.backgroundJobs,
+      logger: this.logger,
+    });
 
     this._memoryTypes = {
       user: 'Information about the user: role, goals, knowledge, preferences.',
@@ -410,17 +413,13 @@ class Agent {
   }
 
   get isRunning() {
-    return this.#running;
+    return this.runLoop.isRunning;
   }
 
   // Queue a prompt for the active run loop. Non-blocking; returns false when
   // idle (no loop to steer) or when the prompt is empty.
   steer(prompt) {
-    if (!this.#running) return false;
-    if (prompt == null || prompt === '') return false;
-    if (Array.isArray(prompt) && prompt.length === 0) return false;
-    this.#pending.push(normalizePrompt(prompt));
-    return true;
+    return this.runLoop.steer(prompt);
   }
 
   // Rebuild an Agent that re-drives a recorded run with no network calls.
@@ -564,9 +563,7 @@ class Agent {
   }
 
   onBackgroundExit(fn) {
-    if (typeof fn !== 'function') throw new TypeError('onBackgroundExit expects a function');
-    this.#bgExitListeners.add(fn);
-    return () => this.#bgExitListeners.delete(fn);
+    return this.backgroundJobs.onExit(fn);
   }
 
   // Persistent event listener, independent of run(). Returns a disposer.
@@ -578,44 +575,15 @@ class Agent {
     return () => this.#subscribedCallbacks.delete(fn);
   }
 
+  // Report a finished background job. Tools that start their own processes call
+  // this when the process ends; auto-wake is wired to it through a listener
+  // registered in the constructor.
   _fireBackgroundExit(event) {
-    for (const fn of this.#bgRawListeners) {
-      try {
-        fn(event);
-      } catch (err) {
-        this.logger.warn({ component: 'agent', error: err }, 'Background listener threw');
-      }
-    }
-
-    // Always record the exit event regardless of autoWake setting.
-    // This decouples reminder draining from the autoWake option so that
-    // callers who disable autoWake can still manually call run() and get
-    // the reminder messages via #drainBgExits (fixes coupled-reminder bug).
-    this.#pendingBgDrains.push(event);
-
-    if (this.isRunning) {
-      // The active run loop will drain #pendingBgDrains at the end of
-      // each tool-execution turn and before termination.
-      return;
-    }
-
-    // Notify external listeners (only when idle: during a run these are
-    // deferred until the run completes).
-    for (const fn of this.#bgExitListeners) {
-      try {
-        fn(event);
-      } catch (err) {
-        this.logger.warn({ component: 'agent', error: err }, 'Background exit listener threw');
-      }
-    }
-
-    this.#triggerAutoWake();
+    this.backgroundJobs.reportExit(event);
   }
 
   _onBackgroundExitRaw(fn) {
-    if (typeof fn !== 'function') throw new TypeError('_onBackgroundExitRaw expects a function');
-    this.#bgRawListeners.add(fn);
-    return () => this.#bgRawListeners.delete(fn);
+    return this.backgroundJobs.onRawExit(fn);
   }
 
   registerInjector({ name, scope, run } = {}) {
@@ -680,7 +648,9 @@ class Agent {
     await Promise.all(promises);
   }
 
-  async #buildPayload() {
+  // Build one turn's request from the current conversation, tools and settings.
+  // The run loop calls this once per turn, before any retry.
+  async _buildPayload() {
     const isOpenAI = this.dialect === 'openai';
     const messagesCopy = [...this.messages];
     const messagesForPayload = messagesCopy.map((msg, idx) => {
@@ -789,91 +759,10 @@ class Agent {
 
     await this.lifecycle.runBeforeRequest(payload);
 
+    // A provider already refused this run's rich parts: send text only.
+    if (this.#multimodalUnsupported) degradePayload(payload);
+
     return payload;
-  }
-
-  // Test seam: `_sendForTest` stands in for the whole transport, so the run loop
-  // can be driven with recorded or scripted provider responses.
-  async #sendTestStub(payload) {
-    const response = normalizeModelResponse(await this._sendForTest(payload));
-    this.#addUsage(response.usage);
-    return response;
-  }
-
-  #addUsage(usage) {
-    this.usage.cost += usage.cost;
-    this.usage.tokens += usage.tokens;
-    this.usage.cachedTokens += usage.cachedTokens;
-    this.usage.cacheWriteTokens += usage.cacheWriteTokens;
-  }
-
-  // Send one turn's payload and account for what it cost. `onDegrade` is only
-  // supplied by the run loop, which is the only place that can mirror a dropped
-  // attachment back into the conversation.
-  async #sendModelRequest(payload, { isStreaming, signal, onDegrade }) {
-    if (typeof this._sendForTest === 'function') {
-      return this.#sendTestStub(payload);
-    }
-
-    const response = await this.requestClient.request(payload, {
-      signal,
-      stream: isStreaming,
-      onChunk: (chunk) =>
-        this.#broadcast({
-          content_delta: chunk.contentDelta || null,
-          content: chunk.content || null,
-          reasoning_delta: chunk.reasoningDelta || null,
-          reasoning: chunk.reasoning || null,
-        }),
-      onDegrade,
-    });
-    this.#addUsage(response.usage);
-
-    // Streaming assembles tool calls from many deltas, so announce them once the
-    // stream is whole. The non-streaming path has no partial state to report.
-    if (isStreaming && response.message?.tool_calls) {
-      await this.#broadcast({ tool_calls: response.message.tool_calls });
-    }
-    return response;
-  }
-
-  #injectBlock(block) {
-    const lastMsg = this.messages[this.messages.length - 1];
-    if (lastMsg?.role === 'user' && Array.isArray(lastMsg?.content) && lastMsg.content.length > 0) {
-      lastMsg.content.splice(lastMsg.content.length - 1, 0, { type: 'text', text: block });
-    }
-  }
-
-  #appendUserContent(parts) {
-    const last = this.messages[this.messages.length - 1];
-    if (last?.role === 'user' && Array.isArray(last.content)) {
-      last.content.push(...parts);
-    } else {
-      this.messages.push({ role: 'user', content: parts });
-    }
-  }
-
-  // Fold queued bg-exit events into a trailing user message. Returns true when
-  // something was drained. Routes through #appendUserContent so a drain at run
-  // start merges into the fresh prompt instead of emitting a stray
-  // user-after-user message.
-  #drainBgExits() {
-    if (this.#pendingBgDrains.length === 0) return false;
-    const events = this.#pendingBgDrains.splice(0);
-    const lines = [];
-    for (const e of events) {
-      const reasonNote = e.reason ? `, reason: "${e.reason}"` : '';
-      if (e.prompt) lines.push(`- ${e.prompt}`);
-      lines.push(
-        `- ${e.id} (${e.kind}): ${e.status}, exit ${e.exitCode}, ${Math.round(e.durationMs / 100) / 10}s, log: ${e.logPath}${reasonNote}`,
-      );
-      if (Array.isArray(e.watch) && e.watch.length) {
-        for (const wid of e.watch) lines.push(describeJob(this, wid, e.tailBytes ?? 4096));
-      }
-    }
-    const text = `<system-reminder>\nBackground job(s) exited:\n${lines.join('\n')}\n</system-reminder>`;
-    this.#appendUserContent([{ type: 'text', text }]);
-    return true;
   }
 
   #triggerAutoWake() {
@@ -881,15 +770,15 @@ class Agent {
       this.#wakeScheduled = true;
       // Coalesce multiple rapid exits into a single wake-up by deferring
       // via queueMicrotask.  All events that arrive before the microtask
-      // fires will be batched into #pendingBgDrains and drained together.
+      // fires will be queued in the background jobs and drained together.
       queueMicrotask(() => {
         this.#wakeScheduled = false;
-        if (this.#running) return; // a user-initiated run started in the meantime
-        if (this.#pendingBgDrains.length === 0) return; // already consumed
+        if (this.isRunning) return; // a user-initiated run started in the meantime
+        if (!this.backgroundJobs.hasPendingExits()) return; // already consumed
 
         // Drain the queued events into messages *before* running so the
         // model sees the reminder on the very first turn of the wake-up.
-        this.#drainBgExits();
+        drainBackgroundExits(this.backgroundJobs, this.messages);
 
         const notify = typeof this.autoWakeNotify === 'function' ? this.autoWakeNotify : null;
         this.run(null, notify, this.autoWakeOptions ?? {}).catch((err) =>
@@ -897,15 +786,6 @@ class Agent {
         );
       });
     }
-  }
-
-  // Flush queued steer prompts into messages as a trailing user message.
-  async #drainPending() {
-    if (this.#pending.length === 0) return false;
-    const items = this.#pending.splice(0, this.#pending.length);
-    for (const parts of items) this.#appendUserContent(parts);
-    await this.#broadcast({ steer_applied: { count: items.length } });
-    return true;
   }
 
   use(tools) {
@@ -929,95 +809,15 @@ class Agent {
   }
 
   _scheduleTimer({ durationMs, watch = [], tailBytes = 4096, reason, prompt }) {
-    const id = 'bg-' + crypto.randomBytes(4).toString('hex').slice(0, 5);
-    const job = {
-      id,
-      kind: 'timer',
-      status: 'running',
-      startedAt: Date.now(),
-      endedAt: null,
-      exitCode: null,
-      logPath: null,
-      watch,
-      tailBytes,
-      reason,
-      prompt,
-      timer: null,
-    };
-    job.timer = setTimeout(() => {
-      job.endedAt = Date.now();
-      job.status = 'done';
-      job.exitCode = 0;
-      this._fireBackgroundExit({
-        id,
-        kind: 'timer',
-        status: 'done',
-        exitCode: 0,
-        durationMs: job.endedAt - job.startedAt,
-        logPath: null,
-        watch,
-        tailBytes,
-        reason,
-        prompt,
-      });
-    }, durationMs);
-    this.backgroundJobs.set(id, job);
-    return { id };
+    return this.backgroundJobs.scheduleTimer({ durationMs, watch, tailBytes, reason, prompt });
   }
 
-  _killBackgroundJob(id) {
-    const job = this.backgroundJobs?.get(id);
-    if (!job) return { ok: false, status: 'not_found' };
-    if (job.status !== 'running') return { ok: false, status: 'already_finished', jobStatus: job.status };
-
-    if (job.kind === 'timer') {
-      if (job.timer) clearTimeout(job.timer);
-      job.endedAt = Date.now();
-      job.status = 'killed';
-      return { ok: true, kind: 'timer' };
-    }
-
-    if (job.kind === 'delegate') {
-      try {
-        job.controller?.abort();
-      } catch {}
-      job.status = 'killed';
-      return { ok: true, kind: 'delegate' };
-    }
-
-    // bash: signal the real process; the exit handler finalizes status
-    const child = job.child;
-    if (child && typeof child.kill === 'function') {
-      try {
-        child.kill('SIGTERM');
-      } catch {}
-      const t = setTimeout(() => {
-        try {
-          child.kill('SIGKILL');
-        } catch {}
-      }, BG_KILL_GRACE_MS);
-      if (typeof t.unref === 'function') t.unref();
-      const clear = () => clearTimeout(t);
-      if (typeof child.on === 'function') child.on('exit', clear);
-      else if (typeof child.onExit === 'function') child.onExit(clear);
-    }
-    job.status = 'killed';
-    return { ok: true, kind: 'bash' };
-  }
-
+  // Background logs live outside the project root, so the directory has to be
+  // trusted before file tools can read a job's log.
   _resolveBackgroundLogDir() {
-    if (this._bgLogDir) return this._bgLogDir;
-    let dir;
-    if (this._storageTmpDir) {
-      dir = this._storageTmpDir;
-    } else {
-      dir = path.join(os.tmpdir(), `${this.appName}-${process.pid}`);
-    }
-    fs.mkdirSync(dir, { recursive: true });
-    const real = fs.realpathSync(dir);
-    if (!this.trustedPaths.has(real)) this.trustedPaths.add(real);
-    this._bgLogDir = real;
-    return real;
+    const dir = this.backgroundJobs.resolveLogDir();
+    if (!this.trustedPaths.has(dir)) this.trustedPaths.add(dir);
+    return dir;
   }
 
   async cleanup() {
@@ -1030,44 +830,7 @@ class Agent {
       this.#recorder = null;
       this.#recordConfig = null;
     }
-    const killing = [];
-    for (const job of this.backgroundJobs.values()) {
-      if (job.status !== 'running') continue;
-      if (job.kind === 'timer') {
-        if (job.timer) clearTimeout(job.timer);
-        job.status = 'killed';
-        continue;
-      }
-      if (job.controller) {
-        try {
-          job.controller.abort();
-        } catch {}
-      }
-      const child = job.child;
-      if (child && typeof child.kill === 'function') {
-        try {
-          child.kill('SIGTERM');
-        } catch {}
-        killing.push(
-          new Promise((resolve) => {
-            const t = setTimeout(() => {
-              try {
-                child.kill('SIGKILL');
-              } catch {}
-              resolve();
-            }, BG_KILL_GRACE_MS);
-            const onExit = () => {
-              clearTimeout(t);
-              resolve();
-            };
-            if (child.on) child.on('exit', onExit);
-            else if (child.onExit) child.onExit(onExit);
-          }),
-        );
-      }
-      job.status = 'killed';
-    }
-    await Promise.all(killing);
+    await this.backgroundJobs.cleanup();
 
     if (this._storageTmpDir) {
       let entries;
@@ -1084,13 +847,13 @@ class Agent {
           this.logger.debug({ component: 'agent', path: entry.name, error: err }, 'Cleanup failed to delete file');
         }
       }
-    } else if (this._bgLogDir) {
+    } else if (this.backgroundJobs.logDirectory) {
       // auto-created fallback dir; remove entirely
       try {
-        await rm(this._bgLogDir, { recursive: true, force: true });
+        await rm(this.backgroundJobs.logDirectory, { recursive: true, force: true });
       } catch (err) {
         this.logger.debug(
-          { component: 'agent', path: this._bgLogDir, error: err },
+          { component: 'agent', path: this.backgroundJobs.logDirectory, error: err },
           'Cleanup failed to remove log directory',
         );
       }
@@ -1119,7 +882,7 @@ class Agent {
   // The provider refused the rich parts of a payload and the request client has
   // stripped them. Mirror that loss in the conversation so later turns stay
   // text-only and the model is told what it can no longer see.
-  #dropRichContent(payload) {
+  _dropRichContent(payload) {
     this.#multimodalUnsupported = true;
     for (const msg of this.messages) {
       if (msg.role === 'tool' && this.#pendingRichCallIds.has(msg.tool_call_id)) {
@@ -1141,274 +904,86 @@ class Agent {
     }
   }
 
-  async #runLoop(prompt, options = {}) {
-    try {
-      const { signal } = options;
-      this.#maybeStartRecorder();
-      const isStreaming = this.#notifyCallbacks.size > 0 || this.#subscribedCallbacks.size > 0;
+  // Queue the multimodal parts a tool group produced as a follow-up user
+  // message, and remember which tool results they came from so a later
+  // degradation can rewrite both.
+  _appendRichContent(parts, toolCallIds) {
+    this.#richUserMsgIdx = this.messages.length;
+    this.messages.push({
+      role: 'user',
+      content: [{ type: 'text', text: RICH_CONTENT_INTRO }, ...parts],
+    });
+    for (const id of toolCallIds) this.#pendingRichCallIds.add(id);
+  }
 
-      // freeze before prompt append
-      const wasFresh = this.messages.length < 1;
+  // The request carrying this turn's rich content has settled, so stop tracking
+  // the parts it carried. After a failed send the rich user message keeps its
+  // index, so a later degradation can still rewrite it.
+  _closeRichContentWindow({ sent }) {
+    this.#pendingRichCallIds.clear();
+    if (sent) this.#richUserMsgIdx = -1;
+  }
 
-      if (prompt) {
-        this.#appendUserContent(normalizePrompt(prompt));
-      }
+  // True once a provider has refused this run's rich content. Tools read it to
+  // stop attaching parts that would only be stripped again.
+  get _multimodalUnsupported() {
+    return this.#multimodalUnsupported;
+  }
 
-      // Surface background-exit reminders that queued while idle so the model
-      // sees them on the first turn (merged with the prompt) instead of only
-      // after the first tool group. Late exits during the run still drain at
-      // tool boundaries / termination below.
-      this.#drainBgExits();
+  // Built-in empty-turn recovery. It always runs after user stop hooks, which a
+  // shared hook list cannot express, so it stays here and is handed to the
+  // lifecycle per terminal turn.
+  get _recoveryHook() {
+    return this.#recoveryHook;
+  }
 
-      let loopCount = 0;
-
-      while (true) {
-        // Check abort signal
-        if (signal?.aborted) {
-          throw new Error('Agent run aborted');
-        }
-
-        if (this.maxTurns > 0 && loopCount >= this.maxTurns) {
-          this.logger.warn(
-            { component: 'agent', maxTurns: this.maxTurns },
-            'Maximum request turns reached; forcing break',
-          );
-          if (this.isSubagent) {
-            const lastMsg = this.messages[this.messages.length - 1];
-            if (lastMsg?.role === 'tool') {
-              return `[LIMIT_REACHED] The agent reached its maximum turn limit (${this.maxTurns}). \nLast tool result: ${lastMsg.content}`;
-            }
-          }
-          break;
-        }
-        loopCount++;
-        this.currentTurn = loopCount;
-
-        // subagent turn-limit: nudge final summary on last tool turn
-        if (this.isSubagent && this.maxTurns > 0 && loopCount === this.maxTurns) {
-          const lastMsg = this.messages[this.messages.length - 1];
-          if (lastMsg?.role === 'tool') {
-            lastMsg.content +=
-              '\n\n[SYSTEM] You have reached the maximum allowed request turns. Please provide a final summary of your work now and stop calling tools.';
-          }
-        }
-
-        const isFirstTurn = wasFresh && loopCount === 1;
-
-        const injectorContext = {
-          messages: this.messages,
-          usage: this.usage,
-          turn: this.messages.length,
-          logger: this.logger,
-        };
-
-        // First-turn output is persisted into this.messages (always visible in history).
-        if (isFirstTurn) {
-          const firstTurnOut = await this.lifecycle.applyInjectors('first-turn', injectorContext);
-          const text = firstTurnOut.join('\n\n').trim();
-          if (text.length > 0) {
-            const block = `<system-reminder>\n${text}\n</system-reminder>`;
-            this.#injectBlock(block);
-          }
-        }
-
-        // Per-turn output is also persisted into this.messages so the conversation
-        // history has consistent structure across turns, avoiding cache misses
-        // when the user sends a new prompt in a subsequent run() call.
-        // If the last message is not a user message (e.g. tool result), the block
-        // is silently dropped.
-        {
-          const perTurnOut = await this.lifecycle.applyInjectors('per-turn', injectorContext);
-          const text = perTurnOut.join('\n\n').trim();
-          if (text.length > 0) {
-            const block = `<system-reminder>\n${text}\n</system-reminder>`;
-            this.#injectBlock(block);
-          }
-        }
-
-        // Build payload + onBeforeRequest hooks ONCE per turn.
-        // Only the network call is retried; injectors and hooks do not run again.
-        const payload = await this.#buildPayload();
-        if (this.#multimodalUnsupported) degradePayload(payload);
-        this.#recorder?.request(loopCount, payload);
-        let response;
-        try {
-          response = await this.#sendModelRequest(payload, {
-            isStreaming,
-            signal,
-            onDegrade: (degraded) => this.#dropRichContent(degraded),
-          });
-        } catch (err) {
-          this.#pendingRichCallIds.clear();
-          throw err;
-        }
-        this.#pendingRichCallIds.clear();
-        this.#richUserMsgIdx = -1;
-        this.#recorder?.response(loopCount, response.raw);
-        // Response landed after the caller aborted: don't commit or act on it.
-        if (signal?.aborted) throw callerAbortError();
-
-        const message = response.message;
-        if (!message) {
-          this.logger.warn({ component: 'agent' }, 'LLM returned no message; breaking loop');
-          break;
-        }
-
-        let { content, tool_calls } = message;
-        let reasoning = response.reasoning;
-        let reasoning_details = response.reasoningDetails;
-        let finish_reason = response.finishReason;
-
-        // Stop hooks / empty-turn recovery run only on a terminal (no-tool_calls)
-        // turn, BEFORE the assistant message is committed: so an empty turn never
-        // lands in history as a trailing assistant message (keeps the conversation
-        // continuation-safe and avoids a 400 on the next run).
-        if (!tool_calls || tool_calls.length === 0) {
-          const r = await this.lifecycle.resolveStop({
-            payload,
-            isStreaming,
-            signal,
-            turn: loopCount,
-            content,
-            reasoning,
-            reasoning_details,
-            finish_reason,
-            usage: this.usage,
-            messages: this.messages,
-            recoveryHook: this.#recoveryHook,
-            sendModelRequest: (p, opts) => this.#sendModelRequest(p, opts),
-          });
-          if (r.continue) {
-            await this.#broadcast({ stop_recovery: { turn: loopCount, finish_reason, reasoning } });
-            this.#appendUserContent(normalizePrompt(r.prompt));
-            continue;
-          }
-          content = r.content;
-          reasoning = r.reasoning;
-          reasoning_details = r.reasoning_details;
-          tool_calls = r.tool_calls;
-          finish_reason = r.finish_reason;
-        }
-
-        if (signal?.aborted) throw callerAbortError();
-
-        const isEmptyTerminal =
-          (!tool_calls || tool_calls.length === 0) && (content == null || String(content).trim() === '');
-
-        if (isEmptyTerminal) {
-          // Empty terminal turn (recovery exhausted, or disabled). Do not commit a
-          // trailing empty assistant message; terminate and return the content as-is.
-          this.#recorder?.snapshot(loopCount, this.messages, this.usage);
-          await this.#broadcast({
-            turn_end: { turn: loopCount, terminal: true, finish_reason, empty: true, reasoning },
-          });
-          if (await this.#drainPending()) continue;
-          // A late bg exit on this terminal turn: with autoWake, resume so the
-          // model acts on it rather than stranding the reminder in history.
-          if (this.#drainBgExits() && this.autoWake) continue;
-          return content ?? '';
-        }
-
-        // Assign ids once so tool results match the assistant message
-        if (tool_calls) {
-          for (const tc of tool_calls) {
-            if (!tc.id) tc.id = `call_${crypto.randomUUID()}`;
-          }
-        }
-
-        this.messages.push({ role: 'assistant', reasoning, reasoning_details, content, tool_calls });
-        this.#recorder?.recordAssistant(loopCount, { content, reasoning, tool_calls });
-
-        if (!tool_calls || tool_calls.length === 0) {
-          this.#recorder?.snapshot(loopCount, this.messages, this.usage);
-          await this.#broadcast({ turn_end: { turn: loopCount, terminal: true, finish_reason } });
-          // A steer delivered during the final turn keeps the loop alive.
-          if (await this.#drainPending()) continue;
-          // Fold any late bg exits into messages before terminating; with
-          // autoWake, resume so the model acts on the exit instead of leaving
-          // the reminder stranded in history.
-          if (this.#drainBgExits() && this.autoWake) continue;
-          break;
-        }
-
-        const toolContext = {
-          agent: this,
-          logger: this.logger,
-          maxToolOutput: this.maxToolOutputChars,
-          signal,
-          multimodalUnsupported: this.#multimodalUnsupported,
-          broadcast: (event) => this.#broadcast(event),
-        };
-        const results = await Promise.all(tool_calls.map((tc) => this.toolExecutor.execute(tc, toolContext)));
-
-        const richPartsOrdered = [];
-        const richToolIds = [];
-        for (const { richParts, ...toolMessage } of results) {
-          this.messages.push(toolMessage);
-          if (richParts.length > 0) {
-            richPartsOrdered.push(...richParts);
-            richToolIds.push(toolMessage.tool_call_id);
-          }
-        }
-        if (richPartsOrdered.length > 0) {
-          this.#richUserMsgIdx = this.messages.length;
-          this.messages.push({
-            role: 'user',
-            content: [{ type: 'text', text: RICH_CONTENT_INTRO }, ...richPartsOrdered],
-          });
-          for (const id of richToolIds) this.#pendingRichCallIds.add(id);
-        }
-
-        if (signal?.aborted) {
-          throw new Error('Agent run aborted');
-        }
-
-        // Fold bg exits that arrived during tool execution into messages.
-        this.#drainBgExits();
-        // Flush any steer queued during this turn's tool execution.
-        await this.#drainPending();
-        this.#recorder?.snapshot(loopCount, this.messages, this.usage);
-        this.lifecycle.resetStopAttempts();
-        await this.#broadcast({ turn_end: { turn: loopCount, terminal: false, finish_reason } });
-      }
-
-      return this.messages[this.messages.length - 1].content;
-    } finally {
-      this.#running = false;
-    }
+  // Everything the run loop needs for one run. Live accessors where the agent
+  // may change the value mid-run (recorder, turn counter, turn limit).
+  #runContext({ signal } = {}) {
+    const agent = this;
+    return {
+      messages: this.messages,
+      usage: this.usage,
+      get currentTurn() {
+        return agent.currentTurn;
+      },
+      set currentTurn(turn) {
+        agent.currentTurn = turn;
+      },
+      get maxTurns() {
+        return agent.maxTurns;
+      },
+      get recorder() {
+        return agent.#recorder;
+      },
+      isStreaming: this.#notifyCallbacks.size > 0 || this.#subscribedCallbacks.size > 0,
+      broadcast: (event) => this.#broadcast(event),
+      signal,
+      agent,
+    };
   }
 
   async run(prompt, notify = null, options = {}) {
-    // Re-entrancy guard: a run() call made while a loop is active enqueues its
-    // prompt for the active loop instead of starting a second one.
-    if (this.#running) {
-      if (prompt != null && prompt !== '') {
-        this.#pending.push(normalizePrompt(prompt));
-      }
-      if (notify) {
-        this.#notifyCallbacks.add(notify);
-      }
-      return this.#activeRunPromise;
-    }
-    this.#running = true;
     if (notify) {
       this.#notifyCallbacks.add(notify);
     }
-    this.#activeRunPromise = this.#runLoop(prompt, options);
+    // Re-entrancy guard: a run() call made while a loop is active enqueues its
+    // prompt for the active loop instead of starting a second one.
+    if (this.runLoop.isRunning) {
+      // The active loop keeps the context it started with, so there is none to pass.
+      return this.runLoop.run(prompt, null);
+    }
+    this.#maybeStartRecorder();
     try {
-      return await this.#activeRunPromise;
+      return await this.runLoop.run(prompt, this.#runContext(options));
     } finally {
-      this.#running = false;
-      this.#activeRunPromise = null;
       this.#notifyCallbacks.clear();
-      // Safety net: preserve any prompt queued during an abnormal loop exit.
-      await this.#drainPending();
 
       // Post-run safety net: if background exits arrived during the window
-      // between the last #drainBgExits() in the run loop and this point
-      // (#running was still true), re-trigger the autoWake mechanism so
-      // they are not stranded (fixes the "window miss" race condition).
-      if (this.#pendingBgDrains.length > 0) {
+      // between the run loop's last drain and this point (the loop was still
+      // running), re-trigger the autoWake mechanism so they are not stranded
+      // (fixes the "window miss" race condition).
+      if (this.backgroundJobs.hasPendingExits()) {
         this.#triggerAutoWake();
       }
     }
@@ -1434,45 +1009,6 @@ function makeEmptyTurnRecoveryHook({ retries, nudge }) {
     if (attempt === retries) return { action: 'continue', prompt };
     return { action: 'stop' };
   };
-}
-
-function tailFile(logPath, bytes) {
-  try {
-    const stat = fs.statSync(logPath);
-    const start = Math.max(0, stat.size - bytes);
-    const fd = fs.openSync(logPath, 'r');
-    const buf = Buffer.alloc(stat.size - start);
-    fs.readSync(fd, buf, 0, buf.length, start);
-    fs.closeSync(fd);
-    return buf.toString('utf8');
-  } catch (err) {
-    return `(unable to tail: ${err.message})`;
-  }
-}
-
-export function describeJob(agent, id, tailBytes) {
-  const job = agent.backgroundJobs?.get(id);
-  if (!job) return `- ${id}: not found in agent.backgroundJobs`;
-  const elapsed = ((job.endedAt ?? Date.now()) - job.startedAt) / 1000;
-  const head = `- ${id} (${job.kind}): ${job.status}${
-    job.exitCode != null ? `, code ${job.exitCode}` : ''
-  }, ${elapsed.toFixed(1)}s`;
-  let out = head;
-  if (job.logPath) {
-    const tail = tailFile(job.logPath, tailBytes);
-    out += `\n  tail (${tailBytes} bytes):\n${tail
-      .split('\n')
-      .map((l) => '    ' + l)
-      .join('\n')}`;
-  }
-  if (job.traceLogPath) {
-    const traceTail = tailFile(job.traceLogPath, tailBytes);
-    out += `\n  trace tail (${tailBytes} bytes):\n${traceTail
-      .split('\n')
-      .map((l) => '    ' + l)
-      .join('\n')}`;
-  }
-  return out;
 }
 
 function defaultDateInjector() {

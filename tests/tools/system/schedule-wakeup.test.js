@@ -39,7 +39,7 @@ test('registers a non-blocking timer and returns immediately', async () => {
   const elapsed = Date.now() - before;
   assert.ok(elapsed < 200, `expected immediate return, took ${elapsed}ms`);
   assert.match(out, /bg-[0-9a-f]{5}/);
-  const timers = [...agent.backgroundJobs.values()].filter((j) => j.kind === 'timer');
+  const timers = agent.backgroundJobs.list().filter((j) => j.kind === 'timer');
   assert.equal(timers.length, 1);
   assert.equal(timers[0].watch.length, 0);
 });
@@ -47,7 +47,7 @@ test('registers a non-blocking timer and returns immediately', async () => {
 test('stores watch ids and tailBytes on the timer job', async () => {
   const agent = new Agent({ apiKey: 'x' });
   await scheduleWakeup.execute({ delayMs: 5000, watch: ['bg-zzzzz'], tailBytes: 256 }, { agent });
-  const job = [...agent.backgroundJobs.values()].find((j) => j.kind === 'timer');
+  const job = agent.backgroundJobs.list().find((j) => j.kind === 'timer');
   assert.deepEqual(job.watch, ['bg-zzzzz']);
   assert.equal(job.tailBytes, 256);
 });
@@ -63,7 +63,7 @@ test('echoes reason in the return message and stores reason/prompt on the timer 
     { agent },
   );
   assert.match(out, /reason: pace check-in/);
-  const job = [...agent.backgroundJobs.values()].find((j) => j.kind === 'timer');
+  const job = agent.backgroundJobs.list().find((j) => j.kind === 'timer');
   assert.equal(job.reason, 'pace check-in');
   assert.equal(job.prompt, 'resume the task');
 });

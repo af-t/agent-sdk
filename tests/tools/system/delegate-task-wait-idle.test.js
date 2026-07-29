@@ -9,7 +9,8 @@ test('foreground delegateTask waits for subagent background jobs to finish', asy
   // When subagent runs, it simulates returning a report but leaving a running job
   mock.method(Agent.prototype, 'run', async function () {
     // Simulate a background job
-    this.backgroundJobs.set('bg-test', {
+    this.backgroundJobs.register({
+      id: 'bg-test',
       status: 'running',
     });
 

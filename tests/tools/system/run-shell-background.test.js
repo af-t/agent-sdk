@@ -20,7 +20,7 @@ test('runShell detaches a timed-out command into the background by default', asy
     const logPath = m[1];
 
     // Process is still alive.
-    const ids = [...agent.backgroundJobs.keys()];
+    const ids = agent.backgroundJobs.list().map((j) => j.id);
     assert.equal(ids.length, 1);
     const job = agent.backgroundJobs.get(ids[0]);
     assert.equal(job.status, 'running');
@@ -52,7 +52,7 @@ test('runShell background:true returns immediately with a job id and log path', 
     const logPath = m[1];
 
     // Job is registered.
-    const ids = [...agent.backgroundJobs.keys()];
+    const ids = agent.backgroundJobs.list().map((j) => j.id);
     assert.equal(ids.length, 1);
     const job = agent.backgroundJobs.get(ids[0]);
     assert.equal(job.kind, 'bash');

@@ -80,7 +80,7 @@ test('delegateTask background:true returns immediately with a job id', async (t)
   await subagentDone;
   await new Promise((r) => setTimeout(r, 100));
 
-  const ids = [...parent.backgroundJobs.keys()];
+  const ids = parent.backgroundJobs.list().map((j) => j.id);
   assert.equal(ids.length, 1);
   const job = parent.backgroundJobs.get(ids[0]);
   assert.equal(job.kind, 'delegate');

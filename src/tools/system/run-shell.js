@@ -190,7 +190,7 @@ function setupBackgroundJob(agent, child, startedAt, reason, kind = 'bash') {
     status: 'running',
     reason,
   };
-  agent.backgroundJobs.set(id, job);
+  agent.backgroundJobs.register(job);
 
   const handleExit = (exitCode, status) => {
     stream.end();
@@ -472,7 +472,7 @@ function runWithPtyBackground(command, cwd, env, signal, agent) {
     ptyProcess.onData((d) => stream.write(d));
   } catch (err) {
     stream.end();
-    agent.backgroundJobs.delete(id);
+    agent.backgroundJobs.remove(id);
     try {
       ptyProcess.kill();
     } catch {}
@@ -485,7 +485,7 @@ function runWithPtyBackground(command, cwd, env, signal, agent) {
     });
   } catch (err) {
     stream.end();
-    agent.backgroundJobs.delete(id);
+    agent.backgroundJobs.remove(id);
     try {
       ptyProcess.kill();
     } catch {}

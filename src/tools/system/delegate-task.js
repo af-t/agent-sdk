@@ -118,7 +118,7 @@ const execute = async ({ description, prompt, persona, id, background = false },
       status: 'running',
       reason: 'explicit',
     };
-    agent.backgroundJobs.set(bgId, job);
+    agent.backgroundJobs.register(job);
 
     // Fire-and-forget the subagent loop.
     (async () => {
@@ -195,15 +195,10 @@ const execute = async ({ description, prompt, persona, id, background = false },
 
       // Wait until subagent is fully idle (no running background jobs, and not currently running a loop)
       while (!signal?.aborted) {
-        const hasRunningJobs =
-          subagent.backgroundJobs && Array.from(subagent.backgroundJobs.values()).some((j) => j.status === 'running');
-
-        if (!hasRunningJobs && !subagent.isRunning) {
+        if (!subagent.backgroundJobs.hasRunning() && !subagent.isRunning) {
           // Wait a short tick to allow pending microtasks (like autoWake) to fire
           await new Promise((r) => setTimeout(r, 50));
-          const stillRunningJobs =
-            subagent.backgroundJobs && Array.from(subagent.backgroundJobs.values()).some((j) => j.status === 'running');
-          if (!stillRunningJobs && !subagent.isRunning) {
+          if (!subagent.backgroundJobs.hasRunning() && !subagent.isRunning) {
             break;
           }
         }
