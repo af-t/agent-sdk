@@ -160,6 +160,27 @@ test('a throwing handler does not crash the daemon', async () => {
   await daemon.stop();
 });
 
+test('a throwing handler logs a structured error through the injected logger', async () => {
+  const { logger, records } = createRecordingLogger();
+  const daemon = createDaemon({
+    agent: fakeAgent(),
+    handler: () => {
+      throw new Error('handler exploded');
+    },
+    logger,
+  });
+  daemon.start();
+  daemon.emit({ type: 'boom' });
+  await tick();
+  const entry = records[0];
+  assert.ok(entry, 'expected a handler warning');
+  assert.equal(entry.level, 'warn');
+  assert.equal(entry.context.component, 'daemon');
+  assert.equal(entry.context.error.name, 'Error');
+  assert.equal(entry.message, 'Handler threw');
+  await daemon.stop();
+});
+
 test('start runs sources and stop tears them down', async () => {
   const events = [];
   let started = 0;

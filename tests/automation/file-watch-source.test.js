@@ -232,6 +232,25 @@ test('a second start routes a warning through the injected logger and does not s
   src.stop();
 });
 
+test('a throwing backend logs a structured error through the injected logger', () => {
+  const { logger, records } = createRecordingLogger();
+  const src = createFileWatchSource({
+    paths: 'a',
+    _backend: () => {
+      throw new Error('backend exploded');
+    },
+    logger,
+  });
+  src.start(() => {});
+  const entry = records[0];
+  assert.ok(entry, 'expected a backend warning');
+  assert.equal(entry.level, 'warn');
+  assert.equal(entry.context.component, 'fileWatchSource');
+  assert.equal(entry.context.error.name, 'Error');
+  assert.equal(entry.message, 'Backend start threw');
+  src.stop();
+});
+
 test('createFileWatchSource works without an injected logger, using the resolved default', () => {
   const fb = fakeBackend();
   const src = createFileWatchSource({ paths: 'a', _backend: fb.backend });
