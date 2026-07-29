@@ -374,7 +374,7 @@ describe('McpClientWrapper: functional', () => {
   });
 
   it(
-    'removes startup injection variables from restricted child environments',
+    'removes startup injection variables but keeps the inherited LD_PRELOAD',
     { skip: !nodeAvailable ? 'node not spawnable' : undefined },
     async (t) => {
       const inherited = {
@@ -404,7 +404,7 @@ describe('McpClientWrapper: functional', () => {
 
       await wrapper.connectAndGetTools();
 
-      assert.deepEqual(wrapper.client.serverInfo.unsafeKeys, []);
+      assert.deepEqual(wrapper.client.serverInfo.unsafeKeys, ['LD_PRELOAD']);
     },
   );
 

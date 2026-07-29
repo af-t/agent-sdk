@@ -11,8 +11,10 @@
 ## Secrets and logging
 
 - [ ] API keys are private fields or scoped values, not serializable properties.
-- [ ] Every child environment passes through `sanitizeChildEnvironment`.
-- [ ] Unsafe loader and startup environment variables are removed.
+- [ ] Caller-supplied child environments pass through `sanitizeChildEnvironment`,
+      and inherited ones through `sanitizeInheritedEnvironment`.
+- [ ] Unsafe loader and startup environment variables are removed, except the
+      inherited `LD_PRELOAD` that Termux needs.
 - [ ] Structured log context and messages are redacted.
 - [ ] Logs do not contain commands, credentials, environment values, or
       authorization headers.

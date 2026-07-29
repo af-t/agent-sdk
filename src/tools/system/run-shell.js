@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { sanitizeChildEnvironment } from '../../support/environment.js';
+import { sanitizeChildEnvironment, sanitizeInheritedEnvironment } from '../../support/environment.js';
 
 // node-pty is optional and may be unavailable without native build support.
 let _ptyModule = null;
@@ -22,7 +22,7 @@ async function getPty(logger) {
           const proc = pty.spawn('echo', ['1'], {
             cols: 80,
             rows: 24,
-            env: sanitizeChildEnvironment(process.env),
+            env: sanitizeInheritedEnvironment(process.env),
           });
           let hasData = false;
           const timer = setTimeout(() => {
@@ -70,6 +70,11 @@ const SAFE_ENV_KEYS = [
   'TMPDIR',
   'PREFIX',
   'PAGER',
+  // Termux points LD_PRELOAD at libtermux-exec.so so that execve() resolves
+  // standard shebangs under $PREFIX. It comes from the operator's own shell,
+  // at the same trust level as this process. A model-supplied LD_PRELOAD is a
+  // different matter and stays sanitized below.
+  'LD_PRELOAD',
 ];
 
 // Restricted mode blocks these command forms.
@@ -574,7 +579,6 @@ const execute = async ({ command, workingDirectory, env, timeout = 300000, backg
     for (const key of SAFE_ENV_KEYS) {
       if (key in baseEnvironment) safeEnv[key] = baseEnvironment[key];
     }
-    safeEnv = sanitizeChildEnvironment(safeEnv);
     if (requestedEnvironment !== baseEnvironment) {
       Object.assign(safeEnv, sanitizeChildEnvironment(requestedEnvironment));
     }

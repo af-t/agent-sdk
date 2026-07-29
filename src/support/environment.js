@@ -72,3 +72,14 @@ export function sanitizeChildEnvironment(environment) {
   }
   return safeEnvironment;
 }
+
+// Termux points LD_PRELOAD at libtermux-exec.so so that execve() resolves standard
+// shebangs under $PREFIX, and dropping it breaks any child launched through one.
+// An inherited LD_PRELOAD comes from the operator's own shell, at the same trust
+// level as this process, so it survives. A supplied one is still an injection
+// vector and must go through sanitizeChildEnvironment instead.
+export function sanitizeInheritedEnvironment(environment) {
+  const safeEnvironment = sanitizeChildEnvironment(environment);
+  if (Object.hasOwn(environment, 'LD_PRELOAD')) safeEnvironment.LD_PRELOAD = environment.LD_PRELOAD;
+  return safeEnvironment;
+}

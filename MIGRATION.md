@@ -115,6 +115,12 @@ Existing todo JSON must also be updated before calling `manageTodos`. Rename
 `dueDate`. The tool rejects legacy records so it cannot silently mix the two
 formats.
 
+Restricted `runShell` no longer forwards an inherited `NODE_PATH` to the child.
+A command that resolved modules through it must now set `NODE_PATH` explicitly
+in the tool call, or run outside restricted mode. `LD_PRELOAD` is unaffected:
+an inherited one still reaches the child, because Termux needs it to resolve
+standard shebangs, while a value supplied in the tool call is still dropped.
+
 ## Event names
 
 SDK-authored event envelopes use camel case. Provider tool-call objects inside

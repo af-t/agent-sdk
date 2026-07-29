@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { sanitizeChildEnvironment } from '../support/environment.js';
+import { sanitizeChildEnvironment, sanitizeInheritedEnvironment } from '../support/environment.js';
 import { LIMITS } from '../support/payload.js';
 import { resolveLogger } from '../support/logger.js';
 import { createAbortError } from '../support/retry.js';
@@ -25,7 +25,7 @@ export class McpNativeClient extends EventEmitter {
   async connect() {
     const childEnv =
       this.config.restricted !== false
-        ? { ...sanitizeChildEnvironment(process.env), ...sanitizeChildEnvironment(this.config.env || {}) }
+        ? { ...sanitizeInheritedEnvironment(process.env), ...sanitizeChildEnvironment(this.config.env || {}) }
         : { ...process.env, ...(this.config.env || {}) };
     this.process = spawn(this.config.command, this.config.args || [], {
       env: childEnv,

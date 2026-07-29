@@ -66,22 +66,30 @@ Tests should cover:
 
 ## Child environments
 
-Never spread the host environment directly into a child process. Remove
-secrets from inherited values and sanitize caller-supplied values:
+Never spread the host environment directly into a child process. Inherited and
+caller-supplied values sit at different trust levels, so they use different
+sanitizers:
 
 ```js
-import { sanitizeChildEnvironment } from '../../support/environment.js';
+import { sanitizeChildEnvironment, sanitizeInheritedEnvironment } from '../../support/environment.js';
 
 const environment = {
-  ...sanitizeChildEnvironment(process.env),
+  ...sanitizeInheritedEnvironment(process.env),
   ...sanitizeChildEnvironment(options.env || {}),
 };
 ```
 
-The sanitizer removes names associated with API keys, credentials, tokens,
-passwords, OpenRouter, Tavily, and private keys. It also blocks loader and
-startup variables such as `LD_PRELOAD`, `NODE_OPTIONS`, `BASH_ENV`, and
-language-specific library paths.
+Both sanitizers remove names associated with API keys, credentials, tokens,
+passwords, OpenRouter, Tavily, and private keys, along with loader and startup
+variables such as `NODE_OPTIONS`, `BASH_ENV`, and language-specific library
+paths.
+
+They differ on `LD_PRELOAD`. A caller-supplied one is an injection vector and
+`sanitizeChildEnvironment` drops it. An inherited one comes from the operator's
+own shell at the same trust level as this process, and Termux depends on it to
+resolve standard shebangs under `$PREFIX`, so `sanitizeInheritedEnvironment`
+keeps it. Use the inherited variant only for `process.env`, never for values
+that a model or a config file can reach.
 
 Tests should put distinctive secret values in both inherited and custom
 environments. Assert that logs, warnings, subprocess output, and thrown errors

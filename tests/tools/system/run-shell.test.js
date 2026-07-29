@@ -294,9 +294,12 @@ describe('runShell: command injection fuzzing', () => {
 describe('runShell: environment sanitization', () => {
   const mod = runShell;
 
-  it('removes inherited startup injection variables in restricted mode', async () => {
+  // Termux sets LD_PRELOAD to libtermux-exec.so so that execve() resolves standard
+  // shebangs under $PREFIX. It comes from the operator's own shell, so the allowlist
+  // forwards it; only a model-supplied LD_PRELOAD is an injection vector.
+  it('forwards the operator LD_PRELOAD but drops a model-supplied one', async () => {
     const result = await mod.execute(
-      { command: 'env', timeout: 5000 },
+      { command: 'env', timeout: 5000, env: { LD_PRELOAD: '/tmp/model-supplied.so' } },
       {
         agent: {
           restricted: true,
@@ -311,7 +314,9 @@ describe('runShell: environment sanitization', () => {
       },
     );
 
-    assert.doesNotMatch(result, /^(?:LD_PRELOAD|NODE_PATH)=/m);
+    assert.match(result, /^LD_PRELOAD=$/m);
+    assert.doesNotMatch(result, /model-supplied\.so/);
+    assert.doesNotMatch(result, /^NODE_PATH=/m);
   });
 
   it('strips sensitive keys like OPENROUTER_API_KEY from custom env', async () => {
