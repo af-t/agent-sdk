@@ -59,11 +59,11 @@ function extractOutput(result, multimodalUnsupported) {
 
 // Turns one model tool call into a complete tool-result message and the
 // multimodal parts it produced, if any. It never throws for a tool-level
-// failure (malformed arguments or a tool that rejects): both land in the
-// returned message's `content`, so the run loop always has a message to push.
-// Rich-content queuing (the follow-up user message, pending-call bookkeeping)
-// stays with the caller, since that touches conversation history and this
-// class does not.
+// failure (a malformed call, invalid arguments, or a tool that rejects):
+// all three land in the returned message's `content`, so the run loop always
+// has a message to push. Rich-content queuing (the follow-up user message,
+// pending-call bookkeeping) stays with the caller, since that touches
+// conversation history and this class does not.
 export class ToolExecutor {
   constructor({ registry, logger }) {
     this.registry = registry;
@@ -71,12 +71,17 @@ export class ToolExecutor {
   }
 
   async execute(toolCall, context = {}) {
-    const name = toolCall.function.name;
-    const tool_call_id = toolCall.id;
     const { agent, logger, maxToolOutput, signal, multimodalUnsupported, broadcast } = context;
+    // Read defensively: a provider response is never fully trusted to have
+    // the shape it is supposed to, and the id is worth keeping even when the
+    // rest of the call is too malformed to run, so the tool-result message
+    // still pairs with the assistant's tool_calls entry.
+    const tool_call_id = toolCall?.id;
 
+    let name;
     let input;
     try {
+      name = toolCall.function.name;
       input = parseToolArguments(toolCall);
     } catch (parseErr) {
       this.logger.warn({ tool: name, error: parseErr }, 'Failed to parse tool arguments');

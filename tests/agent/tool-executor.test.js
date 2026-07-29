@@ -67,6 +67,34 @@ describe('ToolExecutor: malformed arguments', () => {
     }
     assert.equal(registry.execute.mock.callCount(), 3);
   });
+
+  it('reports a tool call with a missing function field instead of throwing', async () => {
+    const { logger } = createRecordingLogger();
+    const registry = { execute: mock.fn(async () => 'ignored') };
+    const executor = new ToolExecutor({ registry, logger });
+    const context = createContext();
+
+    const result = await executor.execute({ id: 'call-2' }, context);
+
+    assert.equal(result.role, 'tool');
+    assert.match(result.content, /Invalid arguments/);
+    assert.equal(result.tool_call_id, 'call-2');
+    assert.equal(registry.execute.mock.callCount(), 0);
+    assert.deepEqual(context.events, []);
+  });
+
+  it('still returns a tool_call_id even when the whole call is not an object', async () => {
+    const { logger } = createRecordingLogger();
+    const registry = { execute: mock.fn(async () => 'ignored') };
+    const executor = new ToolExecutor({ registry, logger });
+    const context = createContext();
+
+    const result = await executor.execute(undefined, context);
+
+    assert.equal(result.role, 'tool');
+    assert.match(result.content, /Invalid arguments/);
+    assert.equal(result.tool_call_id, undefined);
+  });
 });
 
 describe('ToolExecutor: successful execution', () => {
