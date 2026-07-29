@@ -80,7 +80,7 @@ describe('McpNativeClient: mock server connections', () => {
     McpNativeClient = mod.McpNativeClient;
   });
 
-  // Helper: can we spawn node? Check once
+  // The suite checks Node process availability once.
   let nodeAvailable = true;
   before(async () => {
     try {
@@ -91,7 +91,7 @@ describe('McpNativeClient: mock server connections', () => {
           nodeAvailable = code === 0;
           resolve();
         });
-        // Timeout after 2s
+        // The fixture allows two seconds for the timeout.
         setTimeout(() => {
           proc.kill();
           resolve();
@@ -117,7 +117,7 @@ describe('McpNativeClient: mock server connections', () => {
         await assert.rejects(
           () => client.connect(),
           (err) => {
-            // Accept either timeout error or connection error
+            // Platform timing may surface a timeout or connection error.
             const msg = err?.message || '';
             return /timed out|ECONNREFUSED|closed/i.test(msg);
           },
@@ -218,7 +218,7 @@ describe('McpNativeClient: mock server connections', () => {
       });
 
       try {
-        // The slow server responds after 3 seconds; 10s timeout should be enough
+        // The 10-second timeout exceeds the slow server's three-second delay.
         await client.connect();
         assert.equal(client.initialized, true);
         assert.ok(client.serverInfo);

@@ -26,7 +26,7 @@ test('subscribe registers a persistent listener and returns a disposer', async (
   const seen = [];
   const dispose = agent.subscribe((e) => seen.push(e));
 
-  // drive one terminal turn with no network
+  // The scripted response drives one terminal turn without network access.
   agent._sendForTest = async () => ({ choices: [{ message: { content: 'done', tool_calls: undefined } }] });
   await agent.run('hi');
 
@@ -157,7 +157,7 @@ test('renderWindow formats turns with tool calls and results', () => {
     },
   ];
   const out = renderWindow(win, 2000);
-  assert.match(out, /\[tool_calls\] runShell/);
+  assert.match(out, /\[tool calls\] runShell/);
   assert.match(out, /runShell#a1/);
   assert.match(out, /ERROR boom/);
   assert.match(out, /thinking then acting/);
@@ -259,7 +259,7 @@ test('buildReasons routes a thrown custom trigger through the injected logger', 
   assert.equal(records[0].level, 'warn');
   assert.equal(records[0].context.component, 'copilot');
   assert.equal(records[0].context.error.name, 'Error');
-  assert.equal(records[0].message, 'Custom trigger threw');
+  assert.equal(records[0].message, 'Copilot custom trigger failed');
 });
 
 const flush = () => new Promise((r) => setTimeout(r, 15));
@@ -343,7 +343,7 @@ test('createCopilot routes a supervisor failure through an injected logger', asy
   await primary.emit({ turnEnd: { turn: 1, terminal: false } });
   await flush();
 
-  const entry = records.find((record) => record.message === 'Supervisor run threw');
+  const entry = records.find((record) => record.message === 'Copilot supervisor run failed');
   assert.equal(entry.level, 'warn');
   assert.equal(entry.context.component, 'copilot');
   assert.equal(entry.context.error.name, 'Error');
@@ -408,7 +408,7 @@ test('end-to-end: real Agent run, tool error triggers a steer', async () => {
   const originalFetch = global.fetch;
   try {
     const primary = new Agent({ apiKey: 'x', model: 'm' });
-    // turn 1: call a failing tool; turn 2: finish
+    // The first turn calls a failing tool, and the second turn finishes.
     primary.registerTools({
       name: 'Boom',
       description: 'always throws. Side effect: none',
@@ -435,7 +435,7 @@ test('end-to-end: real Agent run, tool error triggers a steer', async () => {
     await primary.run('do the task', null, { signal });
     copilot.stop();
 
-    // Deterministic: the supervisor was invoked with the failing turn's trace.
+    // The supervisor receives the failing turn's trace.
     assert.match(supervisor.lastInput, /Boom#a1/);
     assert.match(supervisor.lastInput, /ERROR/);
     assert.match(supervisor.lastInput, /GOAL: do the task/);

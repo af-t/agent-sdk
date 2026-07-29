@@ -119,11 +119,11 @@ describe('ToolRegistry', () => {
   it('onBeforeExecute can abort by throwing', async () => {
     const registry = new ToolRegistry();
     registry.onBeforeExecute(() => {
-      throw new Error('ABORTED');
+      throw new Error('Operation aborted');
     });
     registry.register({ name: 't', description: 'd', inputSchema: {}, execute: async () => 'r' });
 
-    await assert.rejects(() => registry.execute('t', {}, {}), { message: 'ABORTED' });
+    await assert.rejects(() => registry.execute('t', {}, {}), { message: 'Operation aborted' });
   });
 
   it('onAfterExecute hook runs after tool execution', async () => {
@@ -264,13 +264,13 @@ describe('ToolRegistry', () => {
       inputSchema: { type: 'object', properties: { id: { type: 'number' } } },
       execute: async ({ id }) => {
         callCount++;
-        // Simulate async work
+        // The delay keeps several executions in flight together.
         await new Promise((r) => setTimeout(r, 10 + Math.random() * 50));
         return `result-${id}`;
       },
     });
 
-    // Fire 10 concurrent calls
+    // All ten calls share the same registry.
     const promises = [];
     for (let i = 0; i < 10; i++) {
       promises.push(registry.execute('concurrent', { id: i }, {}));
@@ -278,13 +278,12 @@ describe('ToolRegistry', () => {
 
     const results = await Promise.all(promises);
 
-    // All results should be correct
     for (let i = 0; i < 10; i++) {
       assert.ok(results.includes(`result-${i}`), `Missing result for id ${i}`);
     }
     assert.equal(callCount, 10);
 
-    // Verify tool definitions are still intact (no state corruption)
+    // Concurrent execution leaves the definitions intact.
     const defs = registry.getDefinitions();
     assert.equal(defs.length, 1);
     assert.equal(defs[0].function.name, 'concurrent');
@@ -366,7 +365,7 @@ describe('ToolRegistry', () => {
     const registry = new ToolRegistry();
     const results = [];
 
-    // Register first tool
+    // The first registration remains available during the concurrent registration.
     registry.register({
       name: 'tool_a',
       description: 'A',
@@ -376,7 +375,7 @@ describe('ToolRegistry', () => {
 
     const p1 = registry.execute('tool_a', {}, {}).then((r) => results.push(r));
 
-    // Concurrently register a second tool
+    // The second registration begins on the next microtask.
     registry.register({
       name: 'tool_b',
       description: 'B',
@@ -473,7 +472,7 @@ test('ToolRegistry no longer exposes isParallelSafe', () => {
   assert.equal(typeof reg.isParallelSafe, 'undefined');
 });
 
-test('register() ignores legacy parallelSafe field without throwing', () => {
+test('register() ignores the unsupported parallelSafe field without throwing', () => {
   const reg = new ToolRegistry();
   reg.register({
     name: 'noop',

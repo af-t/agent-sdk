@@ -71,7 +71,7 @@ function isContained(canonicalTarget, canonicalRoot) {
 
 export function resolveSafePath(filePath, allowedRoots = new Set(), options = {}) {
   const restricted = options.restricted !== false;
-  if (filePath.includes('\0')) throw new Error('Access denied: Path contains null byte');
+  if (filePath.includes('\0')) throw new Error('Access denied: the path contains a null byte');
 
   let decodedPath = filePath;
   for (let index = 0; decodedPath.includes('%') && index < 3; index += 1) {
@@ -81,13 +81,13 @@ export function resolveSafePath(filePath, allowedRoots = new Set(), options = {}
     /%2e%2e|%2f|%5c/i.test(filePath) ||
     (filePath.includes('%') && (decodedPath.includes('/') || decodedPath.includes('\\')))
   ) {
-    throw new Error('Access denied: Path contains URL-encoded traversal characters');
+    throw new Error('Access denied: the path contains URL-encoded traversal characters');
   }
   if (restricted && decodedPath.includes('..')) {
-    throw new Error('Access denied: Path contains directory traversal ("..")');
+    throw new Error('Access denied: the path contains directory traversal ("..")');
   }
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(filePath.trim())) {
-    throw new Error('Access denied: Path uses a protocol handler');
+    throw new Error('Access denied: the path uses a protocol handler');
   }
 
   const resolvedTarget = path.resolve(filePath);
@@ -105,7 +105,7 @@ export function resolveSafePath(filePath, allowedRoots = new Set(), options = {}
       ancestorPath = parentPath;
     }
   }
-  if (!canonicalAncestor) throw new Error('Access denied: Could not resolve path ancestor');
+  if (!canonicalAncestor) throw new Error('Access denied: the path ancestor could not be resolved');
   if (!restricted) return path.join(canonicalAncestor, missingSuffix);
 
   const trustedRoots = allowedRoots || new Set();
@@ -138,8 +138,8 @@ export function resolveSafePath(filePath, allowedRoots = new Set(), options = {}
               return false;
             }
           });
-          if (nextPathIsTrusted) throw new Error(`Access denied: Path '${filePath}' resolves outside trusted root`);
-          throw new Error(`Access denied: Path '${filePath}' is outside project root`);
+          if (nextPathIsTrusted) throw new Error(`Access denied: path '${filePath}' resolves outside trusted root`);
+          throw new Error(`Access denied: path '${filePath}' is outside project root`);
         }
       }
     } catch (error) {
@@ -165,9 +165,9 @@ export function resolveSafePath(filePath, allowedRoots = new Set(), options = {}
   }
   if (!isSafe) {
     if (targetIsInTrustedRoot && !targetIsInProject) {
-      throw new Error(`Access denied: Path '${filePath}' resolves outside trusted root`);
+      throw new Error(`Access denied: path '${filePath}' resolves outside trusted root`);
     }
-    throw new Error(`Access denied: Path '${filePath}' is outside project root`);
+    throw new Error(`Access denied: path '${filePath}' is outside project root`);
   }
   return path.join(canonicalAncestor, missingSuffix);
 }

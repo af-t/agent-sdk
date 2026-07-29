@@ -10,7 +10,7 @@ rl.on('line', (line) => {
   try {
     const msg = JSON.parse(line);
     if (msg.method === 'initialize') {
-      // Wait 3 seconds before responding
+      // The three-second delay exercises the client's request timeout.
       setTimeout(() => {
         console.log(
           JSON.stringify({

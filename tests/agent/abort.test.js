@@ -92,7 +92,7 @@ describe('Agent: abort propagation', () => {
       execute: async (_input, ctx) =>
         new Promise((_, rej) => {
           const fail = () => rej(new Error('aborted by signal'));
-          // abort is one-shot: if the signal already fired before the tool ran,
+          // Abort is one-shot. If the signal fired before the tool ran,
           // addEventListener('abort') would never call back and the promise would
           // never settle, wedging the run loop. Handle the pre-aborted case first.
           if (ctx.signal.aborted) return fail();
@@ -178,7 +178,7 @@ describe('Agent: abort propagation', () => {
   });
 
   it('rejects instead of resolving when abort lands before a terminal response is committed', async () => {
-    // fetch deliberately ignores init.signal: exercises the post-response check
+    // This fetch double ignores init.signal to exercise the post-response check.
     const ctrl = new AbortController();
     global.fetch = async () => {
       await new Promise((r) => setTimeout(r, 100));
@@ -201,13 +201,13 @@ describe('Agent: abort propagation', () => {
             streamCtrl.error(Object.assign(new Error('This operation was aborted'), { name: 'AbortError' }));
           if (init.signal?.aborted) return fail();
           init.signal?.addEventListener('abort', fail);
-          // stream never closes on its own; only the abort tears it down
+          // Only cancellation closes this stream.
         },
       }),
     });
     const agent = new Agent({ apiKey: 'sk-test' });
     setTimeout(() => ctrl.abort(), 30);
-    // a notify callback forces the streaming (#sendStream) path
+    // A notify callback selects the streaming send path.
     await assert.rejects(() => agent.run('go', () => {}, { signal: ctrl.signal }), /Agent run aborted/);
   });
 
@@ -216,13 +216,13 @@ describe('Agent: abort propagation', () => {
     let calls = 0;
     global.fetch = async () => {
       calls++;
-      // Simulate the response landing right as the caller cancels.
+      // The response lands as the caller cancels.
       ctrl.abort();
       return { ok: false, status: 429, json: async () => ({ error: { message: 'rate limited' } }) };
     };
     const agent = new Agent({ apiKey: 'sk-test' });
     const t0 = Date.now();
-    // a notify callback forces the streaming (#sendStream) path
+    // A notify callback selects the streaming send path.
     await assert.rejects(() => agent.run('go', () => {}, { signal: ctrl.signal }), /Agent run aborted/);
     assert.equal(calls, 1, 'must not retry once the caller signal is observed as aborted');
     assert.ok(

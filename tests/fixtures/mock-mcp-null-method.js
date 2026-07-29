@@ -1,7 +1,6 @@
-// MCP mock: after initialize, sends malformed messages with method: null and
-// method: '' and no id (must be silently dropped, not emitted as
-// notifications), followed by a well-formed notification (must still be
-// emitted normally).
+// After initialize, this fixture sends malformed messages with null or empty
+// methods and no ID. The client drops them, then emits the valid notification
+// that follows.
 import readline from 'node:readline';
 
 const rl = readline.createInterface({ input: process.stdin, terminal: false });

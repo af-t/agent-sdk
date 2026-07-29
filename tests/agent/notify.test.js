@@ -147,9 +147,7 @@ describe('Agent: toolStart / toolEnd notify events', () => {
       execute: async ({ msg }) => msg,
     });
 
-    // subscribe(), not the run() notify param: turnEnd is routed only to
-    // subscribed callbacks (see Agent#broadcast), so a plain notify callback
-    // would never see it.
+    // turnEnd is routed to subscribed callbacks rather than the one-run notify callback.
     const events = [];
     agent.subscribe((event) => events.push(event));
     await agent.run('go');
@@ -166,8 +164,7 @@ describe('Agent: toolStart / toolEnd notify events', () => {
     const turnEnd = events.find((event) => event.turnEnd).turnEnd;
     assert.equal(typeof turnEnd.finishReason, 'string');
 
-    // The rename stops at the envelope: the outbound payload still carries
-    // the provider-required tool_call_id and reasoning_details fields.
+    // The outbound payload keeps provider wire fields inside the camel-case event envelope.
     const payload = await agent._buildPayload();
     const wireTool = payload.messages.find((m) => m.role === 'tool');
     assert.ok(wireTool && 'tool_call_id' in wireTool);
@@ -189,9 +186,8 @@ describe('Agent: toolStart / toolEnd notify events', () => {
 
     await agent.run('go', (event) => notifyEvents.push(event));
 
-    // Both branches of #broadcast's dispatch predicate include
-    // subscribedCallbacks, so a subscribe()-only listener sees every event
-    // and cannot tell the branches apart. Only a plain notify callback,
+    // A subscribe-only listener participates in both broadcast branches and sees every event,
+    // so it cannot tell the branches apart. Only a plain notify callback,
     // which the predicate excludes on a turnEnd event, distinguishes them.
     assert.ok(
       notifyEvents.some((event) => event.contentDelta),

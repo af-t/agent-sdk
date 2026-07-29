@@ -25,7 +25,7 @@ describe('embedTexts', () => {
     global.fetch = async (url, opts) => {
       capturedUrl = url;
       capturedBody = JSON.parse(opts.body);
-      // return data deliberately out of order to prove sorting
+      // The response order differs from the declared indices.
       return {
         ok: true,
         status: 200,
@@ -120,7 +120,7 @@ describe('embedTexts', () => {
     global.fetch = async () => ({
       ok: true,
       status: 200,
-      // index 1 omitted entirely; 0 and 2 returned out of order
+      // The response omits index 1 and returns indices 0 and 2 out of order.
       text: async () =>
         JSON.stringify({
           data: [

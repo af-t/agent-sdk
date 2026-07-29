@@ -2,9 +2,8 @@ import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { resolveSafePath } from '../support/path-safety.js';
 
-// The injectors an agent registers for itself unless its options turn them off.
-// Each one returns the text the lifecycle folds into a system-reminder block:
-// an empty string means there is nothing to say this turn.
+// Built-in injectors return text for a system-reminder block. An empty string
+// omits that injector from the current turn.
 
 export function defaultDateInjector() {
   const now = new Date();
@@ -23,14 +22,14 @@ export function contextFilesInjector(filePaths, trustedPathsFn) {
       try {
         resolved = resolveSafePath(filePath, trustedPaths);
       } catch {
-        // Path traversal or outside root: skip silently.
+        // Invalid and untrusted context paths are optional, so skip them.
         continue;
       }
       let content;
       try {
         content = await readFile(resolved, 'utf8');
       } catch {
-        // File missing: skip silently.
+        // Missing optional context files contribute no reminder text.
         continue;
       }
       if (filePaths.length > 1) {
@@ -69,7 +68,7 @@ export function memoryHintInjector(memoryDirFn, memoryTypesFn) {
     const memoryDir = memoryDirFn();
     const types = memoryTypesFn();
     const typeLines = Object.entries(types)
-      .map(([k, v]) => `- **${k}**: ${v}`)
+      .map(([k, v]) => `- ${k}: ${v}`)
       .join('\n');
     return [
       '## Memory system',
@@ -78,10 +77,10 @@ export function memoryHintInjector(memoryDirFn, memoryTypesFn) {
       '### Available types',
       typeLines,
       '',
-      'You **MUST** load the `using-memory` skill (via the loadSkill tool with action="load",',
-      'argument="using-memory") BEFORE the first memory write or update in this conversation,',
-      'unless you have already loaded it. The skill defines file format, naming conventions,',
-      'and the MEMORY.md index protocol, and you are required to follow it exactly.',
+      'Load the `using-memory` skill with loadSkill using action="load" and',
+      'argument="using-memory" before the first memory write or update in this conversation,',
+      'unless it is already loaded. The skill defines the file format, naming rules,',
+      'and MEMORY.md index protocol.',
     ].join('\n');
   };
 }
@@ -105,10 +104,8 @@ export function skillListInjector(skillRegistry) {
     if (lines.length === 0) return '';
     return (
       `## Available skills\n${lines.join('\n')}\n\n` +
-      'When a skill is relevant to your current task, you **MUST** load it via the loadSkill tool ' +
-      '(action="load", argument=<skill name>) and follow its instructions and conventions exactly. ' +
-      'Do not invent alternative approaches or formats when a skill provides authoritative guidance ' +
-      'for the task at hand. Skill bodies are the source of truth for their respective domains.'
+      'Load a relevant skill with loadSkill (action="load", argument=<skill name>) before acting, ' +
+      'then follow its task instructions.'
     );
   };
 }

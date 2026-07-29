@@ -4,9 +4,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createTestTempDir } from '../../support/temp.js';
 
-// A background delegateTask finalizer must never crash the host process if the
-// log write fails (e.g. cleanup() removed the tmp dir mid-flight). The exit
-// event must still fire so the parent learns the job ended.
+// A failed background log write cannot crash the host process. The exit event
+// still tells the parent that the job ended.
 describe('delegateTask background: log write failure does not crash the host', () => {
   let Agent;
   let execute;
@@ -52,7 +51,7 @@ describe('delegateTask background: log write failure does not crash the host', (
       );
       assert.match(out, /Job ID: bg-/, 'background mode should return a job id immediately');
 
-      // Wait for the fire-and-forget finalizer to run.
+      // The fire-and-forget finalizer runs on a later turn of the event loop.
       const start = Date.now();
       while (exits.length === 0 && Date.now() - start < 3000) {
         await new Promise((r) => setTimeout(r, 25));

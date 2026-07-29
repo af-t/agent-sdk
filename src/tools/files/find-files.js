@@ -4,15 +4,14 @@ import path from 'node:path';
 import { resolveSafePath } from '../../support/path-safety.js';
 import { LIMITS } from '../../support/payload.js';
 
-const description =
-  'Search for files by name or content within a directory.  Prioritize using this tool over using commands like `find -iname` or `grep -R` for portability reasons.';
+const description = 'Search file names or file contents under a directory.';
 const inputSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    path: { type: 'string', description: 'Directory to search in' },
-    pattern: { type: 'string', description: 'Regex or text pattern' },
-    mode: { type: 'string', enum: ['name', 'content'], description: 'Search mode' },
+    path: { type: 'string', description: 'Directory to search.' },
+    pattern: { type: 'string', description: 'Regular expression or text to find.' },
+    mode: { type: 'string', enum: ['name', 'content'], description: 'Search names or contents.' },
   },
   required: ['pattern', 'mode'],
 };

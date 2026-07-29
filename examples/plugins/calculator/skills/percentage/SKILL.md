@@ -3,12 +3,14 @@ name: percentage
 description: Compute percentages, percentage change, and tip splits, showing the formula.
 ---
 
-# Percentage
+# Percentage calculations
 
 Show the formula first, then the numeric result.
 
-- "X% of Y" -> (X / 100) * Y
-- Percentage change -> ((new - old) / old) * 100, and say increase or decrease
-- Tip split -> compute the tip, the new total, and the per-person share
+- For "X% of Y", use `(X / 100) * Y`.
+- For percentage change, use `((new - old) / old) * 100` and state whether the
+  value increased or decreased.
+- For a tip split, calculate the tip and total, then divide by the number of
+  people.
 
-Always state the formula you used so the user can check the math.
+State the formula so the user can check the calculation.

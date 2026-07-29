@@ -3,12 +3,13 @@ name: forecast
 description: Look up and present a short weather forecast for a location and day.
 ---
 
-# Forecast
+# Weather forecast
 
-When the user asks about the weather:
+Identify the requested location and day. Use today and the user's current city
+when either is already known from context.
 
-1. Identify the location and the day (default: today; use the user's current city if known).
-2. State the expected condition, the high/low temperature, and the chance of rain in one line.
-3. Add a one-sentence practical suggestion (umbrella, jacket, sunscreen).
+Give the expected conditions, high and low temperatures, and chance of rain on
+one line. Add one practical suggestion, such as whether to carry an umbrella or
+wear a jacket.
 
-Keep the whole answer under four lines. If the location is ambiguous, ask before answering.
+Keep the answer under four lines. Ask for the location if it is ambiguous.

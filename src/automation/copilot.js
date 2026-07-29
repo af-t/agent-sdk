@@ -45,7 +45,7 @@ export function buildInput(goal, reasons, win, traceCap) {
     'Decide whether to intervene. Prefer doing nothing.',
     'Respond with ONLY a JSON object: {"action":"steer"|"abort"|"none","prompt":"...","reason":"..."}.',
     'Use "steer" with a short, concrete corrective instruction (in "prompt") when the agent drifts or loops.',
-    'Use "abort" only when the task is unrecoverable or clearly wasteful. Otherwise use "none".',
+    'Use "abort" only when the task is unrecoverable or would waste the remaining budget. Otherwise use "none".',
     '',
     `GOAL: ${goal || '(unknown)'}`,
     `TRIGGER: ${reasons.join(', ')}`,
@@ -99,7 +99,7 @@ export function buildReasons(ctx, t, logger) {
     try {
       r = fn(ctx);
     } catch (err) {
-      componentLogger.warn({ error: err }, 'Custom trigger threw');
+      componentLogger.warn({ error: err }, 'Copilot custom trigger failed');
       continue;
     }
     if (r === true) reasons.push('custom');
@@ -165,8 +165,8 @@ export function createCopilot({
   goal,
   logger,
 } = {}) {
-  if (!isAgentLike(primary)) throw new ConfigError('createCopilot: primary must be an Agent-like object');
-  if (!isAgentLike(supervisor)) throw new ConfigError('createCopilot: supervisor must be an Agent-like object');
+  if (!isAgentLike(primary)) throw new ConfigError('createCopilot requires primary to be an Agent-like object');
+  if (!isAgentLike(supervisor)) throw new ConfigError('createCopilot requires supervisor to be an Agent-like object');
   const componentLogger = resolveLogger(logger).child({ component: 'copilot' });
 
   let controller = null;
@@ -199,7 +199,7 @@ export function createCopilot({
       }
       if (event.turnEnd) finalizeTurn(event.turnEnd);
     } catch (err) {
-      componentLogger.warn({ error: err }, 'Event handler threw');
+      componentLogger.warn({ error: err }, 'Copilot event handler failed');
     }
   }
 
@@ -246,7 +246,7 @@ export function createCopilot({
     try {
       onDecision({ ...decision, triggers: reasons });
     } catch (err) {
-      componentLogger.warn({ error: err }, 'onDecision callback threw');
+      componentLogger.warn({ error: err }, 'Copilot onDecision callback failed');
     }
   }
 
@@ -258,7 +258,7 @@ export function createCopilot({
     try {
       raw = await supervisor.run(input);
     } catch (err) {
-      componentLogger.warn({ error: err }, 'Supervisor run threw');
+      componentLogger.warn({ error: err }, 'Copilot supervisor run failed');
       emitDecision({ action: 'none', reason: `supervisor error: ${err.message}` }, reasons);
       return;
     }

@@ -52,7 +52,7 @@ describe('recallMemory tool', () => {
     assert.match(out2, /score/); // floored to 1, still returns a result
   });
 
-  it('reports an empty store clearly', async () => {
+  it('reports an empty store with a direct message', async () => {
     const empty = await fs.mkdtemp(path.join(os.tmpdir(), 'recall-tool-empty-'));
     try {
       const agent = {

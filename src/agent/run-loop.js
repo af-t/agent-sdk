@@ -61,8 +61,8 @@ export function drainBackgroundExits(backgroundJobs, messages) {
   return true;
 }
 
-// Drives one conversation to completion: request, stop hooks, tool calls,
-// repeat. It owns the single active-run promise and the queue of prompts that
+// A run alternates model requests, stop hooks, and tool calls until completion.
+// It owns the single active-run promise and the queue of prompts that
 // arrive mid-run, and reaches everything else through its collaborators or the
 // turn context (`messages`, `usage`, `currentTurn`, `maxTurns`, `broadcast`,
 // `signal`, `recorder`, `isStreaming`, `agent`). Payload building, rich-content
@@ -88,15 +88,14 @@ export class RunLoop {
     return this.#runningPromise !== undefined;
   }
 
-  // Queue a prompt for the active loop. Non-blocking; returns false when idle
+  // Queue a prompt for the active loop. The call is nonblocking and returns false when idle
   // (no loop to steer) or when the prompt is empty.
   steer(prompt) {
     if (!this.isRunning) return false;
     return this.#queuePrompt(prompt);
   }
 
-  // Start a run, or hand back the one already in flight after queueing the new
-  // prompt for it.
+  // A concurrent caller shares the active promise after its prompt is queued.
   run(prompt, context) {
     if (this.#runningPromise) {
       this.#queuePrompt(prompt);
@@ -104,8 +103,7 @@ export class RunLoop {
     }
     this.#runningPromise = this.#runTurns(prompt, context).finally(async () => {
       this.#runningPromise = undefined;
-      // Safety net: a prompt queued as the loop exited abnormally still lands
-      // in history instead of disappearing with the run.
+      // Preserve prompts queued while an abnormal exit was settling.
       await this.#drainPending(context);
     });
     return this.#runningPromise;
@@ -133,8 +131,7 @@ export class RunLoop {
   async #sendRequest(payload, context, { onDegrade } = {}) {
     const { agent, usage, signal, isStreaming, broadcast } = context;
 
-    // Test seam: `_sendForTest` stands in for the whole transport, so the loop
-    // can be driven with recorded or scripted provider responses.
+    // Recorded and scripted runs replace the transport through _sendForTest.
     if (typeof agent._sendForTest === 'function') {
       const stubbed = normalizeModelResponse(await agent._sendForTest(payload));
       addUsage(usage, stubbed.usage);
@@ -166,7 +163,6 @@ export class RunLoop {
   async #runTurns(prompt, context) {
     const { agent, messages, signal, isStreaming, broadcast } = context;
 
-    // freeze before prompt append
     const wasFresh = messages.length < 1;
 
     if (prompt) {
@@ -182,13 +178,12 @@ export class RunLoop {
     let loopCount = 0;
 
     while (true) {
-      // Check abort signal
       if (signal?.aborted) {
         throw new Error('Agent run aborted');
       }
 
       if (context.maxTurns > 0 && loopCount >= context.maxTurns) {
-        this.#logger.warn({ maxTurns: context.maxTurns }, 'Maximum request turns reached; forcing break');
+        this.#logger.warn({ maxTurns: context.maxTurns }, 'Agent reached its request-turn limit and is stopping');
         if (agent.isSubagent) {
           const lastMsg = messages[messages.length - 1];
           if (lastMsg?.role === 'tool') {
@@ -200,7 +195,7 @@ export class RunLoop {
       loopCount++;
       context.currentTurn = loopCount;
 
-      // subagent turn-limit: nudge final summary on last tool turn
+      // A subagent gets one final prompt before its turn limit.
       if (agent.isSubagent && context.maxTurns > 0 && loopCount === context.maxTurns) {
         const lastMsg = messages[messages.length - 1];
         if (lastMsg?.role === 'tool') {
@@ -218,7 +213,7 @@ export class RunLoop {
         logger: agent.logger,
       };
 
-      // First-turn output is persisted into the conversation (always visible in history).
+      // First-turn injector output remains visible in conversation history.
       if (isFirstTurn) {
         const firstTurnOut = await this.#lifecycle.applyInjectors('first-turn', injectorContext);
         const text = firstTurnOut.join('\n\n').trim();
@@ -239,8 +234,8 @@ export class RunLoop {
         }
       }
 
-      // Build payload + onBeforeRequest hooks ONCE per turn.
-      // Only the network call is retried; injectors and hooks do not run again.
+      // Retries reuse the payload so injectors and request hooks run once per
+      // turn.
       const payload = await agent._buildPayload();
       context.recorder?.request(loopCount, payload);
       let response;
@@ -254,12 +249,12 @@ export class RunLoop {
       }
       agent._closeRichContentWindow({ sent: true });
       context.recorder?.response(loopCount, response.raw);
-      // Response landed after the caller aborted: don't commit or act on it.
+      // A response received after cancellation must not enter history.
       if (signal?.aborted) throw callerAbortError();
 
       const message = response.message;
       if (!message) {
-        this.#logger.warn({}, 'LLM returned no message; breaking loop');
+        this.#logger.warn({}, 'Model returned no message, so the run is stopping');
         break;
       }
 
@@ -268,10 +263,9 @@ export class RunLoop {
       let reasoning_details = response.reasoningDetails;
       let finish_reason = response.finishReason;
 
-      // Stop hooks / empty-turn recovery run only on a terminal (no-tool_calls)
-      // turn, BEFORE the assistant message is committed: so an empty turn never
-      // lands in history as a trailing assistant message (keeps the conversation
-      // continuation-safe and avoids a 400 on the next run).
+      // Stop hooks and empty-turn recovery run before a terminal assistant
+      // message enters history. This keeps an empty assistant message from
+      // breaking the next continuation request.
       if (!tool_calls || tool_calls.length === 0) {
         const resolution = await this.#lifecycle.resolveStop({
           payload,
@@ -305,20 +299,20 @@ export class RunLoop {
         (!tool_calls || tool_calls.length === 0) && (content == null || String(content).trim() === '');
 
       if (isEmptyTerminal) {
-        // Empty terminal turn (recovery exhausted, or disabled). Do not commit a
-        // trailing empty assistant message; terminate and return the content as-is.
+        // An unrecovered empty terminal turn ends without adding an empty
+        // assistant message to history.
         context.recorder?.snapshot(loopCount, messages, context.usage);
         await broadcast({
           turnEnd: { turn: loopCount, terminal: true, finishReason: finish_reason, empty: true, reasoning },
         });
         if (await this.#drainPending(context)) continue;
-        // A late bg exit on this terminal turn: with autoWake, resume so the
-        // model acts on it rather than stranding the reminder in history.
+        // With autoWake, a background exit on the terminal turn resumes the
+        // model instead of leaving the reminder in history.
         if (drainBackgroundExits(this.#backgroundJobs, messages) && agent.autoWake) continue;
         return content ?? '';
       }
 
-      // Assign ids once so tool results match the assistant message
+      // Generated IDs keep tool results paired with the assistant message.
       if (tool_calls) {
         for (const toolCall of tool_calls) {
           if (!toolCall.id) toolCall.id = `call_${crypto.randomUUID()}`;
@@ -333,9 +327,8 @@ export class RunLoop {
         await broadcast({ turnEnd: { turn: loopCount, terminal: true, finishReason: finish_reason } });
         // A steer delivered during the final turn keeps the loop alive.
         if (await this.#drainPending(context)) continue;
-        // Fold any late bg exits into messages before terminating; with
-        // autoWake, resume so the model acts on the exit instead of leaving
-        // the reminder stranded in history.
+        // Before termination, late background exits enter history. autoWake
+        // resumes the model so it can act on them.
         if (drainBackgroundExits(this.#backgroundJobs, messages) && agent.autoWake) continue;
         break;
       }
@@ -369,9 +362,9 @@ export class RunLoop {
         throw new Error('Agent run aborted');
       }
 
-      // Fold bg exits that arrived during tool execution into messages.
+      // Background exits from tool execution enter history at this boundary.
       drainBackgroundExits(this.#backgroundJobs, messages);
-      // Flush any steer queued during this turn's tool execution.
+      // Steering queued during tool execution applies at this boundary.
       await this.#drainPending(context);
       context.recorder?.snapshot(loopCount, messages, context.usage);
       this.#lifecycle.resetStopAttempts();

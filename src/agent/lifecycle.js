@@ -3,7 +3,7 @@ import { ConfigError } from '../support/errors.js';
 const VALID_INJECTOR_SCOPES = new Set(['first-turn', 'per-turn']);
 
 // Ceiling on stop-hook retry/continue cycles for a single terminal turn, so a
-// hook that always asks for more (a bug, or a model that never recovers) can't
+// hook that always asks for more (a misbehaving hook or a model that never recovers) can't
 // loop the run forever.
 const MAX_STOP_RECOVERY = 8;
 
@@ -17,7 +17,7 @@ function validateInjector({ name, scope, run }) {
   }
   if (!VALID_INJECTOR_SCOPES.has(scope)) {
     const valid = [...VALID_INJECTOR_SCOPES].join(', ');
-    throw new ConfigError(`Injector scope must be one of: ${valid}. Got: ${String(scope)}`);
+    throw new ConfigError(`Injector scope must be one of ${valid}, not ${String(scope)}`);
   }
   if (typeof run !== 'function') {
     throw new ConfigError(`Injector '${name}' requires run to be a function`);
@@ -30,9 +30,8 @@ function injectorKey(scope, name) {
   return `${scope}:${name}`;
 }
 
-// The built-in stop hook, on unless the options or the environment turn it off.
-// It recovers a terminal turn whose content is empty (only reasoning, no tool
-// call), escalating raw retry x N to a single nudge and then giving up. A
+// The built-in stop hook recovers a terminal turn whose content is empty. It
+// escalates a configured number of raw retries to one nudge and then stops. A
 // non-retryable error on a retry (a 400 history-schema error, say) jumps
 // straight to the nudge. It always runs after the caller's own stop hooks, which
 // a shared hook list cannot express, so the agent holds it and hands it to
@@ -57,7 +56,7 @@ export function createEmptyTurnRecoveryHook(emptyTurnRecovery, config) {
   if (Number.isNaN(retries) || retries < 0) retries = DEFAULT_EMPTY_TURN_RETRIES;
   if (!enabled) return null;
 
-  // The configured nudge is just the inner text; wrap it as a system-reminder so
+  // The configured nudge is the inner text; wrap it as a system reminder so
   // the model reads it as framework guidance, not a user turn (consistent with
   // how injectors and background-exit drains surface machine-generated messages).
   const prompt = `<system-reminder>\n${nudge}\n</system-reminder>`;
@@ -73,8 +72,8 @@ export function createEmptyTurnRecoveryHook(emptyTurnRecovery, config) {
   };
 }
 
-// Owns the run's injectors and request/stop hooks: registration, disposal,
-// per-scope error isolation, and the stop-recovery loop that decides whether a
+// Lifecycle owns injector and hook registration, disposal, error isolation,
+// and the stop-recovery loop that decides whether a
 // terminal turn ends the run, retries, or continues with a nudge.
 export class Lifecycle {
   #stopAttempts = 0;
@@ -113,12 +112,10 @@ export class Lifecycle {
     };
   }
 
-  // Register a stop hook. Hooks fire on a terminal (no-tool_calls) turn and may
-  // return { action: 'stop' } | undefined (allow stop), { action: 'retry' }
-  // (re-send the same payload), or { action: 'continue', prompt } (inject a
-  // user nudge and keep looping). User hooks run before the built-in recovery
-  // hook passed to resolveStop; the first non-stop decision wins. Returns a
-  // disposer.
+  // Stop hooks fire on a terminal turn with no tool calls. A hook can allow the
+  // stop, retry the same payload, or continue with a user nudge. User hooks run
+  // before the recovery hook passed to resolveStop, and the first non-stop
+  // decision wins. Registration returns a disposer.
   onStop(handler) {
     if (typeof handler !== 'function') {
       throw new ConfigError('onStop expects a function');
@@ -166,7 +163,7 @@ export class Lifecycle {
       try {
         decision = await handler(ctx);
       } catch (err) {
-        this.logger.warn({ error: err }, 'Stop hook threw');
+        this.logger.warn({ error: err }, 'Stop hook failed');
         continue;
       }
       if (decision && decision.action && decision.action !== 'stop') {
@@ -176,16 +173,16 @@ export class Lifecycle {
     return undefined;
   }
 
-  // Clear the stop-recovery attempt counter, e.g. after a turn that produced
-  // tool calls: recovery budget is per empty-turn streak, not per run.
+  // A turn with tool calls clears the recovery counter because the budget
+  // applies to one empty-turn streak rather than a whole run.
   resetStopAttempts() {
     this.#stopAttempts = 0;
   }
 
-  // Resolve a terminal (no-tool_calls) turn via stop hooks. May re-send the same
+  // Resolve a terminal turn with no tool calls through stop hooks. The method may resend the same
   // payload through `sendModelRequest` (raw retry) and re-evaluate, request a
-  // nudge, or allow the stop. It never commits an assistant message: the caller
-  // decides based on the result. Returns { continue: true, prompt } for a
+  // nudge, or allow the stop. It never commits an assistant message because the
+  // caller decides based on the result. Returns { continue: true, prompt } for a
   // nudge, otherwise { content, reasoning, reasoning_details, tool_calls,
   // finish_reason } to adopt.
   async resolveStop({
@@ -205,16 +202,18 @@ export class Lifecycle {
     let tool_calls;
     let lastError;
     while (true) {
-      // Abort observed between retries: stop issuing new ones and terminate with
-      // the current message. Mirrors the run loop's between-turns signal check, so
-      // recovery never extends stop latency past a single in-flight request.
+      // Cancellation between retries ends recovery with the current message.
+      // This keeps stop latency to at most one in-flight request.
       if (signal?.aborted) {
         this.#stopAttempts = 0;
         return { content, reasoning, reasoning_details, tool_calls, finish_reason };
       }
 
       if (this.#stopAttempts > MAX_STOP_RECOVERY) {
-        this.logger.warn({ maxStopRecovery: MAX_STOP_RECOVERY }, 'Stop recovery ceiling reached; forcing stop');
+        this.logger.warn(
+          { maxStopRecovery: MAX_STOP_RECOVERY },
+          'Stop recovery reached its limit, so the run is stopping',
+        );
         this.#stopAttempts = 0;
         return { content, reasoning, reasoning_details, tool_calls, finish_reason };
       }
@@ -231,12 +230,12 @@ export class Lifecycle {
       }
 
       if (action !== 'retry') {
-        // 'stop' or unknown: allow termination with the current message.
+        // A stop or unknown action permits termination with the current message.
         this.#stopAttempts = 0;
         return { content, reasoning, reasoning_details, tool_calls, finish_reason };
       }
 
-      // action === 'retry': re-send the identical payload.
+      // A retry resends the identical payload.
       this.#stopAttempts++;
       try {
         const retryResponse = await sendModelRequest(payload, { isStreaming, signal });
@@ -248,8 +247,8 @@ export class Lifecycle {
         finish_reason = retryResponse.finishReason;
         lastError = null;
       } catch (err) {
-        // A failed raw retry (incl. a hard 4xx like a history-schema 400) leaves
-        // content empty and is surfaced via lastError; the recovery hook keys off
+        // A failed raw retry, including a hard 4xx response, leaves
+        // content empty and exposes the error through lastError. The recovery hook uses
         // lastError to escalate straight to the nudge on the next iteration.
         lastError = err;
       }
@@ -259,7 +258,7 @@ export class Lifecycle {
         this.#stopAttempts = 0;
         return { content, reasoning, reasoning_details, tool_calls, finish_reason };
       }
-      // still empty: loop and re-evaluate hooks with the incremented attempt
+      // Empty content advances the attempt and runs the hooks again.
     }
   }
 }

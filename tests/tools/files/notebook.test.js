@@ -142,7 +142,7 @@ describe('flattenNotebook', () => {
   it('cells separated by double newline', () => {
     const nb = makeNb([markdownCell('a'), markdownCell('b')]);
     const result = flattenNotebook(nb);
-    // after header+blank there should be two cells separated by \n\n
+    // Two cells follow the header and blank line, separated by another blank line.
     assert.ok(result.includes('# Cell 1 [markdown]\na\n\n# Cell 2 [markdown]\nb'));
   });
 });

@@ -26,7 +26,7 @@ test('runShell detaches a timed-out command into the background by default', asy
     assert.equal(job.status, 'running');
     assert.equal(job.reason, 'timeout');
 
-    // Wait for completion.
+    // Completion updates the job record asynchronously.
     await new Promise((r) => setTimeout(r, 5500));
     const finalJob = agent.backgroundJobs.get(ids[0]);
     assert.equal(finalJob.status, 'exited');
@@ -60,7 +60,7 @@ test('runShell background:true returns immediately with a job id and log path', 
     assert.equal(job.kind, 'bash');
     assert.equal(job.status, 'running');
 
-    // Wait for child to finish.
+    // The child updates the job record asynchronously.
     await new Promise((r) => setTimeout(r, 1500));
     assert.equal(agent.backgroundJobs.get(ids[0]).status, 'exited');
     const content = fs.readFileSync(logPath, 'utf8');

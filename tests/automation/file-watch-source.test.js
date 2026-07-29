@@ -42,8 +42,8 @@ function tick(ms = 30) {
 }
 
 test('throws ConfigError when paths is missing or empty', () => {
-  assert.throws(() => createFileWatchSource({}), /paths is required/);
-  assert.throws(() => createFileWatchSource({ paths: [] }), /paths is required/);
+  assert.throws(() => createFileWatchSource({}), /requires paths/);
+  assert.throws(() => createFileWatchSource({ paths: [] }), /requires paths/);
 });
 
 test('throws when a path is not a string', () => {
@@ -56,8 +56,8 @@ test('throws on non-positive debounceMs and pollIntervalMs', () => {
 });
 
 test('throws when filter is not a function and when ignore is not an array', () => {
-  assert.throws(() => createFileWatchSource({ paths: 'a', filter: 'x' }), /filter must be a function/);
-  assert.throws(() => createFileWatchSource({ paths: 'a', ignore: 'x' }), /ignore must be an array/);
+  assert.throws(() => createFileWatchSource({ paths: 'a', filter: 'x' }), /requires filter to be a function/);
+  assert.throws(() => createFileWatchSource({ paths: 'a', ignore: 'x' }), /requires ignore to be an array/);
 });
 
 test('returns a source object with start and stop', () => {
@@ -226,7 +226,7 @@ test('a second start routes a warning through the injected logger and does not s
   const src = createFileWatchSource({ paths: 'a', _backend: fb.backend, logger });
   src.start(() => {});
   src.start(() => {});
-  const entry = records.find((record) => record.message === 'Source already started; ignoring');
+  const entry = records.find((record) => record.message === 'File watch source ignored a duplicate start');
   assert.equal(entry.level, 'warn');
   assert.equal(entry.context.component, 'fileWatchSource');
   src.stop();
@@ -247,7 +247,7 @@ test('a throwing backend logs a structured error through the injected logger', (
   assert.equal(entry.level, 'warn');
   assert.equal(entry.context.component, 'fileWatchSource');
   assert.equal(entry.context.error.name, 'Error');
-  assert.equal(entry.message, 'Backend start threw');
+  assert.equal(entry.message, 'File watch backend failed to start');
   src.stop();
 });
 

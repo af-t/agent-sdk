@@ -1,45 +1,62 @@
-# Security Hardening Quick Checklist
+# Security review checklist
 
-## Path Traversal
+## Path containment
 
-- [ ] All `path.resolve()` replaced with `resolveSafePath()`
-- [ ] Null byte check (`\0`)
-- [ ] URL-encoded traversal check (`%2e%2e`, `%2f`, `%5c`)
-- [ ] Protocol handler rejection (`file://`)
-- [ ] Symlink TOCTOU resolution (`realpathSync`)
-- [ ] Parent directory validation for new files
+- [ ] Caller-controlled paths pass through `resolveSafePath`.
+- [ ] Tests cover null bytes, encoded traversal, and protocol handlers.
+- [ ] Relative and absolute paths cannot escape the project or a trusted root.
+- [ ] Existing symlinks cannot redirect an operation outside an allowed root.
+- [ ] New-file paths validate their nearest existing ancestor.
 
-## Secret Leakage
+## Secrets and logging
 
-- [ ] API keys using `#privateField` (not `this.publicField`)
-- [ ] Getter for read-only access instead of direct property
-- [ ] Child process environment variables sanitized with `sanitizeChildEnvironment()`
-- [ ] Logger redacts known secret patterns
-- [ ] `console.log` → `logger.info` (gets auto-redaction)
+- [ ] API keys are private fields or scoped values, not serializable properties.
+- [ ] Child environments pass through `removeSecrets` or
+      `sanitizeChildEnvironment`.
+- [ ] Unsafe loader and startup environment variables are removed.
+- [ ] Structured log context and messages are redacted.
+- [ ] Logs do not contain commands, credentials, environment values, or
+      authorization headers.
+- [ ] Consumer-owned loggers are not closed, flushed, or reconfigured.
 
-## SSRF Prevention (Web Fetch)
+## SSRF
 
-- [ ] Block localhost / 127.0.0.1 / 0.0.0.0
-- [ ] Block private IPv4 ranges (10.x, 172.16-31.x, 192.168.x)
-- [ ] Block private IPv6 ranges (::1, fc00:, fe80:, fd00:)
-- [ ] Block non-HTTP(S) protocols
-- [ ] URL format validation (`new URL(url)`)
+- [ ] Fetching accepts only HTTP and HTTPS.
+- [ ] Localhost and private, reserved, link-local, and unspecified addresses are
+      blocked for IPv4 and IPv6.
+- [ ] Every DNS answer is validated.
+- [ ] Connections use the validated address rather than resolving again.
+- [ ] Redirect targets repeat the complete check.
 
-## Command Injection (runShell)
+## Shell execution
 
-- [ ] Destruction-level commands blocked (rm -rf /, dd, mkfs, fork bomb, shutdown)
-- [ ] Suspicious patterns trigger warnings (eval, sudo, chmod, curl|sh)
-- [ ] Spawn errors caught (e.g., bash not found)
+- [ ] Catastrophic root or home deletion is blocked across flag variants.
+- [ ] Shell pipes, input redirects, and glued operators are normalized before
+      matching.
+- [ ] Raw-device writes, formatting, shutdown, and fork bombs are blocked.
+- [ ] Suspicious commands produce redacted warnings.
+- [ ] PTY and child-process paths apply the same environment rules.
+- [ ] Abort escalates from graceful termination to a bounded forced kill.
 
-## File Operations
+## File operations
 
-- [ ] Read size limit (prevent OOM)
-- [ ] Write size limit (prevent disk exhaustion)
-- [ ] Temp files use `crypto.randomUUID()`
-- [ ] Temp files use prefix `.appname-` for easy cleanup
+- [ ] Read and write sizes have explicit limits.
+- [ ] Failed multi-edit operations leave the file unchanged.
+- [ ] Temporary names are unpredictable.
+- [ ] Tests remove temporary files and directories through failure-safe hooks.
 
-## Config & Environment
+## Configuration and protocol
 
-- [ ] Config object deeply frozen (immutable)
-- [ ] Array configs also frozen (ORDER, ONLY)
-- [ ] `.env` values accessed through config, not directly via `process.env`
+- [ ] Environment configuration is parsed into frozen camel-case objects.
+- [ ] Environment variable names remain uppercase snake case.
+- [ ] SDK-authored options, events, and metadata use camel case.
+- [ ] Provider payloads and message history keep their wire spelling.
+- [ ] Tools expose exactly `{ name, description, inputSchema, execute }`.
+
+## Cancellation
+
+- [ ] An already-aborted signal prevents work from starting.
+- [ ] Network readers, retries, MCP calls, tools, and background jobs observe
+      cancellation.
+- [ ] Abort errors remain distinguishable from ordinary failures.
+- [ ] Timers and event listeners are released when work settles.

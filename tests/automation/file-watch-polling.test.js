@@ -17,8 +17,8 @@ async function waitUntil(fn, ms) {
 }
 
 // Integration test against the real polling backend (no _backend seam).
-// Polling is the recommended mode on WSL2 / network FS, where it must still
-// detect files created after watching started.
+// Polling is the recommended mode on WSL2 and network filesystems, where it
+// detects files created after the watch starts.
 test('polling backend detects a newly created file in a watched directory', async (t) => {
   let src;
   t.after(() => src?.stop());

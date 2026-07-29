@@ -75,7 +75,7 @@ describe('Agent: parallel tool scheduler', () => {
     });
 
     await agent.run('go');
-    // Deterministic concurrency check: both tools are in-flight together, independent of machine speed.
+    // Both tools remain in flight together, independent of machine speed.
     assert.equal(maxActive, 2, `expected both tools to run concurrently, max concurrent was ${maxActive}`);
   });
 

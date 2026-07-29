@@ -1,276 +1,177 @@
 ---
 name: using-memory
-description: Persistent file-based memory protocol: when to save, how to format, taxonomy, injection mechanics, and best practices. Use when the LLM needs to persist knowledge across sessions or retrieve previously saved memories.
+description: Store and retrieve durable Markdown memories through the agent's file tools and memory index.
 ---
 
-# Using Memory
+# Using memory
 
-## Overview
+Memory is a set of Markdown files managed through `writeFile`, `readFile`, and
+`editFile`. The agent does not create or update these files on its own.
+`recallMemory` searches existing entries without modifying them.
 
-This skill covers the persistent file-based memory system. Memory files are stored as markdown files with YAML-like frontmatter in the memory directory (see `<system-reminder>` for the exact path). The LLM uses `writeFile`, `readFile`, and `editFile` to manage memory files, and the **recallMemory** tool to search memories by meaning. Nothing is auto-created; you create files on demand.
+The first-turn system reminder gives the absolute memory directory and the
+available memory types. Use that runtime information instead of assuming a
+path or type list.
 
-Memory is injected into the LLM's context on every turn via the **injector system**: specifically the `memoryIndex` (first-turn) and `memoryHint` (first-turn) injectors. Their output is concatenated into a single `<system-reminder>…</system-reminder>` block that appears before the last user message content part. The `date` injector (per-turn) also adds the current timestamp.
+## What belongs in memory
 
-## Core Principles
+Save information that should survive into another conversation and is not
+available from the repository itself. Good candidates include:
 
-### Why File-Based?
+- user preferences or corrections;
+- project decisions and deadlines that are absent from code and git history;
+- a user's role, goals, or communication preferences;
+- links and names for external dashboards, trackers, or channels.
 
-| Approach | Trade-off |
-|----------|-----------|
-| File-based (current) | Durable across sessions, inspectable by user, version-controlled with git |
-| Dedicated memory tools | Would bypass file-system safeguards like `resolveSafePath` |
-| LLM-managed (writeFile/readFile/editFile) | Same tools as everything else: no special machinery |
+Do not store secrets, credentials, transient process state, logs, or facts that
+can be read from the repository. Link to a large document instead of copying it
+into a memory file.
 
-### How Memory Gets Into Context
+The default types are `user`, `feedback`, `project`, and `reference`, but the
+host can add or replace them through `memoryTypes`. Read the live type list in
+the system reminder before choosing one.
 
+## Directory and access
+
+`storagePaths.memoryDir` sets the directory. Without it, the agent uses
+`.<appName>/memory`, where `appName` defaults to `agent-sdk`. The constructor
+resolves the path to an absolute path and expands a leading `~`.
+
+An external configured directory is added to the agent's trusted paths. File
+tools still pass access through `resolveSafePath`, so use the exact directory
+from the system reminder.
+
+The first-turn `memoryIndex` injector reads `<memoryDir>/MEMORY.md`. A missing
+or empty index produces no index text and no error. The `memoryHint` injector
+adds the directory and type list on the same first turn.
+
+## Memory file format
+
+Store each entry at:
+
+```text
+<memoryDir>/<type>_<slug>.md
 ```
-writeFile/readFile/editFile (you)
-    ↓
-memory files on disk (<memoryDir>: see system-reminder for the current path)
-    ↓
-memoryIndex injector reads MEMORY.md → first-turn <system-reminder>
-memoryHint injector emits dir + types → first-turn <system-reminder>
-    ↓
-LLM sees index on the very first turn → reads relevant files on demand
-```
 
-### Key Constraints
-
-- **You** create, read, update, and delete memory files using standard tools: the agent never auto-writes memories.
-- **`resolveSafePath`** applies to all memory file operations (paths are validated against the project root).
-- **Subagents** (spawned via delegateTask) receive the same builtin injectors with defaults but **do not** inherit custom injectors, custom `memoryDir`, or `memoryTypes` from the parent agent.
-- The `memoryIndex` injector reads `<memoryDir>/MEMORY.md`: if the file is missing or empty, it returns an empty string (no error).
-
-### Memory Directory
-
-The memory directory is configured via the `storagePaths.memoryDir` option on the Agent constructor. The path is resolved to an absolute path at construction time, including `~` expansion. Default: **`.<appName>/memory/`** (where `appName` defaults to `agent-sdk`) relative to the project root. Do not rely on this literal: the `memoryHint` injector emits the actual resolved path at runtime; use that.
-
-The directory is read from `agent._memoryDir` and is always an absolute path. If the configured directory is outside the project root, it is registered in `agent.trustedPaths` so readFile, writeFile, and editFile can access it normally: you do not need to do anything special to read or write memory files there.
-
-Subagents inherit the parent's appName-derived default memory directory (or the parent's `storagePaths.memoryDir`). If a subagent needs a different memory dir, pass the path explicitly in the delegate prompt.
-
----
-
-## Available Memory Types
-
-The set of valid types is **runtime-configurable** via the `memoryTypes` constructor option. The live list: with a description of when each type applies: is injected into your context on the first turn via the `memoryHint` injector. **Always consult the `<system-reminder>` block** for the current set before choosing a type for a new memory; the defaults are `user`, `feedback`, `project`, and `reference`, but a host application may have added or replaced them.
-
-Files follow the naming pattern `<type>_<slug>.md` regardless of which types are in use.
-
----
-
-## When to Save
-
-Save a memory when you encounter something you'd want to know in a future conversation. Red flags / signals:
-
-- **User feedback**: The user tells you how to work better, preferences, conventions, or corrections. Save as `feedback` type.
-- **Project context**: Decisions, deadlines, ongoing work that isn't derivable from code or git history. Save as `project` type.
-- **User profile**: Role, goals, knowledge level, communication preferences. Save as `user` type.
-- **External references**: Dashboard URLs, tracker project links, channel names, API keys location (never the keys themselves). Save as `reference` type.
-- **Repetition**: If you find yourself searching for the same information across sessions.
-
-## When NOT to Save
-
-- Information derivable from code or git (`package.json`, git log, file structure).
-- Temporary runtime state (running processes, current time).
-- Obvious project conventions already in CLAUDE.md or AGENTS.md.
-- Large documents or logs: link to them instead.
-- Secrets, tokens, or passwords.
-
-## File Format
-
-Each memory file lives at `<memoryDir>/<type>_<slug>.md` with this structure:
+Use a short kebab-case slug. A memory file has this form:
 
 ```markdown
 ---
-name: <kebab-case-slug>
-description: <one-line summary used for relevance scan>
+name: prefers-pnpm
+description: User prefers pnpm for this project.
 metadata:
-  type: <one of the available types: see the system-reminder for the live list>
+  type: user
 ---
 
-# <Title>
+# Package manager preference
 
-<Markdown body with the full memory content.>
+The user prefers pnpm for this project because it uses workspaces.
 ```
 
-- The `name` field must be a kebab-case slug matching the filename (without `.md`).
-- The `description` is a one-line summary. The memory hint injector scans this for relevance.
-- `metadata.type` must be one of the available types (see `<system-reminder>` for the live list).
-- Frontmatter is parsed by hand (no YAML library). Values may be quoted with `'` or `"` (stripped). No nested values, no arrays.
+The top-level `description` is used during recall. Keep it to one line and make
+it specific enough to distinguish the entry. `metadata.type` should match one
+of the types from the current system reminder.
 
-## Index (MEMORY.md)
+Frontmatter parsing is deliberately small. Keep scalar values on one line.
+Single or double quotes around a scalar are accepted, but arrays and general
+YAML features are not.
 
-`<memoryDir>/MEMORY.md` is a one-line-per-memory index. It is read by the `memoryIndex` injector and shown to the LLM on the **first turn** of every conversation.
+Keep one concern in each file. This makes index entries and recall results
+useful without loading unrelated personal or project context.
 
-Format:
+## MEMORY.md
+
+`MEMORY.md` is a one-line-per-entry index:
 
 ```markdown
-# Memory Index
+# Memory index
 
-- [Some memory](<type>_some-memory.md): One-line description of that memory.
-- [Another memory](<type>_another-memory.md): Another one-line summary.
+- [Package manager preference](user_prefers-pnpm.md): User prefers pnpm for this project.
+- [Release dashboard](reference_release-dashboard.md): Link to the release status dashboard.
 ```
 
-**Rules:**
+Update the index in the same task whenever you create, rename, or delete a
+memory file. Each link target is relative to the memory directory. Keep the
+description short enough to scan quickly.
 
-- Update this index **every time** you create, rename, or delete a memory file.
-- Each line uses `[Display Name](slug.md)` markdown link syntax.
-- The **link text** is a human-readable title, the **link destination** is the kebab-case slug filename.
-- Keep descriptions short (≤ 80 chars).
-- If MEMORY.md is missing or empty, the injector returns nothing: no error is raised.
+The index is injected only on the first turn of a conversation. If you update
+it during an active conversation, the new index appears when a fresh
+conversation starts.
 
-### Example Index Output in Context
+## Save an entry
 
-When injected, it appears inside a `<system-reminder>` block like this:
+1. Read the memory directory and `MEMORY.md` if they exist.
+2. Select a current memory type and a distinct slug.
+3. Create the entry with `writeFile`.
+4. Add its link to `MEMORY.md` with `editFile`, or create the index if needed.
+5. Read the changed files when the file tools require a read-before-edit
+   workflow.
 
-```markdown
-<system-reminder>
+Example targets:
 
-## Memory index
-
-- [Name is Sayu](feedback_name_sayu.md): User renamed me to Sayu, prefer this name.
-- [Setup notes](project_setup.md): Initial project setup and dependencies.
-- [API keys location](reference_api_keys.md): Where to find API keys (never the keys themselves).
-
-</system-reminder>
+```text
+<memoryDir>/feedback_prefers-short-updates.md
+<memoryDir>/MEMORY.md
 ```
 
-## Linking Between Memories
+Do not put an API key, token, password, or credential location containing the
+secret itself in either file.
 
-Use `[Display Name](<type>_slug.md)` markdown link syntax to reference other memories within a memory body. This helps the LLM follow related context.
+## Retrieve entries
 
-Example:
+The first-turn index may already identify the file you need. Use `readFile`
+when you know the exact entry.
 
-```markdown
-See [Setup](project_setup.md) for initial configuration steps.
+Use `recallMemory` for a meaning-based search:
+
+```json
+{
+  "query": "package manager preference for this project",
+  "limit": 5
+}
 ```
 
-## Stale Memory Guidance
+Recall returns complete memory bodies ranked by relevance. With an API key, it
+uses embeddings and caches vectors in `.embeddings.json`. When embedding fails
+for a reason other than cancellation, it falls back to lexical ranking.
+Cancellation still propagates to the caller.
 
-- **Before recommending from memory**: verify the information is still current. Check git log, file timestamps, or run a quick runShell command.
-- **If a memory is stale**: update it in-place (editFile) rather than creating a duplicate.
-- **If a memory is obsolete**: delete the file and remove its line from MEMORY.md.
+Verify a remembered fact before using it when the underlying information may
+have changed. Check the referenced system, repository, or timestamp rather
+than presenting stale memory as current.
 
-## Workflow
+## Update or remove entries
 
-### Quick Start: Common Patterns
+For an update:
 
-```markdown
-<!-- Pattern A: Save user preference -->
-Use writeFile for `<memoryDir>/feedback_name_sayu.md`
-(The exact path is shown in the `<system-reminder>` block on the first turn)
-→ name: feedback-name-sayu
-→ type: feedback
-→ Body: "User renamed me to Sayu, prefer this name from now on"
+1. Read the existing file.
+2. Edit the body and top-level description together when both changed.
+3. Update the `MEMORY.md` description if it no longer matches.
 
-Then update MEMORY.md:
-→ "- [Name is Sayu](feedback_name_sayu.md): User renamed me to Sayu."
-```
+For removal, delete the entry and its index line. If two entries describe the
+same concern, merge them instead of keeping competing versions.
 
-```markdown
-<!-- Pattern B: Save a project decision -->
-Use writeFile for `<memoryDir>/project_use-pnpm.md`
-→ name: project-use-pnpm
-→ type: project
-→ Body: "Project uses pnpm, not npm. Reason: workspace support."
+## Injector behavior
 
-Then update MEMORY.md:
-→ "- [Use pnpm](project_use-pnpm.md): Project uses pnpm for workspaces."
-```
+The relevant built-in injectors are:
 
-### Saving a New Memory
+| Injector      | Scope      | Output                                                   |
+| ------------- | ---------- | -------------------------------------------------------- |
+| `memoryIndex` | first turn | Contents of `MEMORY.md`                                  |
+| `memoryHint`  | first turn | Directory, type list, and instruction to load this skill |
+| `date`        | each turn  | Current UTC date and time                                |
 
-1. Choose a kebab-case slug (e.g., `user-prefers-pnpm`).
-2. Create `<memoryDir>/<type>_<slug>.md` with proper frontmatter and markdown body.
-3. Add `- [Display Name](type_slug.md): Short description` to MEMORY.md.
+Injector output is wrapped in `<system-reminder>` and inserted before the last
+content part of the latest user message. The last part stays in place so an
+existing provider cache marker remains last.
 
-### Retrieving Memories
+## Subagents
 
-1. Check `<memoryDir>/MEMORY.md` index for relevant entries (already visible in first-turn context).
-2. If you need the full content of specific memories or want to search memories by meaning, call the `recallMemory` tool with a descriptive query.
-3. Use readFile for specific memory files if you need to browse them, or rely on the tool's recalled bodies.
-4. Verify the information is still current before acting on it.
+`delegateTask` passes the parent's `storagePaths` and `appName` to a new
+subagent, so a configured memory directory is shared. The subagent also uses
+the shared tool and skill registries.
 
-### Updating a Memory
-
-1. Use readFile for the existing memory file.
-2. Use editFile to update the body content.
-3. If the description changed, update both the frontmatter `description` and the MEMORY.md index line.
-
-### Deleting a Memory
-
-1. Delete the memory file.
-2. Remove its line from MEMORY.md.
-
-## Best Practices
-
-1. **Keep descriptions under 80 characters**: They appear in the index and serve as quick-summary for relevance scanning.
-2. **One concern per file**: Don't mix user preferences with project decisions in the same file. Split into separate type/slug files.
-3. **Always update MEMORY.md immediately**: If you create/rename/delete a memory file but forget the index, the injector won't show it. Do it atomically.
-4. **Prefer editFile over writeFile for updates**: Use editFile to surgically update frontmatter or body. Only use writeFile for brand-new files.
-5. **Never store secrets**: API keys, tokens, passwords must never go into memory files. Use the env config or a dedicated `.env` file instead.
-6. **Clean up stale memories**: Outdated info is worse than no info. Review and delete obsolete files periodically.
-7. **Use consistent kebab-case slugs**: `user-preferred-editor`, not `userPreferredEditor` or `User Preferred Editor`.
-8. **Subagents don't inherit custom memory config**: If a subagent needs access to memory, it must use the default directory or you must pass the info explicitly in the delegate prompt.
-9. **File paths are validated by `resolveSafePath`**: For memory files within the project root, use relative paths. For files in a configured external `memoryDir`, use absolute paths: they are trusted via `trustedPaths` and accessible through readFile, writeFile, and editFile without any special handling.
-10. **The index is first-turn only**: MEMORY.md is only injected on the very first turn of a conversation. If you update memories mid-conversation, the LLM won't see the updated index until the next conversation start.
-
-## How It Works (Technical Details)
-
-This section is for understanding the injection machinery: not required for daily use.
-
-### Injectors Involved
-
-| Injector | Scope | What It Does |
-|----------|-------|-------------|
-| `memoryIndex` | first-turn | Reads `<memoryDir>/MEMORY.md` and injects its content |
-| `memoryHint` | first-turn | Emits the memory directory path + available memory types |
-| `date` | per-turn | Injects `Current date: YYYY-MM-DD HH:MM UTC` |
-
-### Injection Order
-
-```
-1. first-turn injectors run (only on turn 1 of a fresh conversation):
-   a. memoryIndex  → content of MEMORY.md (or empty)
-   b. memoryHint   → "Memory files are stored at <appName>/memory/..."
-   c. skillList    → available skills (from SkillRegistry)
-
-2. per-turn injectors run (every turn, including turn 1):
-   a. date         → current timestamp
-
-Outputs within a scope are joined with double-newlines and wrapped in a
-single <system-reminder>...</system-reminder> block. First-turn and per-turn
-each produce their own block (different lifecycles), so turn 1 typically
-carries two blocks.
-```
-
-### System-Reminder Placement
-
-The reminder block is inserted as a new text part **before** the last content part of the last user message. This ensures that `cache_control: { type: 'ephemeral' }` stays on the actual last element (the cache marker is never moved to accommodate the reminder).
-
-### Subagent Behavior
-
-Subagents (spawned via the delegateTask tool) construct their own Agent with default injectors. They **do not** inherit:
-
-- Custom `memoryDir` or `memoryTypes` from the parent
-- Custom injectors registered via `registerInjector()`
-- Custom `contextFiles` list
-
-They do get the same builtin `memoryIndex`, `memoryHint`, `date`, `skillList`, and `contextFiles` injectors with **default settings** (so they fall back to the appName-derived memory dir).
-
-## Resources
-
-### references/
-
-*(This directory can hold quick-reference files, similar to `code-remediation/references/` or `tmux/references/`.)*
-
-Potential references to add:
-
-- `memory-cheatsheet.md`: Quick-reference for file format, types, and common commands.
-
-### scripts/
-
-*(This directory can hold helper scripts, similar to other skills.)*
-
-No scripts are currently provided: writeFile, readFile, and editFile are sufficient for all memory operations.
+It does not copy custom `memoryTypes`, custom injectors, or a custom
+`contextFiles` list. Its built-in injectors use their default options. Put any
+nondefault type or context requirement in the delegated prompt if the
+subagent needs it.

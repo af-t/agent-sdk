@@ -3,14 +3,13 @@ import path from 'node:path';
 import { loadIgnoreFilter, resolveSafePath } from '../../support/path-safety.js';
 import { formatBytes } from '../../support/payload.js';
 
-const description =
-  'List files and directories at a specified path, respecting .gitignore rules. Use this to explore the project structure and discover available files and folders.';
+const description = 'List files and directories under a path while respecting .gitignore rules.';
 const inputSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    path: { type: 'string', description: 'Directory to list' },
-    depth: { type: 'number', description: 'Recursion depth (default 1)' },
+    path: { type: 'string', description: 'Directory to list.' },
+    depth: { type: 'number', description: 'Directory depth to include. The default is 1.' },
   },
   required: ['path'],
 };

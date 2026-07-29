@@ -56,8 +56,8 @@ function terminateChild(child, { unref = false } = {}) {
   });
 }
 
-// Owns every background job this agent started: shell commands that were
-// detached, delegated subagents, and wake-up timers. Jobs are registered by
+// This registry owns detached shell commands, delegated subagents, and wake-up
+// timers started by the agent. Jobs are registered by
 // whoever spawned them and stay owned here until they exit or are killed, so
 // nothing outside this class can add or drop an entry behind its back.
 //
@@ -177,7 +177,7 @@ export class BackgroundJobs {
       return { ok: true, kind: 'delegate' };
     }
 
-    // bash: signal the real process; the exit handler finalizes status
+    // Shell jobs signal the process and let its exit handler finalize status.
     const child = job.child;
     if (child && typeof child.kill === 'function') {
       terminateChild(child, { unref: true });
@@ -186,7 +186,7 @@ export class BackgroundJobs {
     return { ok: true, kind: 'bash' };
   }
 
-  // Create the log directory on first use and remember its real path. Callers
+  // The first use creates the log directory and remembers its real path. Callers
   // that need the directory to be readable by tools are responsible for
   // trusting the returned path.
   resolveLogDir() {
@@ -215,7 +215,7 @@ export class BackgroundJobs {
       try {
         fn(event);
       } catch (err) {
-        this.logger.warn({ error: err }, 'Background listener threw');
+        this.logger.warn({ error: err }, 'Background listener failed');
       }
     }
 
@@ -223,7 +223,7 @@ export class BackgroundJobs {
     // wakes the agent manually still gets the reminder on the next run.
     this.#pendingExits.push(event);
 
-    // A run loop is active: it drains the queue at each tool boundary and before
+    // An active run loop drains the queue at each tool boundary and before
     // it terminates, and persistent listeners wait until it is done.
     if (this.#isBusy()) return;
 
@@ -231,7 +231,7 @@ export class BackgroundJobs {
       try {
         fn(event);
       } catch (err) {
-        this.logger.warn({ error: err }, 'Background exit listener threw');
+        this.logger.warn({ error: err }, 'Background exit listener failed');
       }
     }
   }

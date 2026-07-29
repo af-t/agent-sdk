@@ -22,15 +22,15 @@ const AUDIO_FORMAT_MAP = {
 };
 
 const description =
-  'Read the contents of a file with pagination and line numbers. Handles text, notebooks (.ipynb), images (PNG/JPEG/GIF/WebP), PDFs, audio, video, and binary files. Use pagination (startLine/endLine) for large files to avoid context overflow and ensure efficient reading. For images, PDFs, audio, and video files, the tool automatically loads and injects them as multimodal content blocks directly into your context, so you do not need to expect binary hex or run external tools like ffmpeg to inspect them.';
+  'Read a file. Text and notebooks include line numbers and support pagination. Images, PDFs, audio, and video are returned as multimodal content when supported. Other binary files return metadata and a hex preview.';
 const inputSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    path: { type: 'string', description: 'File path' },
-    startLine: { type: 'number', description: 'Line to start reading from' },
-    endLine: { type: 'number', description: 'Line to end reading at' },
-    maxLines: { type: 'number', description: 'Max lines to return (default 1500)' },
+    path: { type: 'string', description: 'File to read.' },
+    startLine: { type: 'number', description: 'First line to return.' },
+    endLine: { type: 'number', description: 'Last line to return.' },
+    maxLines: { type: 'number', description: 'Maximum lines to return. The default is 1500.' },
   },
   required: ['path'],
 };

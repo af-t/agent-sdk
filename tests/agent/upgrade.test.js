@@ -201,7 +201,7 @@ describe('Agent Upgrade: modern parameters and reasoning', () => {
     assert.strictEqual(lastMsg.content, 'Final content');
   });
 
-  it('ignores the legacy reasoning_content field in a non-streaming response', async () => {
+  it('ignores reasoning_content in a non-streaming response', async () => {
     global.fetch = async () => ({
       ok: true,
       status: 200,
@@ -252,7 +252,7 @@ describe('Agent Upgrade: modern parameters and reasoning', () => {
     assert.strictEqual(lastMsg.content, 'Hello world!');
   });
 
-  it('ignores the legacy reasoning_content field in a streaming response', async () => {
+  it('ignores reasoning_content in a streaming response', async () => {
     global.fetch = async () => {
       const chunks = [
         'data: {"choices": [{"delta": {"reasoning_content": "Thinking..."}}]}',

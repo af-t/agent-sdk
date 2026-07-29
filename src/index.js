@@ -9,7 +9,7 @@ import { createBuiltinTools } from './tools/index.js';
 try {
   process.loadEnvFile();
 } catch {
-  // Ignore if .env doesn't exist.
+  // A .env file is optional.
 }
 
 export async function createAgent(options = {}) {
@@ -17,7 +17,6 @@ export async function createAgent(options = {}) {
   const logger = resolveLogger(options.logger, { debug: config.debug });
   const skillRegistry = new SkillRegistry({ logger });
   const restricted = options.restricted !== false;
-  // Honor a caller-supplied registry; otherwise auto-discover builtins
   let tools = options.tools;
   if (!tools) {
     tools = new ToolRegistry({ restricted, logger });
@@ -26,7 +25,6 @@ export async function createAgent(options = {}) {
     }
   }
 
-  // Explicit options win over env config
   return new Agent({
     ...options,
     model: options.model || config.model,

@@ -7,27 +7,25 @@ import { LIMITS } from '../../support/payload.js';
 import { createTraceWriter } from '../../recording/trace-writer.js';
 
 const description =
-  'Delegate a specific task to a specialized sub-agent. Use this for complex research, repetitive operations, or tasks with high-volume output to keep the main session history clean. Side effect: spawns a subagent that may itself touch the filesystem and shell. Avoid parallel delegateTask calls targeting overlapping work.';
+  'Run a specific task in a subagent. The subagent can use the shared tools, including filesystem and shell operations. Do not run parallel tasks that may edit the same files or processes.';
 const inputSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    description: { type: 'string', description: 'Explain why to use this tool' },
+    description: { type: 'string', description: 'Short label for the delegated task.' },
     prompt: {
       type: 'string',
-      description:
-        'Specific instructions for the subagent\n\nIt is highly recommended to ask for a summary so that the context obtained is clear',
+      description: 'Complete instructions for the subagent, including the expected result.',
     },
-    persona: { type: 'string', description: 'Specific System instruction or Rule or Personality for subagent' },
+    persona: { type: 'string', description: 'Optional system instruction for the subagent.' },
     id: {
       type: 'string',
-      description:
-        'Subagent ID. If provided and already exists, the same subagent is reused (history preserved). If omitted, a short random ID is auto-generated.',
+      description: 'Existing subagent ID to reuse with its history. Omit it to create an ID.',
     },
     background: {
       type: 'boolean',
       description:
-        'Run the subagent in the background. Returns immediately with a job ID and log path; the parent receives an exit notification when the subagent finishes.',
+        'Return immediately with a job ID and log path. The parent receives an exit event when the subagent finishes.',
     },
   },
   required: ['prompt', 'description'],
@@ -73,7 +71,7 @@ const execute = async ({ description, prompt, persona, id, background = false },
     if (typeof agent._sendForTest === 'function') {
       subagent._sendForTest = agent._sendForTest;
     }
-    // Propagate depth so a nested delegateTask hits the limit
+    // Nested subagents inherit the depth needed to enforce the limit.
     subagent._delegateDepth = depth;
     agent.subagents.set(resolvedId, subagent);
   } else {
@@ -97,7 +95,8 @@ const execute = async ({ description, prompt, persona, id, background = false },
       tokens: subagent.usage.tokens,
     };
 
-    // Per-job controller so manageJobs/cleanup can stop this subagent; keep parent abort cascading.
+    // The job controller lets manageJobs and cleanup stop the subagent, while
+    // cancellation from the parent still cascades.
     const jobController = new AbortController();
     if (signal) {
       if (signal.aborted) jobController.abort();
@@ -120,7 +119,6 @@ const execute = async ({ description, prompt, persona, id, background = false },
     };
     agent.backgroundJobs.register(job);
 
-    // Fire-and-forget the subagent loop.
     (async () => {
       let report;
       let crashed = false;
@@ -147,8 +145,8 @@ const execute = async ({ description, prompt, persona, id, background = false },
         `Duration: ${((job.endedAt - job.startedAt) / 1000).toFixed(2)}s\n` +
         `Usage delta: cost=$${costDelta.toFixed(6)}, tokens=${tokensDelta}\n` +
         `Status: ${job.status}`;
-      // A removed log dir (e.g. cleanup() ran mid-flight) must not crash the
-      // host; still fire the exit event so the parent learns the job ended.
+      // Cleanup may remove the log directory while the subagent is finishing.
+      // The exit event still reports completion if the write fails.
       try {
         fs.writeFileSync(logPath, report + footer);
       } catch (err) {
@@ -162,7 +160,7 @@ const execute = async ({ description, prompt, persona, id, background = false },
         startedAt: job.startedAt,
         finishedAt: job.endedAt,
         exitCode: job.exitCode,
-        // A subagent is aborted through its controller, not a process signal.
+        // Subagents use AbortController rather than operating-system signals.
         signal: null,
         durationMs: job.endedAt - job.startedAt,
         logPath,
@@ -197,10 +195,9 @@ const execute = async ({ description, prompt, persona, id, background = false },
     try {
       report = await subagent.run(prompt, writer.notify, { signal });
 
-      // Wait until subagent is fully idle (no running background jobs, and not currently running a loop)
       while (!signal?.aborted) {
         if (!subagent.backgroundJobs.hasRunning() && !subagent.isRunning) {
-          // Wait a short tick to allow pending microtasks (like autoWake) to fire
+          // autoWake can start another run from a queued microtask.
           await new Promise((r) => setTimeout(r, 50));
           if (!subagent.backgroundJobs.hasRunning() && !subagent.isRunning) {
             break;
@@ -210,7 +207,6 @@ const execute = async ({ description, prompt, persona, id, background = false },
         await new Promise((r) => setTimeout(r, 200));
       }
 
-      // If autoWake triggered subsequent runs, update the report to the final assistant message
       if (subagent.messages.length > 0) {
         const lastMsg = subagent.messages[subagent.messages.length - 1];
         if (lastMsg && lastMsg.role === 'assistant' && lastMsg.content) {

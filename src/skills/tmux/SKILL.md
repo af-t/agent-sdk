@@ -1,340 +1,173 @@
 ---
 name: tmux
-description: Terminal multiplexer (tmux) usage for managing persistent terminal sessions, running background processes, and maintaining long-running programs that require PTY access. Use when the agent needs to run long-lived processes, maintain multiple terminal sessions, detach/reattach to running programs, or manage processes that need to survive shell session termination.
+description: Manage named tmux sessions for interactive programs and processes that must remain available across shell calls.
 ---
 
 # Tmux
 
-## Overview
+Use tmux when a process needs an interactive terminal or a named session that
+you can inspect and control later. For an ordinary background command,
+`runShell` with `background: true` is simpler and integrates with
+`manageJobs`.
 
-Tmux is a terminal multiplexer that allows you to run and manage multiple terminal sessions within a single shell. This skill teaches you how to use tmux effectively via the `runShell` tool to:
-
-- Run long-lived processes that survive agent shell termination
-- Manage multiple parallel terminal sessions
-- Control interactive programs that require a PTY (pseudo-terminal)
-- Detach from processes and reattach later
-- Run programs in the background without blocking the agent's shell
-
-## Core Principles
-
-### Why tmux for AI Agents?
-
-The agent's `runShell` tool runs commands in ephemeral shells. When a command completes or times out, the session is destroyed. Tmux solves this:
-
-```
-runShell(tmux) → creates persistent session → survives timeout/detach
-                                     → reattach later with new runShell call
-                                     → program keeps running in background
-```
-
-### When to Use Tmux
-
-| Scenario                           | Without tmux          | With tmux                    |
-| ---------------------------------- | --------------------- | ---------------------------- |
-| Long-running build/test            | Timeout kills process | Process continues in session |
-| Interactive program (nano, htop)   | No PTY available      | Full PTY support via tmux    |
-| Multiple parallel tasks            | Sequential only       | Parallel sessions            |
-| Reconnect to running process       | Not possible          | `tmux attach` works          |
-| Background server (dev server, db) | Dies with shell       | Persists in tmux session     |
-
-## Quick Start
-
-### Basic Session Lifecycle
+Check that tmux is installed:
 
 ```bash
-# Create a new named session (detached)
-tmux new-session -d -s mysession
-
-# Run a command inside the session
-tmux send-keys -t mysession "npm run dev" Enter
-
-# Check if session is still running
-tmux list-sessions
-
-# View output (last N lines)
-tmux capture-pane -t mysession -p -S -50
-
-# Attach to session (interactive)
-tmux attach-session -t mysession
-
-# Kill session when done
-tmux kill-session -t mysession
+command -v tmux
 ```
 
-### Pattern: Run and Monitor
+## Session lifecycle
+
+Create a detached session, send a command, read its output, and remove the
+session when the work is done:
 
 ```bash
-# Step 1: Create session and start process
-tmux new-session -d -s build
-tmux send-keys -t build "npm run build 2>&1" Enter
-
-# Step 2: Wait and check output
-sleep 30
-tmux capture-pane -t build -p -S -30
-
-# Step 3: If still running, wait more; if done, check result
-tmux capture-pane -t build -p -S -50
-```
-
-### Pattern: Interactive Program
-
-```bash
-# Start nano in a tmux session (gets a real PTY)
-tmux new-session -d -s editor
-tmux send-keys -t editor "nano /path/to/file" Enter
-
-# Send keystrokes (Ctrl+O to save, then Enter, then Ctrl+X to exit)
-tmux send-keys -t editor C-o
-sleep 0.5
-tmux send-keys -t editor Enter
-sleep 0.5
-tmux send-keys -t editor C-x
-
-# Wait for completion
-sleep 2
-tmux capture-pane -t editor -p -S -20
-```
-
-## Common Operations
-
-### Session Management
-
-```bash
-# List all sessions
-tmux list-sessions
-
-# List sessions with more detail
-tmux list-sessions -F "#{session_name}: #{session_windows} windows (#{session_attached} attached)"
-
-# Create detached session
-tmux new-session -d -s <name>
-
-# Create session in specific directory
-tmux new-session -d -s <name> -c /path/to/dir
-
-# Rename session
-tmux rename-session -t <oldname> <newname>
-
-# Kill session
-tmux kill-session -t <name>
-
-# Kill all sessions except current
-tmux kill-session -a
-
-# Kill all sessions entirely
-tmux kill-server
-```
-
-### Sending Commands
-
-```bash
-# Send text (adds newline)
-tmux send-keys -t <session> "command" Enter
-
-# Send text without Enter (for building a command)
-tmux send-keys -t <session> "echo hello"
-
-# Send special keys
-tmux send-keys -t <session> C-c        # Ctrl+C (interrupt)
-tmux send-keys -t <session> C-d        # Ctrl+D (EOF)
-tmux send-keys -t <session> C-z        # Ctrl+Z (suspend)
-tmux send-keys -t <session> Escape     # Escape key
-tmux send-keys -t <session> Backspace  # Backspace
-tmux send-keys -t <session> Tab        # Tab
-tmux send-keys -t <session> Enter      # Enter (same as pressing Enter)
-
-# Wait for a target string before sending more
-# Use a loop with capture-pane to check output
-```
-
-### Reading Output
-
-```bash
-# Capture last N lines
-tmux capture-pane -t <session> -p -S -50
-
-# Capture entire pane content
-tmux capture-pane -t <session> -p
-
-# Capture and save to file
-tmux capture-pane -t <session> -p -S -100 > /tmp/output.txt
-
-# Start capturing new output (save mode)
-tmux capture-pane -t <session> -p -S -0 > /tmp/full_output.txt
-
-# Pipe captured output to process
-tmux capture-pane -t <session> -p | tail -20
-```
-
-### Window Management
-
-```bash
-# Create new window in session
-tmux new-window -t <session> -n <windowname>
-
-# Create window in specific directory
-tmux new-window -t <session> -c /path/to/dir
-
-# Rename window
-tmux rename-window -t <session>:<window-index> <newname>
-
-# Select window
-tmux select-window -t <session>:<window-index>
-
-# List windows in a session
-tmux list-windows -t <session>
-
-# Kill window
-tmux kill-window -t <session>:<window-index>
-
-# Send keys to specific window
-tmux send-keys -t <session>:<window-index> "command" Enter
-```
-
-### Split Panes
-
-```bash
-# Split horizontally (side by side)
-tmux split-window -h -t <session>
-
-# Split vertically (top/bottom)
-tmux split-window -v -t <session>
-
-# Split in specific directory
-tmux split-window -h -t <session> -c /path/to/dir
-
-# Send command to specific pane
-tmux send-keys -t <session>:<window>.<pane> "command" Enter
-
-# Select pane
-tmux select-pane -t <session>:<window>.<pane>
-
-# Kill pane (exits shell in that pane)
-tmux kill-pane -t <session>:<window>.<pane>
-```
-
-## Advanced Patterns
-
-### Pattern: Non-blocking Long Process
-
-When a runShell command might timeout, use tmux to run it asynchronously:
-
-```bash
-# Instead of: npm run build (might timeout)
-# Do this:
-tmux new-session -d -s build 2>/dev/null
-tmux send-keys -t build "cd /project && npm run build 2>&1 | tail -100" Enter
-
-# Check progress periodically
-for i in 1 2 3 4 5; do
-  sleep 10
-  output=$(tmux capture-pane -t build -p -S -5 2>/dev/null)
-  echo "Check $i: $output"
-  # Check if process finished
-  if tmux capture-pane -t build -p -S -1 | grep -q "Finished\|error\|Error\|Done\|done"; then
-    break
-  fi
-done
-
-# Final output
+tmux new-session -d -s build -c /path/to/project
+tmux send-keys -t build "npm test" Enter
 tmux capture-pane -t build -p -S -50
 tmux kill-session -t build
 ```
 
-### Pattern: Parallel Tasks
-
-Run multiple tasks simultaneously:
+Use descriptive names. Check for an existing session before reusing one:
 
 ```bash
-# Create sessions for each task
-tmux new-session -d -s task1
-tmux new-session -d -s task2
-tmux new-session -d -s task3
+if tmux has-session -t build 2>/dev/null; then
+  tmux capture-pane -t build -p -S -20
+else
+  tmux new-session -d -s build -c /path/to/project
+fi
+```
 
-# Start tasks
-tmux send-keys -t task1 "npm run lint" Enter
-tmux send-keys -t task2 "npm run test" Enter
-tmux send-keys -t task3 "npm run build" Enter
+List or attach to sessions:
 
-# Check all outputs
-for s in task1 task2 task3; do
-  echo "=== $s ==="
-  tmux capture-pane -t $s -p -S -10
-  echo ""
+```bash
+tmux list-sessions
+tmux attach-session -t build
+```
+
+Inside an attached session, press `Ctrl+b d` to detach without stopping its
+process.
+
+## Send input
+
+`send-keys` sends literal text unless the final argument names a key:
+
+```bash
+tmux send-keys -t build "npm run dev" Enter
+tmux send-keys -t build C-c
+tmux send-keys -t build C-d
+tmux send-keys -t build Escape
+```
+
+Target a specific window or pane with
+`<session>:<window>.<pane>`:
+
+```bash
+tmux send-keys -t work:1.0 "node server.js" Enter
+```
+
+Be careful with commands that contain secrets. The command can appear in pane
+history and status output.
+
+## Read output
+
+Capture a bounded section of pane history:
+
+```bash
+tmux capture-pane -t build -p -S -50
+```
+
+Capture all retained history:
+
+```bash
+tmux capture-pane -t build -p -S -
+```
+
+Output is asynchronous. Poll for a condition when the next action depends on a
+specific line:
+
+```bash
+for attempt in 1 2 3 4 5; do
+  output=$(tmux capture-pane -t server -p -S -20 2>/dev/null)
+  if printf '%s\n' "$output" | grep -q "listening"; then
+    break
+  fi
+  sleep 2
 done
 ```
 
-### Pattern: Server Process Management
+Do not infer success from a quiet pane or a stable prompt. Use a process exit
+marker, application health check, or other explicit condition when possible.
+
+## Windows and panes
+
+Create and select windows:
 
 ```bash
-# Start a dev server in a session
-tmux new-session -d -s server
-tmux send-keys -t server "cd /project && npm run dev" Enter
+tmux new-window -t work -n tests -c /path/to/project
+tmux list-windows -t work
+tmux select-window -t work:tests
+tmux kill-window -t work:tests
+```
 
-# Confirm it started
-sleep 3
-tmux capture-pane -t server -p -S -10
+Split and address panes:
 
-# Later, check if still running
-if tmux has-session -t server 2>/dev/null; then
-  echo "Server is still running"
-  tmux capture-pane -t server -p -S -5
-else
-  echo "Server session ended"
-fi
+```bash
+tmux split-window -h -t work
+tmux split-window -v -t work
+tmux list-panes -t work
+tmux select-pane -t work:0.1
+tmux kill-pane -t work:0.1
+```
 
-# Gracefully stop
+## Interactive programs
+
+Tmux provides a PTY for programs that require terminal input:
+
+```bash
+tmux new-session -d -s editor
+tmux send-keys -t editor "nano /path/to/file" Enter
+tmux send-keys -t editor C-o
+tmux send-keys -t editor Enter
+tmux send-keys -t editor C-x
+```
+
+Prefer repository-native file editing tools for normal source changes.
+Interactive editors are useful only when the program itself must be exercised.
+
+## Servers
+
+Start a server in a named session and verify its own readiness signal:
+
+```bash
+tmux new-session -d -s server -c /path/to/project
+tmux send-keys -t server "npm run dev" Enter
+tmux capture-pane -t server -p -S -20
+```
+
+Stop it gracefully before killing the session:
+
+```bash
 tmux send-keys -t server C-c
-sleep 2
 tmux kill-session -t server
 ```
 
-## Best Practices
-
-1. **Always use named sessions** - Never rely on default session numbers. Use `-s <descriptive-name>`.
-
-2. **Detach by default** - Create sessions with `-d` (detached) so the runShell tool returns immediately.
-
-3. **Check session existence first** - Before sending to a session, verify it exists:
-
-   ```bash
-   if tmux has-session -t mysession 2>/dev/null; then
-     tmux send-keys -t mysession "command" Enter
-   fi
-   ```
-
-4. **Add sleep between send and capture** - Tmux output is asynchronous. Always add `sleep 0.5-2` between sending a command and capturing output.
-
-5. **Limit capture lines** - Use `-S -N` to limit output (e.g., `-S -50` for last 50 lines) to avoid context overflow.
-
-6. **Clean up sessions** - Kill sessions when done to avoid accumulating stale sessions.
-
-7. **Redirect stderr** - When running commands in tmux, redirect stderr: `command 2>&1` to see errors in captured output.
-
-8. **Use 2>/dev/null for session creation** - Suppress "duplicate session" errors:
-
-   ```bash
-   tmux new-session -d -s mysession 2>/dev/null
-   ```
-
-9. **Check if tmux is available** - Verify tmux exists:
-   ```bash
-   command -v tmux >/dev/null 2>&1 || { echo "tmux not installed"; exit 1; }
-   ```
+Always clean up sessions created for a task.
 
 ## Resources
 
-### scripts/tmux_helper.sh
+`references/tmux-cheatsheet.md` lists the command forms used here.
 
-A bash helper script for common tmux operations. Use this for reliable, repeatable tmux workflows:
+Source `scripts/tmux_helper.sh` for named helper functions:
 
-- `session_create <name> [directory]` - Create a detached session
-- `session_send <name> <command>` - Send a command to a session
-- `session_read <name> [lines]` - Read last N lines from a session
-- `session_wait <name> <target_string> [timeout]` - Wait for output pattern
-- `session_kill <name>` - Kill a session
-- `session_run <name> <command> [timeout]` - Run command in session and wait for completion
+```bash
+source scripts/tmux_helper.sh
+session_create build /path/to/project
+session_send build "npm test"
+session_read build 50
+session_kill build
+```
 
-### references/tmux-cheatsheet.md
-
-Quick reference for all tmux commands and patterns used in this skill.
+`session_run` and `session_exec` use output timing as a convenience, not a
+reliable process-exit protocol. Use an explicit completion condition for
+commands where the exit status matters.

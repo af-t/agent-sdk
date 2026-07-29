@@ -8,7 +8,7 @@ import { lexicalRank } from './lexical-rank.js';
 
 const SIDECAR_NAME = '.embeddings.json';
 
-// Strip a leading --- frontmatter block; pull the description line out of it.
+// Memory recall reads the top-level description and ranks the remaining body.
 export function parseMemoryFile(raw) {
   let description = '';
   let body = raw;
@@ -39,8 +39,8 @@ async function readSidecar(sidecarPath, logger) {
     const parsed = JSON.parse(await fs.readFile(sidecarPath, 'utf8'));
     if (parsed && typeof parsed === 'object' && parsed.entries) return parsed.entries;
   } catch (err) {
-    // missing or corrupt: treat as empty
-    logger.debug({ error: err, sidecarPath }, 'Sidecar read failed; treating cache as empty');
+    // A missing or corrupt cache can be rebuilt from the memory files.
+    logger.debug({ error: err, sidecarPath }, 'Embedding cache could not be read, so recall will rebuild it');
   }
   return {};
 }
@@ -49,7 +49,7 @@ async function writeSidecar(sidecarPath, entries, logger) {
   try {
     await fs.writeFile(sidecarPath, JSON.stringify({ entries }), 'utf8');
   } catch (err) {
-    logger.debug({ error: err, sidecarPath }, 'Sidecar write failed');
+    logger.debug({ error: err, sidecarPath }, 'Embedding cache could not be written');
   }
 }
 
@@ -97,8 +97,8 @@ async function rankWithEmbeddings({
   for (const c of corpus) {
     if (Array.isArray(c.vector)) nextEntries[c.name] = { hash: c.hash, vector: c.vector };
   }
-  // Only rewrite the sidecar when something actually changed (new/edited file
-  // embedded, or a deleted file pruned): a pure cache-hit recall touches nothing.
+  // A cache-only recall leaves the sidecar untouched. Changed or deleted
+  // memory files produce a replacement cache.
   const changed = toEmbed.length > 0 || Object.keys(nextEntries).length !== Object.keys(cached).length;
   if (sidecarPath && changed) await writeSidecar(sidecarPath, nextEntries, logger);
 
@@ -187,9 +187,9 @@ export async function recallMemories({
         _embed,
       });
     } catch (err) {
-      // A caller-initiated abort should propagate, not silently degrade to lexical.
+      // Cancellation propagates instead of changing the requested operation.
       if (signal?.aborted || err?.aborted) throw err;
-      componentLogger.debug({ error: err }, 'Embeddings ranking failed; falling back to lexical');
+      componentLogger.debug({ error: err }, 'Embedding ranking failed, so recall is using lexical ranking');
     }
   }
   return rankLexical(corpus, query, limit);

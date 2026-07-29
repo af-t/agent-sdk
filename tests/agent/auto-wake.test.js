@@ -2,13 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import createAgent from '../../src/index.js';
 
-// Helper: create a minimal agent with a stubbed _sendForTest to avoid real API calls.
 async function makeAgent(opts = {}) {
   const agent = await createAgent({ apiKey: 'x', ...opts });
   return agent;
 }
 
-// Helper: stub _sendForTest with a sequence of responses.
 function stubResponses(agent, responses) {
   let idx = 0;
   agent._sendForTest = async () => {
@@ -18,17 +16,13 @@ function stubResponses(agent, responses) {
   };
 }
 
-// Simple terminal response (model says text, no tool calls).
 const terminalResponse = (text = 'done') => ({
   choices: [{ message: { content: text, reasoning: null, tool_calls: null } }],
   usage: { cost: 0, total_tokens: 0 },
 });
 
-// --- Bug C: Coupled Reminder Draining ---
-
-test('Bug C: events are always queued to #pendingBgDrains regardless of autoWake setting', async () => {
-  // With autoWake: false, events should still be queued so that a subsequent
-  // manual run() call will drain them as system-reminder messages.
+test('exit events remain queued for the next manual run when autoWake is disabled', async () => {
+  // A later manual run still needs the exit reminder when automatic wake-up is disabled.
   const agent = await makeAgent({ autoWake: false });
 
   agent._fireBackgroundExit({
@@ -40,18 +34,16 @@ test('Bug C: events are always queued to #pendingBgDrains regardless of autoWake
     status: 'exited',
   });
 
-  // Set up a simple terminal response
   stubResponses(agent, [terminalResponse('acknowledged')]);
 
   await agent.run('continue');
 
-  // The bg exit should have been drained into messages as a system-reminder.
   const drained = agent.messages.find((m) => m.role === 'user' && JSON.stringify(m.content).includes('bg-1'));
-  assert.ok(drained, 'bg exit event should be drained into messages even with autoWake=false');
+  assert.ok(drained, 'manual run should receive the queued background exit');
   assert.match(JSON.stringify(drained.content), /system-reminder/);
 });
 
-test('Bug C: multiple events queued without autoWake are all drained on next run()', async () => {
+test('the next manual run drains every exit queued while autoWake is disabled', async () => {
   const agent = await makeAgent({ autoWake: false });
 
   agent._fireBackgroundExit({
@@ -77,29 +69,24 @@ test('Bug C: multiple events queued without autoWake are all drained on next run
   const drained = agent.messages.filter(
     (m) => m.role === 'user' && JSON.stringify(m.content).includes('system-reminder'),
   );
-  // Both events should appear in a single system-reminder message.
+  // Both events share one system reminder.
   const combined = JSON.stringify(drained);
   assert.ok(combined.includes('bg-a'), 'first event should be present');
   assert.ok(combined.includes('bg-b'), 'second event should be present');
 });
 
-// --- Bug A: Race Condition on Concurrent Exits ---
-
-test('Bug A: rapid concurrent exits coalesce into a single autoWake run', async () => {
+test('rapid concurrent exits coalesce into one autoWake run', async () => {
   const agent = await makeAgent({ autoWake: true });
 
   let runCount = 0;
-  stubResponses(agent, [
-    terminalResponse('woke-1'),
-    terminalResponse('woke-2'), // should not be needed
-  ]);
+  stubResponses(agent, [terminalResponse('woke-1'), terminalResponse('woke-2')]);
   const origRun = agent.run.bind(agent);
   agent.run = async function (...args) {
     runCount++;
     return origRun(...args);
   };
 
-  // Fire two exits rapidly: both should be coalesced into a single wake-up.
+  // Closely timed exits share the same wake-up.
   agent._fireBackgroundExit({
     id: 'rapid-1',
     kind: 'bash',
@@ -117,22 +104,17 @@ test('Bug A: rapid concurrent exits coalesce into a single autoWake run', async 
     status: 'exited',
   });
 
-  // Let microtasks flush.
   await new Promise((r) => setTimeout(r, 100));
-  // Wait for the auto-wake run to complete.
   await new Promise((r) => setTimeout(r, 2000));
 
   assert.equal(runCount, 1, 'only one auto-wake run should occur for rapid concurrent exits');
 
-  // Both events should be in the messages.
   const allMsgs = JSON.stringify(agent.messages);
   assert.ok(allMsgs.includes('rapid-1'), 'first rapid exit should be in messages');
   assert.ok(allMsgs.includes('rapid-2'), 'second rapid exit should be in messages');
 });
 
-// --- Bug B: Metadata & Notify Tracking ---
-
-test('Bug B: autoWakeNotify callback is invoked during auto-wake run', async () => {
+test('autoWakeNotify receives events from an automatic wake-up', async () => {
   const events = [];
   const notifyFn = (event) => {
     events.push(event);
@@ -140,8 +122,7 @@ test('Bug B: autoWakeNotify callback is invoked during auto-wake run', async () 
 
   const agent = await makeAgent({ autoWake: true, autoWakeNotify: notifyFn });
 
-  // Use a tool call to generate non-turnEnd events that #broadcast sends
-  // to #notifyCallbacks (turnEnd only goes to subscribedCallbacks).
+  // A tool call produces events for the notification callback.
   agent.registerTools({
     name: 'ack',
     description: 'ack',
@@ -178,21 +159,18 @@ test('Bug B: autoWakeNotify callback is invoked during auto-wake run', async () 
     status: 'exited',
   });
 
-  // Wait for the auto-wake microtask and run to complete.
   await new Promise((r) => setTimeout(r, 3000));
 
-  // The notify callback should have received toolStart/toolEnd events.
   assert.ok(events.length > 0, 'autoWakeNotify should have been called during auto-wake run');
 });
 
-test('Bug B: autoWakeNotify can be set after construction', async () => {
+test('autoWakeNotify can be set after construction', async () => {
   const agent = await makeAgent({ autoWake: true });
 
   const events = [];
-  // Set the notify callback post-construction.
   agent.autoWakeNotify = (event) => events.push(event);
 
-  // Use a tool call so the notify receives toolStart/toolEnd events.
+  // A tool call gives the late-bound callback an event to receive.
   agent.registerTools({
     name: 'ack',
     description: 'ack',
@@ -234,13 +212,12 @@ test('Bug B: autoWakeNotify can be set after construction', async () => {
   assert.ok(events.length > 0, 'late-bound autoWakeNotify should still be called');
 });
 
-test('Bug B: autoWakeOptions are forwarded to auto-wake run()', async () => {
+test('autoWakeOptions are forwarded to the automatic run', async () => {
   const agent = await makeAgent({ autoWake: true });
 
   const ac = new AbortController();
   agent.autoWakeOptions = { signal: ac.signal };
 
-  // Abort immediately to test that the signal is forwarded.
   ac.abort();
 
   stubResponses(agent, [terminalResponse('should-not-reach')]);
@@ -254,17 +231,13 @@ test('Bug B: autoWakeOptions are forwarded to auto-wake run()', async () => {
     status: 'exited',
   });
 
-  // Wait for the auto-wake microtask.
   await new Promise((r) => setTimeout(r, 500));
 
-  // The run should have been aborted. The agent should NOT have completed a run.
   const msgs = JSON.stringify(agent.messages);
   assert.ok(!msgs.includes('should-not-reach'), 'aborted auto-wake should not produce a response');
 });
 
-// --- Combined scenarios ---
-
-test('events arriving while isRunning are drained during the run loop', async () => {
+test('events arriving during a run drain before the run ends', async () => {
   const agent = await makeAgent({ autoWake: false });
 
   agent.registerTools({
@@ -272,7 +245,7 @@ test('events arriving while isRunning are drained during the run loop', async ()
     description: 'triggers a background exit',
     inputSchema: { type: 'object', properties: {} },
     execute: async () => {
-      // Simulate bg exit during tool execution.
+      // The tool reports a background exit while the run is active.
       agent._fireBackgroundExit({
         id: 'mid-run',
         kind: 'bash',
@@ -330,7 +303,7 @@ test('onBackgroundExit listeners still fire when autoWake is false', async () =>
   assert.ok(listenerCalled, 'onBackgroundExit listener should fire even without autoWake');
 });
 
-test('onBackgroundExit listeners do NOT fire during active run (events queued)', async () => {
+test('onBackgroundExit listeners wait while a run is active', async () => {
   const agent = await makeAgent({ autoWake: false });
   let listenerCalls = 0;
   agent.onBackgroundExit(() => {
@@ -342,7 +315,7 @@ test('onBackgroundExit listeners do NOT fire during active run (events queued)',
     description: 'd',
     inputSchema: { type: 'object', properties: {} },
     execute: async () => {
-      // During active run, listener should NOT be called.
+      // The active run queues this event instead of notifying the listener.
       agent._fireBackgroundExit({
         id: 'during-run',
         kind: 'bash',
@@ -380,9 +353,7 @@ test('onBackgroundExit listeners do NOT fire during active run (events queued)',
   assert.equal(listenerCalls, 0, 'onBackgroundExit listener should NOT fire during active run');
 });
 
-// --- Reminder placement: drain queued exits at run start ---
-
-test('queued bg exit drains at run start, merged with the prompt (single reminder)', async () => {
+test('a queued background exit merges into the next prompt once', async () => {
   const agent = await makeAgent({ autoWake: false });
   agent.registerTools({
     name: 'noop',
@@ -391,7 +362,7 @@ test('queued bg exit drains at run start, merged with the prompt (single reminde
     execute: async () => 'ok',
   });
 
-  // Exit queued while idle, before the next manual run().
+  // An idle exit waits for the next manual run.
   agent._fireBackgroundExit({
     id: 'bg-start',
     kind: 'bash',
@@ -421,27 +392,25 @@ test('queued bg exit drains at run start, merged with the prompt (single reminde
     return terminalResponse('done');
   };
 
-  await agent.run('gimana');
+  await agent.run('what happened');
 
   const reminders = agent.messages.filter(
     (m) => m.role === 'user' && JSON.stringify(m.content).includes('Background job(s) exited'),
   );
-  // Exactly one reminder: drained once at run start, not again after the tool group.
+  // The run drains the reminder once at the start and does not repeat it after the tool group.
   assert.equal(reminders.length, 1, 'exactly one bg-exit reminder');
-  // It is merged into the prompt message so the model sees it on turn 1.
-  assert.match(JSON.stringify(reminders[0].content), /gimana/);
+  // Merging the reminder into the prompt exposes it on the first turn.
+  assert.match(JSON.stringify(reminders[0].content), /what happened/);
 });
 
-// --- autoWake: resume when a late exit lands on the terminal turn ---
-
-test('autoWake resumes the loop when a bg exit lands on the terminal turn', async () => {
+test('autoWake resumes when a background exit lands on the terminal turn', async () => {
   const agent = await makeAgent({ autoWake: true });
 
   let call = 0;
   agent._sendForTest = async () => {
     call += 1;
     if (call === 1) {
-      // Exit arrives mid-run (queued, isRunning=true) on the way to a terminal turn.
+      // This exit arrives during the run on the way to a terminal turn.
       agent._fireBackgroundExit({
         id: 'bg-term',
         kind: 'bash',
@@ -457,7 +426,7 @@ test('autoWake resumes the loop when a bg exit lands on the terminal turn', asyn
 
   const result = await agent.run('go');
 
-  // The loop must resume so the model actually acts on the late exit.
+  // The loop resumes so the model can handle the late exit.
   assert.equal(result, 'second', 'loop resumed and produced a follow-up turn');
   const reminders = agent.messages.filter((m) => m.role === 'user' && JSON.stringify(m.content).includes('bg-term'));
   assert.equal(reminders.length, 1, 'exactly one bg-exit reminder');
@@ -467,7 +436,7 @@ test('autoWake resumes the loop when a bg exit lands on the terminal turn', asyn
   assert.ok(firstIdx >= 0 && remIdx > firstIdx && secondIdx > remIdx, 'order: first -> reminder -> second');
 });
 
-test('autoWake:false does NOT resume on a terminal-turn exit (consumer controls wake)', async () => {
+test('a terminal-turn exit waits for the consumer when autoWake is disabled', async () => {
   const agent = await makeAgent({ autoWake: false });
 
   let call = 0;
@@ -489,9 +458,8 @@ test('autoWake:false does NOT resume on a terminal-turn exit (consumer controls 
 
   await agent.run('go');
 
-  // No resume: the second turn (which throws) is never reached.
   assert.equal(call, 1, 'run ends on the terminal turn without resuming');
-  // The reminder is still folded into history for the next manual run().
+  // History keeps the reminder for the next manual run.
   const reminders = agent.messages.filter(
     (m) => m.role === 'user' && JSON.stringify(m.content).includes('bg-noresume'),
   );

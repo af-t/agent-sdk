@@ -181,7 +181,7 @@ describe('BackgroundJobs: kill', () => {
   it('escalates to SIGKILL when a bash child ignores SIGTERM', async () => {
     const jobs = makeJobs();
     const signals = [];
-    // A child that never reports an exit: the grace timer must escalate.
+    // The grace timer escalates when a child never reports an exit.
     const child = { kill: (s) => signals.push(s), on: () => {} };
     jobs.register({ id: 'bg-stubborn', kind: 'bash', status: 'running', startedAt: Date.now(), child });
     jobs.kill('bg-stubborn');

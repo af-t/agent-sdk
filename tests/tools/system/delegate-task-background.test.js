@@ -52,7 +52,7 @@ test('delegateTask background:true returns immediately with a job id', async (t)
   const tmpDir = createTestTempDir(t, 'delegate-parent-');
   parent = await createAgent({ apiKey: 'x', storagePaths: { tmpDir } });
 
-  // Mock Agent.prototype.run: covers both parent and any subagent instances.
+  // Mocking Agent.prototype.run covers the parent and every subagent instance.
   let resolveSubagent;
   const subagentDone = new Promise((r) => {
     resolveSubagent = r;
@@ -76,7 +76,7 @@ test('delegateTask background:true returns immediately with a job id', async (t)
   assert.match(out, /Subagent started in background/);
   assert.match(out, /Job ID: bg-/);
 
-  // Wait for subagent to actually finish.
+  // The background job reports its final status asynchronously.
   await subagentDone;
   await new Promise((r) => setTimeout(r, 100));
 

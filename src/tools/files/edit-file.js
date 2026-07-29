@@ -64,10 +64,9 @@ function verifyOldText(content, oldText, label) {
   }
 }
 
-// originMap: index = current 0-based content line, value = original 1-based
-// line number, null for lines created or rewritten by an earlier edit in this
-// call. Kept in lockstep with content so line-based edits resolve against
-// original-file coordinates no matter where earlier edits landed.
+// originMap pairs each current zero-based line with its original one-based line.
+// A null entry marks a line created or rewritten during this call. Keeping the
+// map aligned with content lets line-based edits use original-file coordinates.
 function spliceOriginMap(map, start, deleteCount, insertCount) {
   map.splice(start, deleteCount, ...new Array(insertCount).fill(null));
 }
@@ -96,16 +95,13 @@ function applyEdit(content, edit, i, map, origLineCount) {
       const matchStart = content.indexOf(edit.oldText);
       const matchEnd = matchStart + edit.oldText.length;
       const firstLine = content.slice(0, matchStart).split('\n').length - 1;
-      // Use matchEnd - 1 (the match's last actual character) rather than
-      // matchEnd itself, so a trailing '\n' in oldText doesn't get counted
-      // as spilling onto the next (untouched) line.
+      // The match's last character determines its final line. Using matchEnd
+      // would make a trailing newline appear to touch the next line.
       const lastLine = content.slice(0, Math.max(matchStart, matchEnd - 1)).split('\n').length - 1;
       const origSpanLines = lastLine - firstLine + 1;
-      // The total line-count change from the substring swap is exact
-      // regardless of boundary alignment (content.replace always changes the
-      // newline count by exactly this much); apply it on top of the
-      // corrected span so the origin map's length still exactly tracks the
-      // real content after the splice.
+      // The newline-count difference gives the exact line delta regardless of
+      // boundary alignment. Applying it to the corrected span keeps originMap
+      // the same length as the edited content.
       const delta = replacement.split('\n').length - edit.oldText.split('\n').length;
       spliceOriginMap(map, firstLine, origSpanLines, origSpanLines + delta);
       return content.replace(edit.oldText, () => replacement);
@@ -142,20 +138,13 @@ function applyEdit(content, edit, i, map, origLineCount) {
 }
 
 const description =
-  'Update a file with sequential replace, insert, or delete actions. ' +
-  'Actions are applied top-to-bottom; the file is only written if every action succeeds. ' +
-  'Prefer oldText over line numbers: oldText is content-anchored and immune to shifting. ' +
-  'When using line-based edits in a multi-edit call, line numbers are automatically adjusted ' +
-  'for insertions and deletions made by earlier actions in the same call. ' +
-  'A line whose content was rewritten by an earlier action in the same call can no longer be addressed by line number: ' +
-  'use oldText for it, or split into separate editFile calls. ' +
-  'Line-based edits must be specified in top-to-bottom order.';
+  'Apply ordered replace, insert, or delete actions to a file. The file is written only when every action succeeds. Prefer oldText because it stays anchored to content. Line numbers are adjusted after earlier insertions and deletions, but cannot address a line rewritten earlier in the same call. Put line-based actions in top-to-bottom order.';
 
 const inputSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    path: { type: 'string', description: 'File to update' },
+    path: { type: 'string', description: 'File to update.' },
     edits: {
       type: 'array',
       description: 'Actions apply sequentially. The file stays unchanged if any action fails.',
@@ -163,7 +152,7 @@ const inputSchema = {
         type: 'object',
         additionalProperties: false,
         properties: {
-          action: { type: 'string', enum: ['replace', 'insert', 'delete'], description: 'Action type' },
+          action: { type: 'string', enum: ['replace', 'insert', 'delete'], description: 'Operation to apply.' },
           oldText: { type: 'string', description: 'Text to replace or delete.' },
           newText: { type: 'string', description: 'Replacement or inserted text.' },
           startLine: { type: 'number', description: 'First original line to change or use as an insert anchor.' },

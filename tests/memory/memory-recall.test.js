@@ -78,7 +78,7 @@ describe('recallMemories (lexical path, no apiKey)', () => {
 
 describe('recallMemories (embeddings path)', () => {
   let dir;
-  // fake embedder: 'alpha' texts -> [1,0], everything else -> [0,1].
+  // The fake embedder maps "alpha" text to [1, 0] and everything else to [0, 1].
   function makeEmbed(calls) {
     return async (inputs) => {
       calls.push(inputs);
@@ -113,7 +113,7 @@ describe('recallMemories (embeddings path)', () => {
     assert.equal(out.ranker, 'embeddings');
     assert.equal(out.results[0].name, 'a.md');
     assert.equal(out.usage.total_tokens, 9); // query + 2 files = 3 inputs * 3
-    // first call embeds query + both files
+    // The first call embeds the query and both files.
     assert.equal(calls[0].length, 3);
     const sidecar = JSON.parse(await readFile(path.join(dir, '.embeddings.json'), 'utf8'));
     assert.ok(sidecar.entries['a.md'] && sidecar.entries['b.md']);

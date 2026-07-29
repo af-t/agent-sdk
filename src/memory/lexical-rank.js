@@ -2,8 +2,8 @@ function tokenize(text) {
   return (text || '').toLowerCase().match(/[a-z0-9]+/g) || [];
 }
 
-// TF-IDF cosine of a query against each document. Returns one score per
-// document, in document order. Zero-dependency, deterministic.
+// TF-IDF cosine similarity returns one score per document in document order.
+// The calculation is deterministic and has no dependencies.
 export function lexicalRank(query, documents) {
   const docs = documents.map(tokenize);
   const N = docs.length;

@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 #
-# Tmux Helper Script
-# Provides reliable, repeatable tmux operations for AI agents.
-# Each function is self-contained and outputs clean LLM-friendly text.
+# Helper functions for named tmux sessions.
 #
 # Usage:
 #   source tmux_helper.sh
@@ -11,7 +9,7 @@
 #   session_read "mysession" 20
 #
 
-# Color codes for output (disabled if not a terminal)
+# Color values are available to callers that source this file.
 if [[ -t 1 ]]; then
   RED='\033[0;31m'
   GREEN='\033[0;32m'
@@ -21,7 +19,7 @@ else
   RED=''; GREEN=''; YELLOW=''; NC=''
 fi
 
-# Check if tmux is available
+# Report when tmux is unavailable.
 _require_tmux() {
   if ! command -v tmux &>/dev/null; then
     echo "FAIL: tmux is not installed. Install it first."
@@ -29,7 +27,7 @@ _require_tmux() {
   fi
 }
 
-# ─── Session Management ───────────────────────────────────────────────
+# Session management
 
 # Create a detached session
 # Usage: session_create <name> [directory]
@@ -101,7 +99,7 @@ session_exists() {
   fi
 }
 
-# ─── Sending Commands ─────────────────────────────────────────────────
+# Sending input
 
 # Send a command to a session (with Enter)
 # Usage: session_send <name> <command>
@@ -124,7 +122,7 @@ session_send() {
   echo "OK: Sent command to session '$name': $cmd"
 }
 
-# Send text without Enter (for building partial commands)
+# Send text without Enter.
 # Usage: session_type <name> <text>
 session_type() {
   _require_tmux || return 1
@@ -171,7 +169,7 @@ session_key() {
   echo "OK: Sent key '$key' to session '$name'"
 }
 
-# ─── Reading Output ───────────────────────────────────────────────────
+# Reading output
 
 # Read last N lines from a session
 # Usage: session_read <name> [lines]
@@ -196,7 +194,7 @@ session_read() {
     echo "FAIL: Could not read from session '$name'"
     return 1
   fi
-  # Returns the captured output directly (no extra wrapper)
+  # Preserve capture-pane output without a wrapper.
   return 0
 }
 
@@ -225,7 +223,7 @@ session_read_all() {
   return 0
 }
 
-# ─── Waiting and Monitoring ──────────────────────────────────────────
+# Waiting and monitoring
 
 # Wait for a specific string to appear in session output
 # Usage: session_wait <name> <target_string> [timeout_seconds]
@@ -264,11 +262,11 @@ session_wait() {
   return 1
 }
 
-# ─── High-Level Workflows ────────────────────────────────────────────
+# Combined workflows
 
-# Run a command in a session and wait for it to complete
+# Run a command and wait until recent output stops changing.
 # Usage: session_run <name> <command> [timeout_seconds]
-# Creates session if needed, runs command, waits for prompt/completion
+# Output stability does not prove that the process exited.
 session_run() {
   _require_tmux || return 1
   local name="$1"
@@ -280,18 +278,14 @@ session_run() {
     return 1
   fi
 
-  # Create session if not exists
   if ! tmux has-session -t "$name" 2>/dev/null; then
     tmux new-session -d -s "$name" 2>/dev/null
     echo "OK: Created new session '$name'"
   fi
 
-  # Send the command
   tmux send-keys -t "$name" "$command" Enter
   echo "OK: Running command in session '$name': $command"
 
-  # Wait for the command to finish (check for shell prompt)
-  # We look for the command to complete by checking output stability
   local elapsed=0
   local interval=3
   local prev_output=""
@@ -310,9 +304,8 @@ session_run() {
       stable_count=0
     fi
 
-    # Output stable for 2 checks (6s) = likely finished
     if [[ $stable_count -ge 2 && -n "$current_output" ]]; then
-      echo "DONE: Command finished in session '$name' (output stable)"
+      echo "STABLE: Output in session '$name' stopped changing"
       tmux capture-pane -t "$name" -p -S -30
       return 0
     fi
@@ -326,7 +319,7 @@ session_run() {
   return 1
 }
 
-# Run a command and get output immediately (blocking within tmux)
+# Run a command, wait a fixed interval, and capture output.
 # Usage: session_exec <name> <command> [wait_seconds]
 session_exec() {
   _require_tmux || return 1
@@ -339,58 +332,51 @@ session_exec() {
     return 1
   fi
 
-  # Create session if not exists
   if ! tmux has-session -t "$name" 2>/dev/null; then
     tmux new-session -d -s "$name" 2>/dev/null
   fi
 
-  # Clear pane and run command
   tmux send-keys -t "$name" "clear" Enter
   sleep 0.5
   tmux send-keys -t "$name" "$command" Enter
 
-  # Wait specified time
   sleep "$wait_time"
 
-  # Capture and return output
   echo "OUTPUT from session '$name':"
-  echo "---"
   tmux capture-pane -t "$name" -p -S -50
-  echo "---"
 }
 
-# ─── Display Help ─────────────────────────────────────────────────────
+# Help
 
 session_help() {
   cat <<'EOF'
-Tmux Helper - Available Functions
-==================================
+Tmux helper functions
 
-== Session Management ==
+Session management
   session_create <name> [dir]     Create a detached tmux session
   session_kill <name>             Kill/terminate a session
   session_list                    List all running sessions
   session_exists <name>           Check if a session exists
 
-== Sending Commands ==
+Sending input
   session_send <name> <cmd>       Send a command (with Enter)
   session_type <name> <text>      Type text (no Enter)
   session_key <name> <key>        Send special key (C-c, Enter, etc.)
 
-== Reading Output ==
+Reading output
   session_read <name> [lines]     Read last N lines (default: 50)
   session_read_all <name>         Read entire pane history
 
-== Monitoring ==
+Monitoring
   session_wait <name> <str> [t]   Wait for string in output (timeout sec)
 
-== Workflows ==
-  session_run <name> <cmd> [t]    Run cmd, wait for completion
+Combined workflows
+  session_run <name> <cmd> [t]    Run cmd, wait for stable output
   session_exec <name> <cmd> [t]   Run cmd, wait N sec, show output
 EOF
 }
 
-# If run directly (not sourced), show help
+# Direct execution prints the help text.
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   session_help
 fi

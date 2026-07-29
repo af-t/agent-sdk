@@ -108,7 +108,7 @@ test('forkAt seeds a new independent Agent from the snapshot', async (t) => {
     'forking must deep-clone, not alias the recording snapshot',
   );
 
-  assert.throws(() => parent.forkAt(rec, 99), /No snapshot/);
+  assert.throws(() => parent.forkAt(rec, 99), /no snapshot/i);
 });
 
 test('forkAt shares the SkillRegistry used by loadSkill', async (t) => {
@@ -217,7 +217,7 @@ test('renderTrace reconstructs the human trace from recorded events', async (t) 
   assert.match(trace, /=== turn 1 ===/);
   assert.match(trace, /\[reasoning\]\nthinking about the task/);
   assert.match(trace, /\[assistant\]\nI will read the file/);
-  assert.match(trace, /\[tool_calls\] readFile/);
+  assert.match(trace, /\[tool calls\] readFile/);
   assert.match(trace, /-> readFile#abc start: \{"path":"\/x.txt"\}/);
   assert.match(trace, /-> readFile#abc end \(12ms\): file body/);
   assert.match(trace, /=== turn 2 ===/);

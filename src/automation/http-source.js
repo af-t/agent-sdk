@@ -23,31 +23,31 @@ export function createHttpSource(options = {}) {
   const componentLogger = resolveLogger(logger).child({ component: 'httpSource' });
 
   if (!(Number.isInteger(port) && port >= 0 && port <= 65535)) {
-    throw new ConfigError('createHttpSource: port is required (an integer 0-65535)');
+    throw new ConfigError('createHttpSource requires a port from 0 through 65535');
   }
   const routeList = Array.isArray(routes) ? routes : [];
   if (routeList.length === 0 && healthPath == null) {
-    throw new ConfigError('createHttpSource: at least one route or a healthPath is required');
+    throw new ConfigError('createHttpSource requires at least one route or a healthPath');
   }
   if (!(Number.isFinite(responseTimeoutMs) && responseTimeoutMs > 0)) {
-    throw new ConfigError('createHttpSource: responseTimeoutMs must be a finite positive number');
+    throw new ConfigError('createHttpSource requires responseTimeoutMs to be a finite positive number');
   }
   if (!(Number.isFinite(bodyLimitBytes) && bodyLimitBytes > 0)) {
-    throw new ConfigError('createHttpSource: bodyLimitBytes must be a finite positive number');
+    throw new ConfigError('createHttpSource requires bodyLimitBytes to be a finite positive number');
   }
   for (const r of routeList) {
     if (!r || typeof r.path !== 'string' || typeof r.type !== 'string') {
-      throw new ConfigError('createHttpSource: every route needs a string path and type');
+      throw new ConfigError('Every createHttpSource route needs a string path and type');
     }
     const auth = r.auth ?? 'none';
     if (!VALID_AUTH.has(auth)) {
-      throw new ConfigError(`createHttpSource: route auth must be none|token|hmac, got '${auth}'`);
+      throw new ConfigError(`createHttpSource route auth must be none, token, or hmac, not '${auth}'`);
     }
     if (auth === 'token' && typeof authToken !== 'string') {
-      throw new ConfigError('createHttpSource: a route uses auth:token but authToken is not set');
+      throw new ConfigError('A createHttpSource route uses auth:token but authToken is not set');
     }
     if (auth === 'hmac' && typeof hmacSecret !== 'string') {
-      throw new ConfigError('createHttpSource: a route uses auth:hmac but hmacSecret is not set');
+      throw new ConfigError('A createHttpSource route uses auth:hmac but hmacSecret is not set');
     }
   }
 
@@ -79,7 +79,10 @@ export function createHttpSource(options = {}) {
     try {
       emitFn(event);
     } catch (err) {
-      componentLogger.warn({ error: err, eventType: event?.type }, 'Emit threw');
+      componentLogger.warn(
+        { error: err, eventType: event?.type },
+        'HTTP source callback failed while emitting an event',
+      );
     }
   }
 
@@ -191,7 +194,7 @@ export function createHttpSource(options = {}) {
         throw err;
       }
 
-      // Verify HMAC over the raw bytes before any lossy utf8 decode.
+      // HMAC verification uses the raw bytes before UTF-8 decoding can lose information.
       if (!checkAuth(route, headers, rawBuf)) {
         componentLogger.warn({ method, path }, 'Auth check failed');
         writeResponse(res, { status: 401, body: { error: 'unauthorized' } });
@@ -216,7 +219,7 @@ export function createHttpSource(options = {}) {
         let settled = false;
         const respond = (spec) => {
           if (settled) {
-            componentLogger.warn({ method, path }, 'Respond called more than once; ignoring');
+            componentLogger.warn({ method, path }, 'HTTP source ignored a duplicate response');
             return;
           }
           settled = true;
@@ -252,7 +255,7 @@ export function createHttpSource(options = {}) {
       try {
         writeResponse(res, { status: 500, body: { error: 'internal error' } });
       } catch {
-        // best-effort
+        // The response may already be closed.
       }
     }
   }
@@ -260,7 +263,7 @@ export function createHttpSource(options = {}) {
   return {
     start(emit) {
       if (started) {
-        componentLogger.warn({}, 'Source already started; ignoring');
+        componentLogger.warn({}, 'HTTP source ignored a duplicate start');
         return;
       }
       started = true;
@@ -275,7 +278,7 @@ export function createHttpSource(options = {}) {
           componentLogger,
         );
       } catch (err) {
-        componentLogger.warn({ error: err }, 'Backend start threw');
+        componentLogger.warn({ error: err }, 'HTTP source backend failed to start');
       }
     },
     stop() {
@@ -284,7 +287,7 @@ export function createHttpSource(options = {}) {
         try {
           stopTransport();
         } catch (err) {
-          componentLogger.warn({ error: err }, 'Backend stop threw');
+          componentLogger.warn({ error: err }, 'HTTP source backend failed to stop');
         }
       }
       stopTransport = null;

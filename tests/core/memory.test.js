@@ -59,10 +59,10 @@ describe('Agent: memoryHint injector', () => {
 
     const text = findReminderText(fetchStub.captured[0]);
     assert.match(text, /## Memory system/);
-    assert.match(text, /\*\*user\*\*/);
-    assert.match(text, /\*\*feedback\*\*/);
-    assert.match(text, /\*\*project\*\*/);
-    assert.match(text, /\*\*reference\*\*/);
+    assert.match(text, /- user:/);
+    assert.match(text, /- feedback:/);
+    assert.match(text, /- project:/);
+    assert.match(text, /- reference:/);
   });
 
   it('custom memoryTypes merge on top of defaults', async () => {
@@ -77,11 +77,11 @@ describe('Agent: memoryHint injector', () => {
     await agent.run('hi');
 
     const text = findReminderText(fetchStub.captured[0]);
-    // custom type rendered
-    assert.match(text, /\*\*observation\*\*: Things observed about the environment\./);
-    // defaults still present
-    assert.match(text, /\*\*user\*\*/);
-    assert.match(text, /\*\*feedback\*\*/);
+    // The custom type appears in the prompt.
+    assert.match(text, /- observation: Things observed about the environment\./);
+    // Default types remain in the prompt.
+    assert.match(text, /- user:/);
+    assert.match(text, /- feedback:/);
   });
 
   it('memoryHint references the using-memory skill and the loadSkill tool', async () => {
@@ -96,9 +96,9 @@ describe('Agent: memoryHint injector', () => {
 
     const text = findReminderText(fetchStub.captured[0]);
     assert.match(text, /using-memory/);
-    assert.match(text, /loadSkill tool/);
+    assert.match(text, /loadSkill/);
     assert.match(text, /argument="using-memory"/);
-    assert.match(text, /MUST/);
+    assert.match(text, /Load the `using-memory` skill/);
   });
 
   it('memoryHint emits the configured memoryDir path', async () => {
@@ -206,14 +206,14 @@ describe('Agent: memoryIndex injector', () => {
     const fetchStub = captureFetch();
     global.fetch = fetchStub;
 
-    // path is outside cwd: now trusted via trustedPaths, but file does not exist → empty result
+    // trustedPaths allows the path outside cwd, and a missing file returns an empty result.
     const agent = new Agent({
       apiKey: 'sk-test',
       injectors: { date: false, contextFiles: false, memoryHint: false, skillList: false },
       storagePaths: { memoryDir: '/etc/openrouter-memory' },
     });
 
-    // Should not throw: injector swallows the rejection.
+    // The injector isolates the failed memory-index read.
     await agent.run('hi');
 
     const text = findReminderText(fetchStub.captured[0]);

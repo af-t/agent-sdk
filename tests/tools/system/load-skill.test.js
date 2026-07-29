@@ -47,12 +47,12 @@ describe('loadSkill execution', () => {
   const skillFilePath = path.join(pluginsDir, 'test-plugin', 'skills', 'my-custom-skill', 'SKILL.md');
 
   before(async () => {
-    // Reset and configure registry to find our test skill
+    // The registry discovers the temporary skill from this storage path.
     mod = (await import('../../../src/tools/system/load-skill.js')).loadSkill;
     registry = new SkillRegistry();
     registry.reset();
 
-    // Create a temporary SKILL.md file
+    // The temporary SKILL.md supplies a known fixture.
     await fs.mkdir(path.dirname(skillFilePath), { recursive: true });
     await fs.writeFile(
       skillFilePath,

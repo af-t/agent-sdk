@@ -8,8 +8,8 @@ function isAgentLike(a) {
 }
 
 export function createDaemon({ agent, handler, sources = [], signal, onAction, logger } = {}) {
-  if (!isAgentLike(agent)) throw new ConfigError('createDaemon: agent must be an Agent-like object');
-  if (typeof handler !== 'function') throw new ConfigError('createDaemon: handler must be a function');
+  if (!isAgentLike(agent)) throw new ConfigError('createDaemon requires an Agent-like object');
+  if (typeof handler !== 'function') throw new ConfigError('createDaemon requires handler to be a function');
   const componentLogger = resolveLogger(logger).child({ component: 'daemon' });
   const allSources = Array.isArray(sources) ? sources : [];
 
@@ -24,7 +24,7 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction, l
 
   function emit(event) {
     if (!started) {
-      componentLogger.warn({ eventType: event?.type }, 'Emit called before start; event ignored');
+      componentLogger.warn({ eventType: event?.type }, 'Daemon ignored an event emitted before start');
       return;
     }
     queue.push({ ...event, receivedAt: Date.now() });
@@ -57,7 +57,7 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction, l
     try {
       action = await handler(event, makeCtx());
     } catch (err) {
-      componentLogger.warn({ error: err, eventType: event?.type }, 'Handler threw');
+      componentLogger.warn({ error: err, eventType: event?.type }, 'Daemon handler failed');
       return;
     }
     if (action == null) return;
@@ -65,13 +65,13 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction, l
       try {
         onAction(action, event);
       } catch (err) {
-        componentLogger.warn({ error: err }, 'onAction callback threw');
+        componentLogger.warn({ error: err }, 'Daemon onAction callback failed');
       }
     }
     try {
       executeAction(action);
     } catch (err) {
-      componentLogger.warn({ error: err, actionType: action?.type }, 'Action execution threw');
+      componentLogger.warn({ error: err, actionType: action?.type }, 'Daemon action failed');
     }
   }
 
@@ -97,7 +97,7 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction, l
         return;
       case 'steer': {
         const ok = agent.steer(action.prompt);
-        if (!ok) componentLogger.warn({}, 'Steer action while agent idle; no-op');
+        if (!ok) componentLogger.warn({}, 'Daemon could not steer an idle agent');
         return;
       }
       case 'prompt':
@@ -108,7 +108,7 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction, l
         if (runController) runController.abort();
         return;
       default:
-        componentLogger.warn({ actionType: action.type }, 'Unknown action type; ignored');
+        componentLogger.warn({ actionType: action.type }, 'Daemon ignored an unknown action type');
     }
   }
 
@@ -142,10 +142,10 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction, l
       try {
         const r = src.start(emit);
         if (r && typeof r.then === 'function') {
-          r.catch((err) => componentLogger.warn({ error: err }, 'Source start rejected'));
+          r.catch((err) => componentLogger.warn({ error: err }, 'Daemon source failed to start'));
         }
       } catch (err) {
-        componentLogger.warn({ error: err }, 'Source start threw');
+        componentLogger.warn({ error: err }, 'Daemon source failed to start');
       }
     }
     return controller.signal;
@@ -159,7 +159,7 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction, l
         try {
           await src.stop();
         } catch (err) {
-          componentLogger.warn({ error: err }, 'Source stop threw');
+          componentLogger.warn({ error: err }, 'Daemon source failed to stop');
         }
       }),
     );
@@ -187,9 +187,9 @@ export function createDaemon({ agent, handler, sources = [], signal, onAction, l
 
 export function createTimerSource({ intervalMs, event, immediate = false } = {}) {
   if (!(typeof intervalMs === 'number' && intervalMs > 0)) {
-    throw new ConfigError('createTimerSource: intervalMs must be a positive number');
+    throw new ConfigError('createTimerSource requires intervalMs to be a positive number');
   }
-  if (event == null) throw new ConfigError('createTimerSource: event is required');
+  if (event == null) throw new ConfigError('createTimerSource requires an event');
   const make = () => (typeof event === 'function' ? event() : event);
   let timer = null;
   return {

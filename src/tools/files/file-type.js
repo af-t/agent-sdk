@@ -72,41 +72,41 @@ function magicMime(buf) {
   if (buf.length >= 4 && buf.toString('ascii', 0, 4) === '%PDF') {
     return 'application/pdf';
   }
-  // MP4
+  // MP4 stores an ftyp box after the first four bytes.
   if (buf.length >= 8 && buf.toString('ascii', 4, 8) === 'ftyp') {
     return 'video/mp4';
   }
-  // WebM / MKV
+  // WebM and Matroska share this EBML signature.
   if (buf.length >= 4 && buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) {
     return 'video/webm';
   }
-  // Ogg
+  // Ogg streams begin with OggS.
   if (buf.length >= 4 && buf.toString('ascii', 0, 4) === 'OggS') {
     return 'audio/ogg';
   }
-  // WAV
+  // WAV combines a RIFF container with a WAVE form type.
   if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WAVE') {
     return 'audio/wav';
   }
-  // MP3 ID3
+  // MP3 metadata may begin with an ID3 tag.
   if (buf.length >= 3 && buf.toString('ascii', 0, 3) === 'ID3') {
     return 'audio/mpeg';
   }
-  // MP3 frame sync
+  // An MP3 frame can begin with an eleven-bit sync word.
   if (buf.length >= 2 && buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) {
     return 'audio/mpeg';
   }
   return null;
 }
 
-// binary heuristic: NUL bytes or high control-char ratio
+// A NUL byte or a high control-character ratio marks a sample as binary.
 function isBinary(buf) {
   if (buf.length === 0) return false;
   let controlCount = 0;
   for (let i = 0; i < buf.length; i++) {
     const b = buf[i];
     if (b === 0x00) return true;
-    // control chars below 9 or in range 14..31 (exclude tab=9, LF=10, CR=13)
+    // Tabs and line breaks are excluded from the control-character count.
     if (b < 9 || (b >= 14 && b <= 31)) controlCount++;
   }
   return controlCount / buf.length > 0.3;
@@ -134,17 +134,17 @@ export function imageDimensions(buffer, mime) {
   return null;
 }
 
-// walk JPEG segments looking for SOF marker
+// JPEG dimensions live in a start-of-frame segment.
 function parseJpegDimensions(buf) {
-  // skip SOI (2 bytes)
+  // The first two bytes are the start-of-image marker.
   let offset = 2;
   while (offset + 4 <= buf.length) {
     if (buf[offset] !== 0xff) return null;
     const marker = buf[offset + 1];
     const segLen = buf.readUInt16BE(offset + 2);
-    // SOF markers: C0..CF except C4, C8, CC
+    // Start-of-frame markers range from C0 through CF, excluding C4, C8, and CC.
     if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
-      // 2 (marker) + 2 (len) + 1 (precision) = offset 5 from segment start
+      // Height begins five bytes after the segment marker.
       if (offset + 9 > buf.length) return null;
       const height = buf.readUInt16BE(offset + 5);
       const width = buf.readUInt16BE(offset + 7);
@@ -155,7 +155,7 @@ function parseJpegDimensions(buf) {
   return null;
 }
 
-// parse WebP VP8X extended form
+// The extended VP8X header stores canvas dimensions as 24-bit values.
 function parseWebPDimensions(buf) {
   if (buf.length < 30) return null;
   const chunkId = buf.toString('ascii', 12, 16);

@@ -1,109 +1,106 @@
 #!/usr/bin/env bash
-# ==============================================================
 # remediation_helper.sh: Helper functions for code remediation
 #
 # Usage:
 #   source remediation_helper.sh
 #   check_path_traversal src/
 #   find_secrets_in_logs src/
-# ==============================================================
-
-# ── Path Traversal Audit ──────────────────────────────────────
+# Path checks
 
 # Find files using raw path.resolve() without resolveSafePath()
 check_path_traversal() {
   local dir="${1:-src}"
-  echo "=== 🔍 Path Traversal Check ==="
+  echo "Path traversal check"
   grep -rn "path\.resolve(" "$dir" --include='*.js' \
     | grep -v "resolveSafePath" \
     | grep -v "node_modules" \
     | grep -v "dirname\.js" \
     | grep -v "\.test\." \
-    || echo "✅ No unguarded path.resolve() found"
+    || echo "No unguarded path.resolve() calls found"
   echo ""
 }
 
 # Find files missing resolveSafePath import
 check_missing_import() {
   local dir="${1:-src}"
-  echo "=== 🔍 Missing resolveSafePath Import ==="
+  echo "Files missing a resolveSafePath import"
   grep -rln "path\.resolve(" "$dir" --include='*.js' \
     | grep -v "node_modules" \
     | grep -v "dirname\.js" \
     | grep -v "\.test\." \
     | while read -r f; do
         if ! grep -q "resolveSafePath" "$f"; then
-          echo "⚠️  $f"
+          echo "$f"
         fi
       done
   echo ""
 }
 
-# ── Secret Leakage Audit ──────────────────────────────────────
+# Secret checks
 
 # Find potential API key exposure in logs/console
 find_secrets_in_logs() {
   local dir="${1:-src}"
-  echo "=== 🔍 Secret Leakage Check ==="
-  echo "--- console.log (should use logger) ---"
+  echo "Secret leakage check"
+  echo "console.log calls that should use a logger:"
   grep -rn "console\.log" "$dir" --include='*.js' \
     | grep -v "node_modules" \
     | grep -v "\.test\." \
-    || echo "✅ No console.log found"
+    || echo "No console.log calls found"
 
   echo ""
-  echo "--- Public apiKey properties ---"
+  echo "Public apiKey assignments:"
   grep -rn "this\.apiKey\s*=" "$dir" --include='*.js' \
     | grep -v "node_modules" \
     | grep -v "#apiKey" \
-    || echo "✅ No public apiKey assignments found"
+    || echo "No public apiKey assignments found"
   echo ""
 }
 
 # Find env vars passed to child processes without sanitizeChildEnvironment
 check_env_leakage() {
   local dir="${1:-src}"
-  echo "=== 🔍 Env Leakage Check ==="
+  echo "Child environment check"
   grep -rn "process\.env" "$dir" --include='*.js' \
     | grep -v "node_modules" \
     | grep -v "\.test\." \
     | grep -v "sanitizeChildEnvironment" \
     | grep -E "(spawn|exec|fork|pty\.spawn)" \
-    || echo "✅ No unguarded process.env in spawn calls"
+    || echo "No unguarded process.env values found in spawn calls"
   echo ""
 }
 
-# ── Error Handling Audit ─────────────────────────────────────
+# Error checks
 
 # Find empty catch blocks
 check_empty_catches() {
   local dir="${1:-src}"
-  echo "=== 🔍 Empty Catch Blocks ==="
+  echo "Empty catch blocks"
   grep -rn "catch\s*{" "$dir" --include='*.js' \
     | grep -v "node_modules" \
     | grep -v "\.test\." \
     | grep -v "catch (err)" \
     | grep -v "catch (e)" \
     | grep -v "catch {"'$'"[A-Za-z]" \
-    || echo "✅ No empty catch blocks found"
+    || echo "No empty catch blocks found"
   echo ""
 }
 
 # Find tools still returning ERROR: strings instead of throwing
 check_tool_error_pattern() {
   local dir="${1:-src/tools}"
-  echo "=== 🔍 Tool Error Pattern Check ==="
+  echo "Tool error string check"
   grep -rn "return.*ERROR:" "$dir" --include='*.js' \
     | grep -v "node_modules" \
-    || echo "✅ No tools returning ERROR: strings"
+    || echo "No tools return ERROR: strings"
   echo ""
 }
 
-# ── SSRF Audit ────────────────────────────────────────────────
+# SSRF checks
 
 check_ssrf_protection() {
   local dir="${1:-src}"
-  echo "=== 🔍 SSRF Protection Check ==="
+  echo "SSRF protection check"
   grep -rn "fetch(" "$dir" --include='*.js' \
     | grep -v "node_modules" \
     | grep -v "\.test\." \
@@ -112,19 +109,17 @@ check_ssrf_protection() {
     | while read -r line; do
         file=$(echo "$line" | cut -d: -f1)
         if ! grep -q "checkSSRF\|BLOCKED_IP\|localhost\|private" "$file" 2>/dev/null; then
-          echo "⚠️  No SSRF protection: $line"
+          echo "Possible missing SSRF protection: $line"
         fi
       done
   echo ""
 }
 
-# ── Summary ───────────────────────────────────────────────────
+# Summary
 
 run_all_checks() {
   local dir="${1:-src}"
-  echo "╔══════════════════════════════════════════╗"
-  echo "║   🔒 Security & Quality Audit Report     ║"
-  echo "╚══════════════════════════════════════════╝"
+  echo "Security and quality audit"
   echo "Directory: $dir"
   echo "Date: $(date)"
   echo ""
@@ -137,9 +132,7 @@ run_all_checks() {
   check_tool_error_pattern "$dir"
   check_ssrf_protection "$dir"
 
-  echo "╔══════════════════════════════════════════╗"
-  echo "║   ✅ Audit Complete                      ║"
-  echo "╚══════════════════════════════════════════╝"
+  echo "Audit complete"
 }
 
 # If run directly (not sourced), run all checks

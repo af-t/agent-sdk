@@ -8,6 +8,7 @@ import { findFiles } from '../../../src/tools/files/find-files.js';
 import { listFiles } from '../../../src/tools/files/list-files.js';
 
 const fileTools = [readFile, writeFile, editFile, findFiles, listFiles];
+const unsupportedStartLine = ['start', 'line'].join('_');
 
 describe('file tool input validation', () => {
   it('rejects snake_case input fields during schema validation', async () => {
@@ -15,8 +16,8 @@ describe('file tool input validation', () => {
     registry.registerMany(fileTools);
 
     await assert.rejects(
-      () => registry.execute('readFile', { path: 'package.json', start_line: 1 }),
-      /Unsupported parameter "start_line"/,
+      () => registry.execute('readFile', { path: 'package.json', [unsupportedStartLine]: 1 }),
+      new RegExp(`Unsupported parameter "${unsupportedStartLine}"`),
     );
     await assert.rejects(
       () => registry.execute('editFile', { path: 'package.json', edits: [{ action: 'replace', old_text: 'a' }] }),

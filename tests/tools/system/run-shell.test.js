@@ -36,27 +36,21 @@ describe('runShell tool module', () => {
 describe('runShell: command injection fuzzing', () => {
   const mod = runShell;
 
-  // All of these command injection attempts should be BLOCKED by the
-  // isBlocked() check, the hasSuspiciousPattern() warning, or they should
-  // fail to execute dangerous operations. The key test is that they don't
-  // crash the process or bypass security.
+  // Each payload is blocked, warned about, or executed without a dangerous side effect.
+  // None may bypass the security checks or crash the process.
 
   it('blocks destructive command: echo hello; rm -rf /', async () => {
     await assert.rejects(() => mod.execute({ command: 'echo hello; rm -rf /', timeout: 1000 }), /BLOCKED/);
   });
 
   it('handles command substitution $(whoami) without crashing', async () => {
-    // $(whoami) should not crash: either blocked or runs safely
-    // In the current code, this is not explicitly blocked but runs via spawn
-    // which is sandboxed (env stripped). The command should execute safely.
+    // Command substitution is either blocked or runs with the sanitized environment.
     try {
       const result = await mod.execute({ command: 'echo $(whoami)', timeout: 5000 });
-      // If it doesn't throw, it should return some output
       assert.ok(typeof result === 'string');
     } catch (err) {
-      // BLOCKED is also acceptable
       if (!err.message.includes('BLOCKED')) {
-        // May timeout or fail for other reasons; just verify it's not a crash
+        // A timeout or another command failure must not crash the process.
         assert.ok(err.message.length > 0);
       }
     }
@@ -105,8 +99,7 @@ describe('runShell: command injection fuzzing', () => {
   });
 
   it('rejects empty command gracefully', async () => {
-    // Empty command after trimming: bash -c "" will exit 0
-    // But the tool should handle it
+    // bash accepts an empty command, and the wrapper still returns a stable result.
     try {
       const result = await mod.execute({ command: '   ', timeout: 1000 });
       assert.ok(typeof result === 'string');
@@ -115,10 +108,8 @@ describe('runShell: command injection fuzzing', () => {
     }
   });
 
-  // ── Extended Fuzzing ──────────────────────────────────────────────────
-
   it('handles ANSI escape code injection in command string', async () => {
-    // ANSI escape codes in command strings should not cause issues
+    // ANSI escape codes remain command text and do not affect the host process.
     try {
       const result = await mod.execute({ command: 'echo "\x1b[31mRED\x1b[0m"', timeout: 5000 });
       assert.ok(typeof result === 'string');
@@ -128,30 +119,29 @@ describe('runShell: command injection fuzzing', () => {
   });
 
   it('handles extremely long command string (>10000 chars)', async () => {
-    // Very long command strings should not crash the process
+    // An operating-system argument limit may reject this input without crashing the process.
     const longPrefix = 'echo ' + 'x'.repeat(10000);
     try {
       const result = await mod.execute({ command: longPrefix, timeout: 5000 });
       assert.ok(typeof result === 'string');
     } catch (err) {
-      // Process may fail due to argument length limits, but should not crash
       assert.ok(err.message.length > 0);
     }
   });
 
   it('handles command with null bytes', async () => {
-    // Null bytes in command strings: should be handled gracefully
+    // Node or the shell may reject null bytes without crashing the process.
     try {
       const result = await mod.execute({ command: 'echo hello\0world', timeout: 5000 });
       assert.ok(typeof result === 'string');
     } catch (err) {
-      // May be blocked or may error: just should not crash
+      // Blocking or rejecting the command must not crash the process.
       assert.ok(err.message.length > 0);
     }
   });
 
   it('handles environment variable expansion tricks', async () => {
-    // ${PATH:0:1} etc.: shell expansion tricks
+    // Substring expansion exercises shell variable parsing.
     try {
       const result = await mod.execute({ command: 'echo ${PATH:0:1}${HOME:0:1}', timeout: 5000 });
       assert.ok(typeof result === 'string');
@@ -162,24 +152,13 @@ describe('runShell: command injection fuzzing', () => {
     }
   });
 
-  // ── Fixed Assertions for Command Injection Fuzzing ────────────────────
-
-  it('blocks pipe to cat /etc/passwd via suspicious pattern warning', async () => {
-    // 'cat' is not in BLOCKED_COMMANDS, and '| cat' is not a blocked pipe-to-shell pattern.
-    // This command will actually run. Verify it doesn't crash and that output
-    // does not contain actual /etc/passwd contents.
+  it('runs a pipe into cat without crashing the host process', async () => {
+    // runShell is not an operating-system filesystem sandbox. This case checks
+    // execution stability for a pipe that is neither blocked nor warned about.
     try {
       const result = await mod.execute({ command: 'echo test | cat /etc/passwd', timeout: 5000 });
       assert.ok(typeof result === 'string');
-      // The command should not leak actual passwd file contents.
-      // On most systems /etc/passwd exists and is world-readable, but if it
-      // runs, verify we don't see typical passwd patterns (like root:x:0:0).
-      // Since env is sanitized and there's no real danger, this is mostly a
-      // smoke test that the tool doesn't crash.
     } catch (err) {
-      // If it errors (e.g. file not found, permission denied), that's also fine.
-      assert.ok(err.message.length > 0);
-      // Error should be meaningful: not just an empty string
       assert.ok(
         err.message.includes('exit') ||
           err.message.includes('ENOENT') ||
@@ -190,14 +169,13 @@ describe('runShell: command injection fuzzing', () => {
   });
 
   it('blocks background execution & whoami', async () => {
-    // 'echo ok & whoami': neither '&' alone nor 'whoami' are in BLOCKED_COMMANDS.
-    // This runs successfully: 'echo ok' in background, 'whoami' in foreground.
+    // Neither '&' alone nor 'whoami' appears in BLOCKED_COMMANDS, so the shell
+    // runs echo in the background and whoami in the foreground.
     try {
       const result = await mod.execute({ command: 'echo ok & whoami', timeout: 5000 });
       assert.ok(typeof result === 'string');
-      // whoami should produce the current user name in output
     } catch (err) {
-      // Should not be blocked; if it errors it should be meaningful
+      // A shell failure still returns a useful error.
       if (!err.message.includes('BLOCKED')) {
         assert.ok(err.message.length > 5, 'error message should be meaningful');
       }
@@ -205,13 +183,11 @@ describe('runShell: command injection fuzzing', () => {
   });
 
   it('handles semicolon chaining: ; cat /etc/passwd', async () => {
-    // Leading ';' is a bash syntax error. This should not be BLOCKED (cat is not
-    // in BLOCKED_COMMANDS) but bash itself should reject the leading semicolon.
+    // A leading semicolon is not a blocked command, but bash rejects its syntax.
     try {
       await mod.execute({ command: '; cat /etc/passwd', timeout: 5000 });
-      // If bash somehow accepts it, it runs: no crash is fine
+      // If the local shell accepts it, execution still returns without a host crash.
     } catch (err) {
-      // bash syntax error expected: "syntax error near unexpected token `;'"
       assert.ok(err.message.length > 0);
       assert.ok(
         err.message.includes('syntax') ||
@@ -254,7 +230,7 @@ describe('runShell: command injection fuzzing', () => {
     try {
       const result = await mod.execute({ command: 'echo ok\\ncat /etc/passwd', timeout: 5000 });
       assert.ok(typeof result === 'string');
-      // Should contain literal 'ok\ncat /etc/passwd', not actual passwd contents
+      // The output contains literal text rather than passwd contents.
       assert.ok(result.includes('ok') || result.includes('cat'), 'output should contain the echoed literal text');
     } catch (err) {
       assert.ok(err.message.length > 5, 'error message should be meaningful');
@@ -263,11 +239,10 @@ describe('runShell: command injection fuzzing', () => {
 
   it('handles Unicode homoglyph characters in command string', async () => {
     // Full-width characters that look like ASCII but are different codepoints.
-    // These should not bypass isBlocked; they should either run safely or error.
+    // Homoglyphs cannot bypass isBlocked; they either run as literal text or fail.
     try {
       const result = await mod.execute({ command: 'echo \uff52\uff4d test', timeout: 5000 });
       assert.ok(typeof result === 'string');
-      // Should output the Unicode characters literally, not execute 'rm'
     } catch (err) {
       if (!err.message.includes('BLOCKED')) {
         assert.ok(err.message.length > 5, 'error message should be meaningful');
@@ -276,7 +251,7 @@ describe('runShell: command injection fuzzing', () => {
   });
 
   it('handles backtick nesting: `echo \\`whoami\\``', async () => {
-    // Nested backtick command substitution: not blocked, should run.
+    // Nested backticks run as ordinary shell substitution when not blocked.
     try {
       const result = await mod.execute({ command: 'echo `echo \\`whoami\\``', timeout: 5000 });
       assert.ok(typeof result === 'string');
@@ -288,7 +263,7 @@ describe('runShell: command injection fuzzing', () => {
   });
 
   it('handles dollar-parenthesis nesting: $(echo $(whoami))', async () => {
-    // Nested $() command substitution: not blocked, should run.
+    // Nested dollar-parenthesis syntax runs as ordinary shell substitution when not blocked.
     try {
       const result = await mod.execute({ command: 'echo $(echo $(whoami))', timeout: 5000 });
       assert.ok(typeof result === 'string');
@@ -300,7 +275,7 @@ describe('runShell: command injection fuzzing', () => {
   });
 
   it('handles deeply nested command substitution', async () => {
-    // Deep nesting of $(): tests parser resilience, not blocked.
+    // Deep dollar-parenthesis nesting exercises parser resilience.
     try {
       const result = await mod.execute({
         command: 'echo $(echo $(echo $(echo $(echo hello))))',
@@ -334,12 +309,11 @@ describe('runShell: environment sanitization', () => {
         env: customEnv,
         timeout: 5000,
       });
-      // The secret should NOT appear in the output
+      // The sanitized environment omits the secret.
       assert.ok(typeof result === 'string');
       assert.ok(!result.includes(secretValue), 'OPENROUTER_API_KEY should be stripped from env');
-      // Output should show empty or nothing after SECRET:
     } catch (err) {
-      // If it errors, that's acceptable as long as the secret isn't leaked
+      // Error messages also omit the secret.
       assert.ok(!err.message.includes(secretValue), 'secret should not leak in error message');
     }
   });
@@ -382,7 +356,7 @@ describe('runShell: environment sanitization', () => {
         timeout: 5000,
       });
       assert.ok(typeof result === 'string');
-      // None of the sensitive values should appear
+      // The sanitized environment omits every sensitive value.
       assert.ok(!result.includes('sk-generic-api-key-12345'), 'API_KEY should be stripped');
       assert.ok(!result.includes('super-secret-password'), 'MY_SECRET should be stripped');
       assert.ok(!result.includes('db-password-123'), 'DB_PASSWORD should be stripped');
@@ -407,19 +381,18 @@ describe('runShell: environment sanitization', () => {
         timeout: 5000,
       });
       assert.ok(typeof result === 'string');
-      // HOME should be passed through from custom env (overrides process.env)
+      // Safe custom variables override process.env.
       assert.ok(result.includes('/home/customtestuser'), 'HOME should be preserved from custom env');
       assert.ok(result.includes('customtestuser'), 'USER should be preserved from custom env');
-      // Secret should NOT be present
       assert.ok(!result.includes('should-be-stripped'), 'secret should be stripped');
     } catch (err) {
-      // If it errors, secret still must not leak
+      // Error messages also omit the secret.
       assert.ok(!err.message.includes('should-be-stripped'), 'secret should not leak in error message');
     }
   });
 
   it('uses safe defaults from process.env when custom env lacks them', async () => {
-    // Custom env without HOME: HOME should come from process.env via whitelist
+    // The whitelist supplies HOME when the custom environment omits it.
     const customEnv = {
       MY_CUSTOM_VAR: 'custom-value',
     };
@@ -431,7 +404,6 @@ describe('runShell: environment sanitization', () => {
         timeout: 5000,
       });
       assert.ok(typeof result === 'string');
-      // HOME should still be set (from process.env whitelist)
       const homeMatch = result.match(/HOME:(.+)/);
       if (homeMatch) {
         assert.ok(homeMatch[1].trim().length > 0, 'HOME should have a value from process.env');
@@ -443,14 +415,13 @@ describe('runShell: environment sanitization', () => {
 
   it('logs warning for suspicious command pattern (chmod with numeric mode)', async () => {
     // chmod 755 matches the suspicious pattern /\bchmod\s+[0-7]{3,4}\b/ but is not blocked.
-    // Target a non-existent temp path so the pattern check is exercised without touching real files.
+    // A nonexistent temporary path exercises the pattern without touching real files.
     const target = path.join(os.tmpdir(), 'lumen-chmod-pattern-check');
     try {
       await mod.execute({ command: `chmod 755 ${target}`, timeout: 5000 });
     } catch {
-      // May fail due to permissions: what matters is the code path reaching hasSuspiciousPattern
+      // Permission failure occurs after hasSuspiciousPattern emits the warning.
     }
-    // Test passes as long as no unexpected error is thrown (warning is logged internally)
   });
 });
 
@@ -532,7 +503,7 @@ describe('runShell: advanced execution paths', () => {
       const result = await mod.execute({ command: 'echo hello\0world', timeout: 5000 });
       assert.ok(typeof result === 'string');
     } catch (err) {
-      // bash may reject null bytes: that's acceptable
+      // bash may reject null bytes before execution.
       assert.ok(err.message.length > 0);
     }
   });
@@ -564,7 +535,7 @@ describe('runShell: advanced execution paths', () => {
   it('handles stderr output from command', async () => {
     try {
       const result = await mod.execute({ command: 'echo test >&2', timeout: 5000 });
-      // stderr redirected to stdout via exec 2>&1 in spawn
+      // The spawn wrapper redirects stderr to stdout with exec 2>&1.
       assert.ok(typeof result === 'string');
     } catch (err) {
       assert.ok(err.message.length > 0);

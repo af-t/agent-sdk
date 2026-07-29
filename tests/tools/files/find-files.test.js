@@ -173,7 +173,7 @@ describe('findFiles: injection resistance', () => {
 
   it('treats $(id) as literal regex, not command substitution (name mode)', async () => {
     const mod = await import('../../../src/tools/files/find-files.js');
-    // Create a file that literally contains $(id) in its name
+    // The file name contains a command-substitution expression as literal text.
     await fs.writeFile(path.join(fixturesDir, 'cmd-$(id)-test.txt'), 'content', 'utf8');
     try {
       const result = await mod.findFiles.execute({
@@ -278,7 +278,7 @@ describe('findFiles: nativeSearch fallback & edge cases', () => {
     await fs.mkdir(path.join(FIXTURES_NATIVE, 'deep'), { recursive: true });
     await fs.writeFile(path.join(FIXTURES_NATIVE, 'report.pdf'), 'some pdf content', 'utf8');
     await fs.writeFile(path.join(FIXTURES_NATIVE, 'deep', 'notes.txt'), 'important notes here', 'utf8');
-    // Binary file with null bytes
+    // Null bytes mark this fixture as binary.
     const buf = Buffer.alloc(600);
     buf[0] = 0x00; // null byte early
     buf.write('hello', 200);
@@ -299,8 +299,8 @@ describe('findFiles: nativeSearch fallback & edge cases', () => {
 
   it('skips binary files with null bytes in nativeSearch content mode', async () => {
     const mod = await import('../../../src/tools/files/find-files.js');
-    // Binary file has 'hello' but starts with null bytes -> should be skipped.
-    // notes.txt has 'notes' and no null bytes -> should match.
+    // Binary data contains "hello" but begins with null bytes, so the search skips it.
+    // notes.txt contains "notes" without null bytes, so the search includes it.
     const result = await mod.findFiles.execute({ path: FIXTURES_NATIVE, pattern: 'notes', mode: 'content' });
     assert.ok(result.includes('notes.txt'), 'should find text file with matching content');
     assert.ok(!result.includes('binary.bin'), 'should skip binary file with null bytes');
@@ -325,7 +325,7 @@ describe('findFiles: nativeSearch fallback & edge cases', () => {
     try {
       await fs.chmod(restrictedDir, 0o000);
     } catch {
-      // May not work on all platforms: skip restriction
+      // Platforms without restrictive permissions skip this assertion.
     }
 
     const result = await mod.findFiles.execute({ path: FIXTURES_NATIVE, pattern: 'notes', mode: 'content' });
@@ -358,7 +358,7 @@ describe('findFiles: nativeSearch fallback & edge cases', () => {
   it('handles abort mid-flight in nativeSearch', async () => {
     const mod = await import('../../../src/tools/files/find-files.js');
     const ac = new AbortController();
-    // Create many files to ensure walk takes time
+    // A large directory keeps the walk active long enough to observe cancellation.
     for (let i = 0; i < 20; i++) {
       await fs.writeFile(path.join(FIXTURES_NATIVE, `many-${i}.txt`), `content ${i}`, 'utf8');
     }

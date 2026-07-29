@@ -177,7 +177,7 @@ describe('Agent: stop hooks & empty-turn recovery', () => {
       inputSchema: { type: 'object', properties: {}, required: [] },
       execute: async () => 'probed',
     });
-    // empty -> retry -> empty -> nudge -> tool turn -> empty -> retry -> content
+    // The run moves from empty retries to a nudge, a tool turn, and final content.
     const stub = queue([() => empty(), () => empty(), () => toolCall('Probe'), () => empty(), () => text('done')]);
     agent._sendForTest = stub;
 
@@ -194,7 +194,7 @@ describe('Agent: stop hooks & empty-turn recovery', () => {
     const stub = queue([
       () => empty(), // initial terminal empty turn -> recovery starts
       () => {
-        // first retry resolves, but the run is aborted as a side effect
+        // The first retry resolves as cancellation reaches the run.
         controller.abort();
         return empty();
       },

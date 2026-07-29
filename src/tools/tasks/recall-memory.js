@@ -1,16 +1,13 @@
 import { recallMemories } from '../../memory/memory-recall.js';
 
 const description =
-  'Search your stored memories by meaning and return the most relevant ones in full. ' +
-  'Use this when the memory index hints at a memory whose details you need, or when the ' +
-  'user references past context that is not in your current window. Returns memory bodies ' +
-  'ranked by relevance to your query. Read-only: it does not modify any memory file.';
+  'Search stored memory files by meaning and return complete entries ranked by relevance. This tool does not modify memory files.';
 const inputSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    query: { type: 'string', description: 'What to search your memories for, in natural language.' },
-    limit: { type: 'number', description: 'Maximum memories to return (default 5, capped at 20).' },
+    query: { type: 'string', description: 'Natural-language memory query.' },
+    limit: { type: 'number', description: 'Maximum entries to return. The default is 5 and the limit is 20.' },
   },
   required: ['query'],
 };

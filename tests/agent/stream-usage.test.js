@@ -31,7 +31,7 @@ describe('Agent: streaming usage', () => {
       sentBody = JSON.parse(opts.body);
       return makeSseResponse([
         'data: {"choices":[{"delta":{"content":"hi"},"finish_reason":null}]}',
-        // final usage chunk in the OpenAI streaming shape (empty choices + top-level usage)
+        // OpenAI reports final streaming usage beside an empty choices array.
         'data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}',
         'data: [DONE]',
       ]);

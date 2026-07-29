@@ -59,7 +59,7 @@ export async function embedTexts(texts, { apiKey, baseUrl, model, signal } = {})
       }
       return body;
     } catch (err) {
-      // Caller aborted: flag it so retry fails fast instead of retrying.
+      // Marking cancellation prevents the retry layer from issuing another request.
       if (signal?.aborted) throw createAbortError('Embeddings request aborted', err);
       throw err;
     } finally {

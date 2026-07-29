@@ -2,7 +2,7 @@ const INT32_MAX = 2 ** 31 - 1;
 const DEFAULT_TAIL = 4096;
 
 const description =
-  'Schedule a non-blocking wake-up timer. Registers a background timer and returns immediately; when it fires, the agent receives a notification (the custom `prompt` if given, otherwise a generic exit notice; plus, if `watch` is set, a tail of those job logs). Use for timed check-ins or pacing without blocking the run loop.';
+  'Schedule a background timer and return immediately. When it fires, the agent receives the custom prompt or a timer-exit message, plus tails from watched job logs.';
 const inputSchema = {
   type: 'object',
   additionalProperties: false,
@@ -10,23 +10,21 @@ const inputSchema = {
     delayMs: { type: 'number', description: 'Milliseconds until the timer fires. Mutually exclusive with `at`.' },
     at: {
       type: 'string',
-      description:
-        'ISO-8601 timestamp to fire at (with timezone offset, e.g. 2026-05-28T05:00:00+07:00). Mutually exclusive with `delayMs`.',
+      description: 'ISO 8601 timestamp with a time zone. Mutually exclusive with delayMs.',
     },
     watch: {
       type: 'array',
       items: { type: 'string' },
-      description: 'Optional background job IDs. When the timer fires, a tail of each job log is included.',
+      description: 'Background job IDs whose log tails should be included.',
     },
-    tailBytes: { type: 'number', description: 'Bytes to tail from each watched job log (default 4096).' },
+    tailBytes: { type: 'number', description: 'Bytes to read from each watched log. The default is 4096.' },
     reason: {
       type: 'string',
-      description: 'Short free-text description of why this wait was scheduled. Shown in manageJobs({action:"list"}).',
+      description: 'Reason shown when manageJobs lists the timer.',
     },
     prompt: {
       type: 'string',
-      description:
-        'Custom text to surface as the wake-up message when the timer fires, instead of the generic exit notice.',
+      description: 'Message delivered when the timer fires.',
     },
   },
 };

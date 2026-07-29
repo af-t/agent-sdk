@@ -163,7 +163,7 @@ describe('Agent', () => {
   let ToolRegistry;
 
   before(async () => {
-    // We'll import with key present since env always has it
+    // The import reads the key from this controlled environment.
     const agentMod = await import('../../src/agent/agent.js');
     Agent = agentMod.default;
     const registryMod = await import('../../src/registries/tool-registry.js');
@@ -356,7 +356,7 @@ describe('Agent', () => {
       await editFile.execute(edit, { agent });
       assert.equal(fs.readFileSync(file, 'utf8'), 'alpha\ngamma\n');
 
-      // Content changed behind the agent's back: the next edit has to re-read.
+      // An external content change requires another read before editing.
       fs.writeFileSync(file, 'alpha\ndelta\n');
       await assert.rejects(
         () =>
@@ -587,12 +587,12 @@ describe('run(): cache_control placement', () => {
     const agent = new Agent({ apiKey: 'sk-test' });
     await agent.run('hello');
 
-    // System message always has cache_control on its content item
+    // The system message carries cache_control on its content item.
     const sysMsg = capturedPayload.messages[0];
     assert.strictEqual(sysMsg.role, 'system');
     assert.deepEqual(sysMsg.content[0].cache_control, { type: 'ephemeral' });
 
-    // Last user message last content part has cache_control in the payload copy
+    // The payload copy marks the last part of the last user message.
     const userMsg = capturedPayload.messages.find((m) => m.role === 'user');
     const lastPart = userMsg.content[userMsg.content.length - 1];
     assert.deepEqual(lastPart.cache_control, { type: 'ephemeral' });
@@ -1275,14 +1275,14 @@ describe('run(): steering applied in-loop', () => {
     assert.strictEqual(typeof toolMsg.content, 'string');
     assert.strictEqual(toolMsg.content, 'image desc');
 
-    // verify that the first user message in the payload contains the original "go" prompt
+    // The first user message retains the original "go" prompt.
     const firstUserMsg = payloadSent.messages.find((m) => m.role === 'user');
     assert.ok(firstUserMsg, 'Expected a user message in payload');
     assert.ok(Array.isArray(firstUserMsg.content), 'user message content in payload should be an array');
     const goPart = firstUserMsg.content.find((p) => p.text === 'go');
     assert.ok(goPart, 'Expected to find the original "go" prompt in user message content');
 
-    // The rich content is now a separate user message that follows the tool message
+    // Rich content stays in a separate user message after the tool message.
     const allUserMsgs = payloadSent.messages.filter((m) => m.role === 'user');
     assert.ok(allUserMsgs.length >= 2, 'Expected at least two user messages (original + multimodal)');
     const multimodalUserMsg = allUserMsgs.find(

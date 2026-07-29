@@ -36,7 +36,7 @@ export function createTraceFormatter({ toolOutputCap = TRACE_TOOL_OUTPUT_CAP } =
     if (event.toolCalls) {
       out += flushTurn();
       const names = event.toolCalls.map((tc) => tc.function?.name || tc.name || '?').join(', ');
-      out += `[tool_calls] ${names}\n`;
+      out += `[tool calls] ${names}\n`;
     }
     if (event.toolStart) {
       const { toolCallId, name, input } = event.toolStart;

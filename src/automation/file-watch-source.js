@@ -21,22 +21,22 @@ export function createFileWatchSource(options = {}) {
 
   const list = paths == null ? [] : Array.isArray(paths) ? paths : [paths];
   if (list.length === 0) {
-    throw new ConfigError('createFileWatchSource: paths is required (a string or non-empty array)');
+    throw new ConfigError('createFileWatchSource requires paths to be a string or non-empty array');
   }
   for (const p of list) {
-    if (typeof p !== 'string') throw new ConfigError('createFileWatchSource: every path must be a string');
+    if (typeof p !== 'string') throw new ConfigError('Every createFileWatchSource path must be a string');
   }
   if (!(typeof debounceMs === 'number' && debounceMs > 0)) {
-    throw new ConfigError('createFileWatchSource: debounceMs must be a positive number');
+    throw new ConfigError('createFileWatchSource requires debounceMs to be a positive number');
   }
   if (!(typeof pollIntervalMs === 'number' && pollIntervalMs > 0)) {
-    throw new ConfigError('createFileWatchSource: pollIntervalMs must be a positive number');
+    throw new ConfigError('createFileWatchSource requires pollIntervalMs to be a positive number');
   }
   if (filter != null && typeof filter !== 'function') {
-    throw new ConfigError('createFileWatchSource: filter must be a function');
+    throw new ConfigError('createFileWatchSource requires filter to be a function');
   }
   if (!Array.isArray(ignore)) {
-    throw new ConfigError('createFileWatchSource: ignore must be an array of strings');
+    throw new ConfigError('createFileWatchSource requires ignore to be an array of strings');
   }
 
   const absPaths = list.map((p) => path.resolve(p));
@@ -58,7 +58,10 @@ export function createFileWatchSource(options = {}) {
     try {
       emitFn(event);
     } catch (err) {
-      componentLogger.warn({ error: err, eventType: event?.type }, 'Emit threw');
+      componentLogger.warn(
+        { error: err, eventType: event?.type },
+        'File watch callback failed while emitting an event',
+      );
     }
   }
 
@@ -104,7 +107,7 @@ export function createFileWatchSource(options = {}) {
   return {
     start(emit) {
       if (started) {
-        componentLogger.warn({}, 'Source already started; ignoring');
+        componentLogger.warn({}, 'File watch source ignored a duplicate start');
         return;
       }
       started = true;
@@ -112,7 +115,7 @@ export function createFileWatchSource(options = {}) {
       try {
         stopBackend = _backend({ paths: absPaths, recursive, usePolling, pollIntervalMs }, onRaw, componentLogger);
       } catch (err) {
-        componentLogger.warn({ error: err }, 'Backend start threw');
+        componentLogger.warn({ error: err }, 'File watch backend failed to start');
       }
     },
     stop() {
@@ -121,7 +124,7 @@ export function createFileWatchSource(options = {}) {
         try {
           stopBackend();
         } catch (err) {
-          componentLogger.warn({ error: err }, 'Backend stop threw');
+          componentLogger.warn({ error: err }, 'File watch backend failed to stop');
         }
       }
       stopBackend = null;
@@ -169,7 +172,7 @@ function startNativeWatch({ paths, recursive }, onRaw, logger) {
       try {
         w.close();
       } catch {
-        // best-effort teardown
+        // Continue closing the remaining watchers.
       }
     }
   };
@@ -185,7 +188,7 @@ function startPolling({ paths, recursive, pollIntervalMs }, onRaw, logger) {
       const existed = prev.mtimeMs !== 0;
       const exists = curr.mtimeMs !== 0;
       onRaw(file, existed !== exists ? 'rename' : 'change');
-      // a deleted file keeps no watcher; a later re-create is rediscovered by rescan
+      // Rescanning restores a watcher if a deleted file is created again.
       if (!exists) {
         fs.unwatchFile(file);
         watched.delete(file);
@@ -221,8 +224,8 @@ function startPolling({ paths, recursive, pollIntervalMs }, onRaw, logger) {
       }
     }
   }
-  // fs.watchFile cannot see files created after start, so periodically re-scan
-  // watched directories to pick up new entries (emitting 'rename' like fs.watch).
+  // fs.watchFile cannot see later directory entries. A periodic scan adds them
+  // and reports their arrival as rename, matching fs.watch.
   function rescan() {
     for (const dir of [...watchedDirs]) {
       let entries;

@@ -18,7 +18,7 @@ export function finalizeReasoningDetails(acc) {
   return acc.slice().sort((a, b) => indexOf(a) - indexOf(b));
 }
 
-// index-less blocks sort as 0; stable sort preserves insertion order
+// Stable sorting keeps insertion order when a block has no index.
 function indexOf(block) {
   return typeof block.index === 'number' ? block.index : 0;
 }
@@ -32,7 +32,7 @@ function findSlot(out, block) {
   return -1;
 }
 
-// drops unknown fields (forward-compat assumption)
+// Only provider fields the SDK understands are copied.
 function cloneBlock(block) {
   const b = {};
   for (const key of ['type', 'index', 'id', 'format', 'text', 'summary', 'data', 'signature']) {
@@ -41,7 +41,7 @@ function cloneBlock(block) {
   return b;
 }
 
-// Concat content fields, overwrite stable metadata when present.
+// Content is concatenated while later metadata replaces earlier values.
 function mergeBlock(existing, block) {
   const b = { ...existing };
   if (block.text !== undefined) b.text = (b.text || '') + block.text;
@@ -56,7 +56,7 @@ function mergeBlock(existing, block) {
 export function sanitizeAssistantReasoning(msg) {
   if (!msg || msg.role !== 'assistant') return msg;
 
-  // Only strip `reasoning` when reasoning_details is a non-empty array/object, to avoid redundancy.
+  // A populated reasoning_details value supersedes the plain reasoning field.
   const hasDetails =
     msg.reasoning_details !== undefined &&
     msg.reasoning_details !== null &&

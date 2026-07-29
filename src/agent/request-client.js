@@ -13,7 +13,7 @@ const IDLE_TIMEOUT_MS = 120_000;
 // Error for a request that failed because the caller aborted the run.
 // `.aborted = true` makes retry fail fast instead of retrying. `cause` keeps the
 // error that was in flight when the abort was observed (often a real ApiError)
-// so it isn't silently discarded: inspect err.cause for it.
+// so err.cause retains it for inspection.
 export function callerAbortError(cause) {
   return createAbortError('Agent run aborted', cause);
 }
@@ -43,8 +43,8 @@ function makeIdleTimer(ms, controller) {
   };
 }
 
-// Providers reject rich content in several ways: an explicit 400, a 402 when a
-// paid multimodal model is out of reach, or a message naming the offending part.
+// Providers reject rich content through an explicit 400, a 402 when a paid
+// multimodal model is out of reach, or a message naming the offending part.
 function rejectsRichContent(error) {
   if (!(error instanceof ApiError)) return false;
   if (error.status === 400 || error.status === 402) return true;
@@ -145,7 +145,7 @@ export class RequestClient {
         signal: composeSignals(signal, controller.signal),
       });
 
-      // Connection established: restart the idle clock for the body read.
+      // The body read receives a fresh idle interval after connection.
       idle.reset();
 
       const text = await response.text();
@@ -195,7 +195,7 @@ export class RequestClient {
       throw asCallerAbort(error, signal);
     }
 
-    // Connection established: restart the idle clock before the stream begins.
+    // The stream receives a fresh idle interval after connection.
     idle.reset();
 
     if (!response.ok) {
@@ -225,7 +225,7 @@ export class RequestClient {
     const decoder = new TextDecoder();
     let buffer = '';
 
-    // Fold one chunk into the running response. Returns the text that just
+    // Fold one chunk into the running response. Returns the text this chunk
     // arrived when there is something to show, otherwise null.
     const readChunk = (chunk) => {
       const chunkUsage = readUsage(chunk.usage);

@@ -113,7 +113,7 @@ test('non-streaming run (no notify) still records assistant and toolCalls', asyn
       inputSchema: { type: 'object', properties: { msg: { type: 'string' } } },
       execute: async ({ msg }) => msg,
     });
-    // no notify callback -> non-streaming #send path
+    // Without a notify callback, the run uses the non-streaming send path.
     await agent.run('go');
     await agent.cleanup();
 
@@ -173,12 +173,11 @@ test('a recorded session persists a camel-case envelope, and leaves the wire alo
     const file = fs.readdirSync(dir).find((f) => f.endsWith('.jsonl'));
     const recording = await Recording.load(path.join(dir, file));
 
-    // Every persisted event the SDK authors is camel case at the top level.
-    // `payload`, `raw`, and `calls` carry provider-shaped data and are exempt.
+    // This loop checks the SDK-authored top-level recording envelope. Separate
+    // protocol tests cover provider-shaped values nested inside these records.
     for (const event of recording.events) {
       assert.ok(!event.type.includes('_'), `persisted type "${event.type}" must be camel case`);
       for (const key of Object.keys(event)) {
-        if (key === 'payload' || key === 'raw' || key === 'calls') continue;
         assert.ok(!key.includes('_'), `key "${key}" on a ${event.type} record must be camel case`);
       }
     }
@@ -188,8 +187,7 @@ test('a recorded session persists a camel-case envelope, and leaves the wire alo
     assert.equal(typeof toolEndRecord.toolCallId, 'string');
     assert.equal(typeof toolEndRecord.durationMs, 'number');
 
-    // The wire is untouched: the follow-up request still carries the
-    // provider-required tool_call_id.
+    // The follow-up request retains the provider-required tool_call_id.
     const secondRequest = recording.requestAt(2);
     const wireTool = secondRequest.messages.find((m) => m.role === 'tool');
     assert.ok(wireTool && 'tool_call_id' in wireTool);

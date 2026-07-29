@@ -6,18 +6,18 @@ import Agent from '../../../src/agent/agent.js';
 test('foreground delegateTask waits for subagent background jobs to finish', async () => {
   const parent = await createAgent({ apiKey: 'x' });
 
-  // When subagent runs, it simulates returning a report but leaving a running job
+  // The subagent returns a report while one of its jobs is still running.
   mock.method(Agent.prototype, 'run', async function () {
-    // Simulate a background job
+    // This job remains active until the timer completes.
     this.backgroundJobs.register({
       id: 'bg-test',
       status: 'running',
     });
 
-    // Simulate the job finishing after 300ms
+    // The timer completes the job after 300 ms.
     setTimeout(() => {
       this.backgroundJobs.get('bg-test').status = 'exited';
-      // Simulate autoWake run
+      // The automatic wake-up stores the subagent's final message.
       this.messages.push({ role: 'assistant', content: 'final report after autowake' });
     }, 300);
 
@@ -35,10 +35,10 @@ test('foreground delegateTask waits for subagent background jobs to finish', asy
     );
     const elapsed = Date.now() - t0;
 
-    // It should have waited for the background job to finish (>300ms)
+    // The call waits until the background job finishes.
     assert.ok(elapsed >= 300, `expected to wait for bg job, took ${elapsed}ms`);
 
-    // It should have picked up the final message from the autowake
+    // The result includes the message collected during automatic wake-up.
     assert.match(out, /final report after autowake/);
   } finally {
     await parent.cleanup();

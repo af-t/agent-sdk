@@ -30,7 +30,7 @@ test('writes turn header, reasoning, assistant text, and tool entries', async (t
   assert.match(out, /=== turn 1 ===/);
   assert.match(out, /\[reasoning\]\nthinking about the task/);
   assert.match(out, /\[assistant\]\nI will read the file/);
-  assert.match(out, /\[tool_calls\] readFile/);
+  assert.match(out, /\[tool calls\] readFile/);
   assert.match(out, /-> readFile#abc start: \{"path":"\/x.txt"\}/);
   assert.match(out, /-> readFile#abc end \(12ms\): file body/);
 });

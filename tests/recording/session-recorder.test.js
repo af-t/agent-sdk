@@ -232,7 +232,7 @@ test('a throwing redact hook routes a warning through the injected logger', asyn
   r.response(1, { choices: [] });
   await r.close();
 
-  const entry = records.find((rec) => rec.message === 'Redact hook threw; dropping record');
+  const entry = records.find((rec) => rec.message === 'Redaction hook failed, so this record was dropped');
   assert.equal(entry.level, 'warn');
   assert.equal(entry.context.component, 'sessionRecorder');
   assert.equal(entry.context.error.name, 'Error');

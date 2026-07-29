@@ -21,28 +21,28 @@ function createAbortTimer(signal, timeoutMs) {
 }
 
 const description =
-  'Search the web. Uses Tavily when TAVILY_API_KEY is configured, otherwise falls back to DuckDuckGo. Use to find current information, research topics, or answer questions that require up-to-date web data. Returns results with snippets and source URLs.';
+  'Search through Tavily when TAVILY_API_KEY is set, or DuckDuckGo otherwise. Return result titles, snippets, and source URLs.';
 const inputSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    query: { type: 'string', description: 'Search query: be specific for best results' },
+    query: { type: 'string', description: 'Search query.' },
     depth: {
       type: 'string',
       enum: ['basic', 'advanced'],
-      description: '"basic" for quick results (default), "advanced" for deeper research with longer context',
+      description: 'Tavily search depth. The default is basic.',
     },
-    maxResults: { type: 'number', description: 'Number of results to return (default: 5, max: 20)' },
+    maxResults: { type: 'number', description: 'Maximum results. The default is 5 and the limit is 20.' },
     includeAnswer: {
       type: 'boolean',
-      description: 'Include an AI-generated answer synthesizing results (default: false)',
+      description: 'Ask Tavily to include its generated answer. The default is false.',
     },
     includeDomains: {
       type: 'array',
       items: { type: 'string' },
-      description: 'Only search within these domains (e.g. ["python.org", "stackoverflow.com"])',
+      description: 'Only include these domains.',
     },
-    excludeDomains: { type: 'array', items: { type: 'string' }, description: 'Exclude these domains from results' },
+    excludeDomains: { type: 'array', items: { type: 'string' }, description: 'Exclude these domains.' },
   },
   required: ['query'],
 };

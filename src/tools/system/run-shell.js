@@ -4,19 +4,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { sanitizeChildEnvironment } from '../../support/environment.js';
 
-// Lazy-loaded PTY module: may be unavailable on platforms without native build support
+// node-pty is optional and may be unavailable without native build support.
 let _ptyModule = null;
 
 async function getPty(logger) {
   if (_ptyModule === null) {
-    // node-pty data loss under Bun
+    // Bun's node-pty integration can drop output, so Bun uses child_process.
     if (process.versions.bun) {
       _ptyModule = false;
       return _ptyModule;
     }
     try {
       const pty = await import('node-pty');
-      // Probe if node-pty actually works and produces output in this environment
+      // Import success does not prove that this native module can spawn a PTY.
       const works = await new Promise((resolve) => {
         try {
           const proc = pty.spawn('echo', ['1'], {
@@ -45,7 +45,7 @@ async function getPty(logger) {
       if (works) {
         _ptyModule = pty;
       } else {
-        logger?.warn({ component: 'runShell' }, 'node-pty unavailable; using child process fallback');
+        logger?.warn({ component: 'runShell' }, 'node-pty is unavailable, so runShell is using a child process');
         _ptyModule = false;
       }
     } catch {
@@ -55,7 +55,7 @@ async function getPty(logger) {
   return _ptyModule;
 }
 
-// Whitelist of safe environment variables to pass to child processes
+// Child processes inherit only these environment variables.
 const SAFE_ENV_KEYS = [
   'HOME',
   'USER',
@@ -73,7 +73,7 @@ const SAFE_ENV_KEYS = [
   'PAGER',
 ];
 
-// Destruction-level commands that are ALWAYS blocked
+// These command forms remain blocked when restricted mode is disabled.
 const BLOCKED_COMMANDS = [
   'rm -rf /',
   'rm -rf /*',
@@ -104,10 +104,10 @@ const BLOCKED_COMMANDS = [
   '| ksh',
   'wget',
   'curl',
-  'echo "*/1 * * * *"', // cron backdoor attempt
+  'echo "*/1 * * * *"', // cron persistence attempt
 ];
 
-// Suspicious operations that should be warned (but not outright blocked)
+// These operations remain executable but emit a warning.
 const SUSPICIOUS_PATTERNS = [
   /\b(kill|pkill|killall)\b/,
   /\bsudo\b/,
@@ -118,7 +118,7 @@ const SUSPICIOUS_PATTERNS = [
   /\|&\s*$/, // background pipe
 ];
 
-// Space out pipe/redirect operators so glued forms (`x>/dev/sda`, `x|bash`) still match
+// Spacing pipe and redirect operators lets glued forms such as `x>/dev/sda` still match.
 function normalizeCommand(command) {
   return command
     .replace(/([|<>])/g, ' $1 ')
@@ -127,10 +127,10 @@ function normalizeCommand(command) {
     .trim();
 }
 
-// Patterns normalized the same way as input, paired with the raw form for error text
+// Each pattern keeps its raw form for errors and its normalized form for matching.
 const NORMALIZED_BLOCKED = BLOCKED_COMMANDS.map((raw) => ({ raw, norm: normalizeCommand(raw) }));
 
-// rm with recursive + force flags (any order/spelling) aimed at / ~ or wildcard root
+// Recursive force deletion aimed at root, home, or a root wildcard is catastrophic.
 function isCatastrophicRm(normalized) {
   if (!/(^|\s)rm(\s|$)/.test(normalized)) return false;
   const recursive = /(^|\s)(-[a-z]*r[a-z]*|--recursive)(\s|$)/.test(normalized);
@@ -139,7 +139,7 @@ function isCatastrophicRm(normalized) {
   return /--no-preserve-root/.test(normalized) || /(^|\s)(\/\*|\/|~)(\s|$)/.test(normalized);
 }
 
-// A shell reading a script via input redirection: `bash < file` (not a heredoc)
+// Input redirection can make a shell execute a file as a script.
 const SHELL_REDIRECT_IN = /(^|\s)(sh|bash|zsh|ksh|dash|csh|tcsh)\s+<\s+(?!<)/;
 
 function isBlocked(command) {
@@ -165,7 +165,7 @@ function hasSuspiciousPattern(command) {
 
 const SIGKILL_GRACE_MS = 2000;
 
-// spawn fallback (used when node-pty is unavailable)
+// child_process is the fallback when node-pty is unavailable.
 
 function getExitStatus(code, signal) {
   if (code === 0) return 'exited';
@@ -287,7 +287,7 @@ function runWithSpawn(command, cwd, env, timeout, signal, agent, logger) {
         detachedToBackground = true;
         const { id, logPath, stream, handleExit } = setupBackgroundJob(agent, child, startedAt, 'timeout');
         stream.write(output);
-        // stderr is folded into stdout at the shell level (exec 2>&1), so only stdout carries output
+        // The shell redirects stderr into stdout before this listener runs.
         child.stdout.removeAllListeners('data');
         child.stdout.pause();
         child.stdout.pipe(stream);
@@ -300,7 +300,10 @@ function runWithSpawn(command, cwd, env, timeout, signal, agent, logger) {
             `Output so far (first 4KB):\n${output.slice(0, 4096)}`,
         );
       } else {
-        logger?.warn({ component: 'runShell', timeout }, 'Timeout cannot detach without an agent; killing process');
+        logger?.warn(
+          { component: 'runShell', timeout },
+          'runShell cannot detach without an agent, so it is stopping the timed-out process',
+        );
         child.kill();
         reject(new Error(`Execution timed out after ${timeout}ms\n\nPartial Output:\n${output}`));
       }
@@ -332,7 +335,7 @@ function runWithSpawn(command, cwd, env, timeout, signal, agent, logger) {
   });
 }
 
-// PTY mode (primary, uses node-pty)
+// node-pty provides the preferred interactive path.
 
 function runWithPty(command, cwd, env, timeout, signal, agent, logger) {
   return new Promise((resolve, reject) => {
@@ -390,7 +393,10 @@ function runWithPty(command, cwd, env, timeout, signal, agent, logger) {
             `Output so far (first 4KB):\n${output.slice(0, 4096)}`,
         );
       } else {
-        logger?.warn({ component: 'runShell', timeout }, 'Timeout cannot detach without an agent; killing process');
+        logger?.warn(
+          { component: 'runShell', timeout },
+          'runShell cannot detach without an agent, so it is stopping the timed-out process',
+        );
         ptyProcess.kill();
         reject(new Error(`Execution timed out after ${timeout}ms\n\nPartial Output:\n${output}`));
       }
@@ -519,19 +525,19 @@ function runWithPtyBackground(command, cwd, env, signal, agent) {
 }
 
 const description =
-  'Execute a shell command. Use this for system operations that do not have a specialized tool, such as running tests, performing builds, or using complex CLI utilities. Side effect: executes arbitrary shell commands. The agent may issue multiple tool calls in one turn that run concurrently: do not request parallel calls that mutate the same files or processes.';
+  'Run a shell command in the foreground or background. Use a dedicated tool when one exists. Tool calls in the same turn can run concurrently, so do not submit commands that may modify the same files or processes.';
 const inputSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    command: { type: 'string', description: 'Shell command to execute' },
-    workingDirectory: { type: 'string', description: 'Working directory' },
-    env: { type: 'object', description: 'Environment variables' },
-    timeout: { type: 'number', description: 'Timeout in ms (default 300000)' },
+    command: { type: 'string', description: 'Shell command to run.' },
+    workingDirectory: { type: 'string', description: 'Working directory.' },
+    env: { type: 'object', description: 'Additional environment variables.' },
+    timeout: { type: 'number', description: 'Timeout in milliseconds. The default is 300000.' },
     background: {
       type: 'boolean',
       description:
-        'Start the command in the background. Returns immediately with a job ID and log path; the agent receives an exit notification when the process finishes.',
+        'Return immediately with a job ID and log path. The agent receives an exit event when the process finishes.',
     },
   },
   required: ['command'],
@@ -577,7 +583,7 @@ const execute = async ({ command, workingDirectory, env, timeout = 300000, backg
     if (requestedEnvironment !== baseEnvironment) Object.assign(safeEnv, requestedEnvironment);
   }
 
-  // Prevent git/etc pagination hang in interactive pseudo-terminals by defaulting to PAGER=cat
+  // PAGER=cat prevents interactive pagers from waiting for input in a PTY.
   if (!safeEnv.PAGER) {
     safeEnv.PAGER = 'cat';
   }
@@ -599,7 +605,7 @@ const execute = async ({ command, workingDirectory, env, timeout = 300000, backg
     return runWithPty(command, cwd, safeEnv, timeout, signal, agent, logger);
   }
 
-  logger?.debug({ component: 'runShell' }, 'node-pty unavailable; using child process fallback');
+  logger?.debug({ component: 'runShell' }, 'node-pty is unavailable, so runShell is using a child process');
   return runWithSpawn(command, cwd, safeEnv, timeout, signal, agent, logger);
 };
 

@@ -110,7 +110,7 @@ describe('Lifecycle: injectors', () => {
     lifecycle.registerInjector({ name: 'keep', scope: 'per-turn', run: () => 'KEEP' });
     dispose();
     assert.deepEqual(await lifecycle.applyInjectors('per-turn', {}), ['KEEP']);
-    // Re-registering after disposal must not raise a duplicate-name error.
+    // Disposal leaves the injector name available.
     lifecycle.registerInjector({ name: 'temp', scope: 'per-turn', run: () => 'TEMP again' });
   });
 
@@ -267,7 +267,7 @@ describe('Lifecycle: resolveStop', () => {
     lifecycle.onStop(() => ({ action: 'continue', prompt: 'AFTER-THROW' }));
     const result = await lifecycle.resolveStop(baseArgs());
     assert.equal(result.prompt, 'AFTER-THROW');
-    assert.ok(records.some((r) => r.level === 'warn' && r.message === 'Stop hook threw'));
+    assert.ok(records.some((r) => r.level === 'warn' && r.message === 'Stop hook failed'));
   });
 
   it('is bounded by the recovery ceiling when a hook always retries', async () => {
@@ -320,7 +320,7 @@ describe('Lifecycle: resolveStop', () => {
   it('resetStopAttempts restarts the attempt counter for the next call', async () => {
     const { logger } = createRecordingLogger();
     const lifecycle = new Lifecycle({ logger });
-    // A 'continue' decision leaves the attempt counter above zero: unlike a
+    // A continue decision leaves the attempt counter above zero. Unlike a
     // stop or a recovered retry, resolveStop does not reset it on that path.
     const disposeNudge = lifecycle.onStop(() => ({ action: 'continue', prompt: 'NUDGE' }));
     const first = await lifecycle.resolveStop(baseArgs());

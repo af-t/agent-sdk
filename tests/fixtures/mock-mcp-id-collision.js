@@ -1,7 +1,7 @@
-// MCP mock: on tools/list, first sends a server-to-client REQUEST that reuses
-// the client's request id (legal per JSON-RPC: ids are per-sender namespaces),
-// and only delivers the real tools/list result after the client answers that
-// request with an error (-32601). Exercises the response/request routing fix.
+// On tools/list, this fixture first sends a server-to-client request that reuses
+// the client's request ID. JSON-RPC permits this because IDs use per-sender namespaces.
+// and only delivers the tools/list result after the client answers that
+// request with error -32601. This sequence exercises response/request routing.
 import readline from 'node:readline';
 
 const rl = readline.createInterface({ input: process.stdin, terminal: false });
@@ -18,10 +18,10 @@ rl.on('line', (line) => {
     send({ id: msg.id, result: { capabilities: {}, serverInfo: { name: 'collision' } } });
   } else if (msg.method === 'tools/list') {
     pendingToolsListId = msg.id;
-    // server->client request deliberately colliding with the client's id
+    // The server request deliberately collides with the client's request ID.
     send({ id: msg.id, method: 'roots/list', params: {} });
   } else if (msg.method === undefined && msg.id === pendingToolsListId && msg.error) {
-    // client rejected our roots/list request: now deliver the real result
+    // The client rejected roots/list, so the server can deliver the tools/list result.
     send({
       id: pendingToolsListId,
       result: { tools: [{ name: 'echo', description: 'echo', inputSchema: { type: 'object', properties: {} } }] },

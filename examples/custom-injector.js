@@ -1,11 +1,9 @@
-// Custom per-turn injector example.
-
 import os from 'node:os';
 import createAgent from '../src/index.js';
 
 const agent = await createAgent();
 
-agent.registerInjector({
+const unregister = agent.registerInjector({
   name: 'host-metrics',
   scope: 'per-turn',
   run: () => {
@@ -15,11 +13,15 @@ agent.registerInjector({
   },
 });
 
-const reply = await agent.run(
-  'What is the current load average and uptime according to the system reminder? Quote the exact line.',
-);
-
-console.log('--- Agent reply ---');
-console.log(reply);
-console.log('--- Usage ---');
-console.log(agent.usage);
+try {
+  const reply = await agent.run(
+    'What is the current load average and uptime according to the system reminder? Quote the exact line.',
+  );
+  console.log('Agent reply:');
+  console.log(reply);
+  console.log('Usage:');
+  console.log(agent.usage);
+} finally {
+  unregister();
+  await agent.cleanup();
+}

@@ -1,6 +1,6 @@
 import { createInterface } from 'node:readline';
 
-// MOCK-TIMEOUT-SERVER: started (will not respond to initialize)
+// This fixture starts successfully and never responds to initialize.
 console.error('[MCP Server]: MOCK-TIMEOUT-SERVER: started (will not respond to initialize)');
 
 const rl = createInterface({
@@ -11,5 +11,5 @@ const rl = createInterface({
 
 // We ignore all input and never send anything to stdout.
 rl.on('line', (_line) => {
-  // Never respond
+  // The fixture intentionally leaves every request unanswered.
 });

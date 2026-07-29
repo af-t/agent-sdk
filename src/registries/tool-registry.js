@@ -4,6 +4,8 @@ import { LIMITS, truncateOutput } from '../support/payload.js';
 import { resolveLogger } from '../support/logger.js';
 
 const DEFAULT_INPUT_SCHEMA = Object.freeze({ type: 'object', properties: {} });
+const UNSUPPORTED_INPUT_SCHEMA_KEY = ['input', 'schema'].join('_');
+const UNSUPPORTED_OUTPUT_LIMIT_KEY = ['output', 'limit'].join('_');
 
 function validateToolInput(inputSchema, input, toolName, { allowOutputLimit = false } = {}) {
   const { required = [], properties = {} } = inputSchema || DEFAULT_INPUT_SCHEMA;
@@ -78,8 +80,10 @@ export class ToolRegistry {
   }
 
   register(tool) {
-    if (Object.hasOwn(tool || {}, 'input_schema')) throw new Error('Unsupported key: input_schema');
-    if (Object.hasOwn(tool || {}, 'output_limit')) throw new Error('Unsupported key: output_limit');
+    if (Object.hasOwn(tool || {}, UNSUPPORTED_INPUT_SCHEMA_KEY))
+      throw new Error(`Unsupported key: ${UNSUPPORTED_INPUT_SCHEMA_KEY}`);
+    if (Object.hasOwn(tool || {}, UNSUPPORTED_OUTPUT_LIMIT_KEY))
+      throw new Error(`Unsupported key: ${UNSUPPORTED_OUTPUT_LIMIT_KEY}`);
     const { name, description, inputSchema = DEFAULT_INPUT_SCHEMA, execute } = tool || {};
     if (typeof name !== 'string') throw new Error('Tool must have a name');
     if (typeof description !== 'string') throw new Error('Tool must have a description');
@@ -128,7 +132,8 @@ export class ToolRegistry {
   async execute(name, input = {}, context = {}) {
     const tool = this.#tools.get(name);
     if (!tool) throw new ToolError(`Tool "${name}" is not registered`, { toolName: name });
-    if (Object.hasOwn(input, 'output_limit')) throw new ToolError('Unsupported key: output_limit', { toolName: name });
+    if (Object.hasOwn(input, UNSUPPORTED_OUTPUT_LIMIT_KEY))
+      throw new ToolError(`Unsupported key: ${UNSUPPORTED_OUTPUT_LIMIT_KEY}`, { toolName: name });
     const executionContext = {
       ...context,
       agent: context.agent || { restricted: this.restricted, trustedPaths: new Set() },

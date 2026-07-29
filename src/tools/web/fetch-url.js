@@ -5,7 +5,7 @@ import http from 'node:http';
 import https from 'node:https';
 import { Readable } from 'node:stream';
 
-// Private/reserved IP ranges to block for SSRF prevention
+// SSRF protection blocks private and reserved IP ranges.
 const BLOCKED_IP_RANGES = [
   /^127\./, // IPv4 loopback
   /^10\./, // RFC 1918 - Class A private
@@ -20,7 +20,7 @@ const BLOCKED_IP_RANGES = [
   /^fd00:/, // IPv6 unique local
 ];
 
-// Max redirects before giving up
+// A redirect limit prevents unbounded chains.
 const MAX_REDIRECTS = 5;
 
 function unmapIPv4(ip) {
@@ -40,7 +40,7 @@ function unmapIPv4(ip) {
   return ip;
 }
 
-// Binary if non-printable chars > 70%
+// Text with more than 70 percent non-printable characters is treated as binary.
 function isBinaryContent(text) {
   // eslint-disable-next-line no-control-regex -- intentionally matches control chars for binary detection
   const nonPrintable = (text.match(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g) || []).length;
@@ -58,7 +58,7 @@ export function isBlockedIp(ip) {
 }
 
 async function readBodyCapped(res, maxBytes) {
-  // Fallback for stubs/responses without a web stream body
+  // Test transports and some fetch implementations expose no web stream body.
   if (!res.body || typeof res.body.getReader !== 'function') {
     return res.text();
   }
@@ -78,14 +78,13 @@ async function readBodyCapped(res, maxBytes) {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-// SSRF check: blocks private IPs, localhost, DNS rebinding, non-HTTP(S).
-// Returns the validated addresses to pin (or null for a literal-IP host).
+// checkSSRF blocks private IPs, localhost, DNS rebinding, and non-HTTP protocols.
+// It returns validated addresses to pin, or null for a literal-IP host.
 export async function checkSSRF(urlStr) {
   try {
     const url = new URL(urlStr);
     const hostname = url.hostname;
 
-    // Block by hostname
     if (
       hostname === 'localhost' ||
       hostname === 'localhost.localdomain' ||
@@ -97,24 +96,23 @@ export async function checkSSRF(urlStr) {
       throw new Error('Access denied: localhost/internal host is not allowed');
     }
 
-    // Block non-http(s) protocols (file://, ftp://, etc.)
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
       throw new Error(
         `Access denied: protocol '${url.protocol}' is not allowed. Only http:// and https:// are supported.`,
       );
     }
 
-    // Check if hostname is a literal IPv4 address
+    // A literal IPv4 address can be checked without DNS.
     const isIPv4 = /^\d+\.\d+\.\d+\.\d+$/.test(hostname);
     if (isIPv4) {
       if (isBlockedIp(hostname)) {
         throw new Error('Access denied: private/reserved IP range is not allowed (SSRF protection)');
       }
-      // Literal IP: the socket connects straight to it, no lookup to pin
+      // A literal IP connects directly, so there is no DNS result to pin.
       return null;
     }
 
-    // Check if hostname is a literal IPv6 address
+    // A literal IPv6 address can be checked without DNS.
     const isIPv6 = /^\[?[0-9a-fA-F:]+(?:\.[0-9.]+)?\]?$/.test(hostname);
     if (isIPv6) {
       const normalized = hostname.replace(/^\[|\]$/g, '');
@@ -124,8 +122,8 @@ export async function checkSSRF(urlStr) {
       return null;
     }
 
-    // DNS rebinding defense: resolve the hostname, check every IP, and keep the
-    // validated set so the actual connection pins to it (no second resolution).
+    // Resolving every address once and pinning that set prevents DNS rebinding
+    // between validation and connection.
     const addresses = [];
     try {
       for (const ip of await dns.resolve4(hostname)) {
@@ -136,7 +134,7 @@ export async function checkSSRF(urlStr) {
       }
     } catch (err) {
       if (err.message.startsWith('Access denied')) throw err;
-      // ENOTFOUND for IPv4 is acceptable: try IPv6 next
+      // An IPv4 miss still permits an IPv6 lookup.
     }
 
     try {
@@ -148,12 +146,11 @@ export async function checkSSRF(urlStr) {
       }
     } catch (err) {
       if (err.message.startsWith('Access denied')) throw err;
-      // ENOTFOUND for IPv6 is also acceptable
+      // An IPv6 miss is acceptable when IPv4 has already resolved.
     }
 
     if (addresses.length === 0) {
-      // If we couldn't resolve the hostname at all, it's safer to block
-      // unless it was already a literal IP (handled above).
+      // A hostname that resolves to no address cannot be connected safely.
       throw new Error(`Access denied: unable to resolve hostname '${hostname}'`);
     }
     return addresses;
@@ -163,8 +160,8 @@ export async function checkSSRF(urlStr) {
   }
 }
 
-// Pinning lookup: hands the socket only the IPs checkSSRF already validated,
-// re-checking each one so a rebind cannot slip a private IP into the connection.
+// The pinning lookup gives the socket only addresses that checkSSRF validated.
+// It checks them again before connection.
 function makeLookup(addresses) {
   return (_hostname, options, callback) => {
     const cb = typeof options === 'function' ? options : callback;
@@ -183,7 +180,7 @@ function makeLookup(addresses) {
   };
 }
 
-// Minimal fetch-shaped transport over node:http(s) so we can pin DNS via lookup
+// requestOnce provides a fetch-shaped transport whose lookup can pin DNS.
 function requestOnce(urlStr, { signal, lookup } = {}) {
   return new Promise((resolve, reject) => {
     let url;
@@ -206,27 +203,25 @@ function requestOnce(urlStr, { signal, lookup } = {}) {
   });
 }
 
-const description =
-  'Fetch and analyze content from a URL. Use this to retrieve documentation, research technical topics, or read raw code from the web. It automatically cleans HTML for readability.';
+const description = 'Fetch an HTTP or HTTPS URL. By default, HTML is reduced to readable text.';
 const inputSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    url: { type: 'string', description: 'Target URL' },
-    rawContent: { type: 'boolean', description: 'Return raw HTML if true' },
-    limit: { type: 'number', description: 'Max characters to return (default 20000)' },
+    url: { type: 'string', description: 'URL to fetch.' },
+    rawContent: { type: 'boolean', description: 'Return the response without reducing HTML.' },
+    limit: { type: 'number', description: 'Maximum characters to return. The default is 20000.' },
   },
   required: ['url'],
 };
 
 const execute = async ({ url, rawContent = false, limit = 20000 }, ctx = {}) => {
-  // The caller may supply a fetch-shaped transport; redirects carry it along via ctx
+  // Redirects reuse a caller-supplied fetch-shaped transport.
   const transport = ctx.transport ?? requestOnce;
 
-  // Validate URL format (throws if invalid)
   new URL(url);
 
-  // SSRF protection: block internal/private resources; pin the validated IPs
+  // Pinning the validated IPs closes the gap between validation and connection.
   const pinnedAddresses = await checkSSRF(url);
 
   if (ctx.signal?.aborted) throw new Error('Request aborted');
@@ -243,13 +238,12 @@ const execute = async ({ url, rawContent = false, limit = 20000 }, ctx = {}) => 
   let raw;
   let contentType;
   try {
-    // node:http(s) never auto-follows redirects, so each hop is re-checked below
+    // node:http(s) does not follow redirects, so each hop is checked here.
     res = await transport(url, {
       signal: controller.signal,
       lookup: pinnedAddresses ? makeLookup(pinnedAddresses) : undefined,
     });
 
-    // Handle manual redirects to prevent SSRF bypass via redirects
     if (res.status >= 300 && res.status < 400) {
       let redirectUrl = res.headers.get('location');
       if (redirectUrl) {
@@ -259,15 +253,14 @@ const execute = async ({ url, rawContent = false, limit = 20000 }, ctx = {}) => 
           throw new Error(`Too many redirects (max ${MAX_REDIRECTS})`);
         }
 
-        // Strip credentials from redirect URL to prevent leaking
+        // Redirects cannot carry credentials from the original URL.
         const parsed = new URL(redirectUrl, url);
         parsed.username = '';
         parsed.password = '';
         redirectUrl = parsed.toString();
 
-        // SSRF check on the sanitised redirect URL
         await checkSSRF(redirectUrl);
-        // Release the redirect response body before recursing
+        // Releasing the body prevents a redirect chain from retaining sockets.
         await res.body?.cancel().catch(() => {});
         return execute({ url: redirectUrl, rawContent, limit }, { ...ctx, _redirectDepth: redirectDepth });
       }
@@ -281,7 +274,7 @@ const execute = async ({ url, rawContent = false, limit = 20000 }, ctx = {}) => 
     }
 
     contentType = res.headers.get('content-type') || 'unknown';
-    // Hard cap even without content-length (chunked responses)
+    // Streaming reads enforce the size limit even without content-length.
     raw = await readBodyCapped(res, LIMITS.fetchMaxSize);
   } finally {
     clearTimeout(timeout);
@@ -303,11 +296,9 @@ const execute = async ({ url, rawContent = false, limit = 20000 }, ctx = {}) => 
   }
 
   if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
-    // Unknown type: return as plain text
     return withContentType(contentType, truncateOutput(raw, limit));
   }
 
-  // Only HTML reaches cheerio
   if (rawContent) {
     return withContentType(contentType, truncateOutput(raw, limit));
   }
@@ -322,7 +313,7 @@ const execute = async ({ url, rawContent = false, limit = 20000 }, ctx = {}) => 
     cleanText = $.text();
   }
 
-  // Preserve paragraph structure: collapse horizontal whitespace but keep newlines
+  // Horizontal whitespace collapses while paragraph breaks remain visible.
   cleanText = cleanText
     .replace(/[ \t\xa0]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n')

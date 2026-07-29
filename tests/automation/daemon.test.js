@@ -42,11 +42,11 @@ async function tick(ms = 10) {
 }
 
 test('createDaemon throws on a non-Agent-like agent', () => {
-  assert.throws(() => createDaemon({ agent: {}, handler: () => {} }), /agent must be an Agent-like/);
+  assert.throws(() => createDaemon({ agent: {}, handler: () => {} }), /requires an Agent-like/);
 });
 
 test('createDaemon throws on a non-function handler', () => {
-  assert.throws(() => createDaemon({ agent: fakeAgent(), handler: 123 }), /handler must be a function/);
+  assert.throws(() => createDaemon({ agent: fakeAgent(), handler: 123 }), /requires handler to be a function/);
 });
 
 test('start returns a signal and sets isRunning; stop clears it and aborts the signal', async () => {
@@ -177,7 +177,7 @@ test('a throwing handler logs a structured error through the injected logger', a
   assert.equal(entry.level, 'warn');
   assert.equal(entry.context.component, 'daemon');
   assert.equal(entry.context.error.name, 'Error');
-  assert.equal(entry.message, 'Handler threw');
+  assert.equal(entry.message, 'Daemon handler failed');
   await daemon.stop();
 });
 
@@ -336,7 +336,7 @@ test('createDaemon works without an injected logger, using the resolved default'
 
 test('createTimerSource validates its inputs', () => {
   assert.throws(() => createTimerSource({ intervalMs: 0, event: { type: 't' } }), /intervalMs/);
-  assert.throws(() => createTimerSource({ intervalMs: 10 }), /event is required/);
+  assert.throws(() => createTimerSource({ intervalMs: 10 }), /requires an event/);
 });
 
 test('createTimerSource emits immediately and on the interval, then stops cleanly', async () => {
@@ -376,8 +376,7 @@ test('daemon drives a real Agent end-to-end with no network', async () => {
   const agent = new Agent({
     apiKey: 'x',
     model: 'm',
-    // Disable injectors so the run does no filesystem work: cold skill discovery can take
-    // ~1.7s on machines with many installed skills (~/.claude), which would blow the poll budget.
+    // Disabling injectors keeps filesystem discovery outside this timing test.
     injectors: { date: false, contextFiles: false, memoryIndex: false, memoryHint: false, skillList: false },
   });
   agent._sendForTest = async () => ({ choices: [{ message: { content: 'done' } }] });

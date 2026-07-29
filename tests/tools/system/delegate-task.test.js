@@ -140,7 +140,7 @@ describe('delegateTask execution', () => {
     t.after(() => parent?.cleanup());
     const tmpDir = createTestTempDir(t, 'delegate-parent-');
     parent = new Agent({ apiKey: 'sk-test-key', storagePaths: { tmpDir } });
-    // Pin the parent to no explicit limit so the subagent fallback is what gets tested:
+    // Leaving the parent unlimited exposes the subagent's fallback limit.
     // otherwise the developer's .env (OPENROUTER_MAX_COMPLETION_TOKENS) leaks in via config
     // and the parent's value is inherited instead of the MAX_COMPLETION_TOKENS_SUBAGENT default.
     parent.maxCompletionTokens = undefined;
@@ -179,7 +179,7 @@ describe('delegateTask execution', () => {
 
     let parent = createFakeAgent(t, { apiKey: 'k', model: 'm' });
 
-    // Walk delegation three levels deep via real spawned subagents
+    // Real subagents create a three-level delegation chain.
     for (let i = 0; i < 3; i++) {
       await mod.execute({ description: 'd', prompt: 'p', id: 'sub' }, { agent: parent });
       parent = parent.subagents.get('sub');
@@ -304,7 +304,7 @@ describe('delegateTask execution', () => {
       /delegateTask aborted/,
     );
 
-    // Subagent should never have been created
+    // Aborting before execution prevents subagent creation.
     assert.strictEqual(fakeAgent.subagents.size, 0);
   });
 
@@ -329,7 +329,7 @@ describe('delegateTask execution', () => {
     const controller = new AbortController();
 
     mock.method(Agent.prototype, 'run', async function (prompt, notify, opts) {
-      // Check signal mid-execution like real Agent.run() does
+      // Agent.run checks the signal again during execution.
       const signal = opts?.signal;
       await new Promise((resolve) => setTimeout(resolve, 50));
       controller.abort();

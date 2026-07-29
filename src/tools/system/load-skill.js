@@ -1,5 +1,4 @@
-const description =
-  'Reusable instruction sets for specialized tasks like code review, debugging, testing, architecture planning, strategy, and more.';
+const description = 'List, search, or load instruction sets for a task.';
 
 const inputSchema = {
   type: 'object',
@@ -8,12 +7,11 @@ const inputSchema = {
     action: {
       type: 'string',
       enum: ['list', 'load', 'search'],
-      description: 'There are 3 options to manage your skills.',
+      description: 'Operation to perform.',
     },
     argument: {
       type: 'string',
-      description:
-        'Argument for list, load, or search. for list no need to fill in, for load enter name, for search enter query.',
+      description: 'Skill name for load, search query for search, or omitted for list.',
     },
   },
   required: ['action'],

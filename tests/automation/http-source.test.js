@@ -16,8 +16,6 @@ function createRecordingLogger() {
   return { logger: resolveLogger(target), records };
 }
 
-// Appendix B test helpers
-
 // Captures onRequest so tests can drive synthetic requests; records start/stop counts.
 function fakeTransport({ address = null } = {}) {
   let onRequest = null;
@@ -41,7 +39,7 @@ function fakeTransport({ address = null } = {}) {
   };
 }
 
-// A minimal IncomingMessage double: a Readable carrying the body plus method/url/headers/socket.
+// The IncomingMessage double combines a readable body with request metadata.
 function mockReq({ method = 'POST', url = '/', headers = {}, body = '' } = {}) {
   const r = Readable.from([Buffer.from(body)]);
   r.method = method;
@@ -113,14 +111,12 @@ function fakeAgent({ running = false } = {}) {
   };
 }
 
-// Task 1 Tests
-
 test('throws ConfigError when port is missing or not a valid integer 0-65535', () => {
-  assert.throws(() => createHttpSource({ routes: [{ path: '/x', type: 'x' }] }), /port is required/);
-  assert.throws(() => createHttpSource({ port: -1, routes: [{ path: '/x', type: 'x' }] }), /port is required/);
-  assert.throws(() => createHttpSource({ port: '8080', routes: [{ path: '/x', type: 'x' }] }), /port is required/);
-  assert.throws(() => createHttpSource({ port: 3000.5, routes: [{ path: '/x', type: 'x' }] }), /port is required/);
-  assert.throws(() => createHttpSource({ port: 70000, routes: [{ path: '/x', type: 'x' }] }), /port is required/);
+  assert.throws(() => createHttpSource({ routes: [{ path: '/x', type: 'x' }] }), /requires a port/);
+  assert.throws(() => createHttpSource({ port: -1, routes: [{ path: '/x', type: 'x' }] }), /requires a port/);
+  assert.throws(() => createHttpSource({ port: '8080', routes: [{ path: '/x', type: 'x' }] }), /requires a port/);
+  assert.throws(() => createHttpSource({ port: 3000.5, routes: [{ path: '/x', type: 'x' }] }), /requires a port/);
+  assert.throws(() => createHttpSource({ port: 70000, routes: [{ path: '/x', type: 'x' }] }), /requires a port/);
 });
 
 test('throws when neither routes nor healthPath is present', () => {
@@ -138,7 +134,7 @@ test('throws when a route is missing path or type', () => {
 test('throws on an unknown route auth mode', () => {
   assert.throws(
     () => createHttpSource({ port: 0, routes: [{ path: '/x', type: 'x', auth: 'basic' }] }),
-    /none\|token\|hmac/,
+    /none, token, or hmac/,
   );
 });
 
@@ -168,7 +164,7 @@ test('throws when a GET route collides with the built-in healthPath', () => {
     () => createHttpSource({ port: 0, routes: [{ path: '/health', type: 'h', method: 'GET' }] }),
     /shadowed by the built-in healthPath/,
   );
-  // A POST route at healthPath is fine: the health check only intercepts GET.
+  // The health check intercepts GET but leaves a POST route at healthPath available.
   assert.doesNotThrow(() => createHttpSource({ port: 0, routes: [{ path: '/health', type: 'h' }] }));
   // Disabling the built-in health frees the path for a GET route.
   assert.doesNotThrow(() =>
@@ -190,8 +186,6 @@ test('createHttpSource works without an injected logger, using the resolved defa
   assert.doesNotThrow(() => src.start(() => {}));
   src.stop();
 });
-
-// Task 2 Tests
 
 test('start passes the resolved config to the transport and captures onRequest', () => {
   const ft = fakeTransport();
@@ -219,7 +213,7 @@ test('a second start routes a warning through the injected logger and does not s
   src.start(() => {});
   src.start(() => {});
   assert.equal(ft.starts(), 1);
-  const entry = records.find((record) => record.message === 'Source already started; ignoring');
+  const entry = records.find((record) => record.message === 'HTTP source ignored a duplicate start');
   assert.equal(entry.level, 'warn');
   assert.equal(entry.context.component, 'httpSource');
   src.stop();
@@ -234,8 +228,6 @@ test('stop is idempotent and safe before start', () => {
   src.stop();
   assert.equal(ft.stops(), 1);
 });
-
-// Task 3 Tests
 
 test('GET healthPath returns 200 {status:ok} and emits nothing', async () => {
   const ft = fakeTransport();
@@ -288,8 +280,6 @@ test('a matched route emits an event and respond writes the HTTP response', asyn
   src.stop();
 });
 
-// Task 4 Tests
-
 test('exposes the raw body and parsed body for a matched route', async () => {
   const ft = fakeTransport();
   let seen;
@@ -322,8 +312,6 @@ test('a body over bodyLimitBytes returns 413 and emits nothing', async () => {
   assert.equal(emitted.length, 0);
   src.stop();
 });
-
-// Task 5 Tests
 
 test('token auth: passes with the right Bearer token, 401 otherwise', async () => {
   const ft = fakeTransport();
@@ -415,8 +403,6 @@ test('hmac auth verifies over the raw bytes, not a utf8-reencoded body', async (
   src.stop();
 });
 
-// Task 6 Tests
-
 test('parses a JSON body into event.body when content-type is application/json', async () => {
   const ft = fakeTransport();
   let seen;
@@ -453,8 +439,6 @@ test('returns 400 on malformed JSON', async () => {
   assert.equal(emitted.length, 0);
   src.stop();
 });
-
-// Task 7 Tests
 
 test('respond() with a string sends text/plain 200', async () => {
   const ft = fakeTransport();
@@ -496,7 +480,7 @@ test('a second respond() call is ignored, and routes a warning through the injec
   await tick();
   assert.equal(res.statusCode, 200);
   assert.deepEqual(JSON.parse(res.body), { first: true });
-  const entry = records.find((record) => record.message === 'Respond called more than once; ignoring');
+  const entry = records.find((record) => record.message === 'HTTP source ignored a duplicate response');
   assert.equal(entry.level, 'warn');
   assert.equal(entry.context.component, 'httpSource');
   src.stop();
@@ -541,8 +525,6 @@ test('a request times out with 504 when the handler never responds', async () =>
   src.stop();
 });
 
-// Task 8 Tests
-
 test('stop() resolves an in-flight request with 503', async () => {
   const ft = fakeTransport();
   const src = createHttpSource({ port: 0, routes: [{ path: '/c', type: 'c' }], _transport: ft.transport });
@@ -556,8 +538,6 @@ test('stop() resolves an in-flight request with 503', async () => {
   assert.equal(res.statusCode, 503);
   assert.equal(res.ended, true);
 });
-
-// Task 9 Tests
 
 test('createHttpSource is re-exported from the package entry', async () => {
   const mod = await import('../../src/index.js');

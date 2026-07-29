@@ -8,7 +8,7 @@ import {
   magicByteType,
 } from '../../../src/tools/files/file-type.js';
 
-// helpers to build minimal image buffers
+// These helpers build minimal image buffers with known dimensions.
 function makePng(width, height) {
   const buf = Buffer.alloc(24);
   buf[0] = 0x89;
@@ -33,16 +33,16 @@ function makeGif(width, height, version = '89a') {
 }
 
 function makeJpeg(width, height) {
-  // SOI + APP0 + SOF0 segment
+  // The fixture contains SOI, APP0, and SOF0 segments.
   const sof = Buffer.alloc(19);
-  // SOI
+  // JPEG begins with the SOI marker.
   sof[0] = 0xff;
   sof[1] = 0xd8;
-  // APP0 marker + length (will be skipped)
+  // The parser skips the APP0 marker and its length.
   sof[2] = 0xff;
   sof[3] = 0xe0;
   sof.writeUInt16BE(2, 4); // length 2 means 0 data bytes after length
-  // SOF0 marker
+  // The SOF0 marker contains the dimensions.
   sof[6] = 0xff;
   sof[7] = 0xc0;
   sof.writeUInt16BE(11, 8); // length
@@ -57,7 +57,7 @@ function makeWebPExtended(width, height) {
   buf.write('RIFF', 0, 'ascii');
   buf.write('WEBP', 8, 'ascii');
   buf.write('VP8X', 12, 'ascii');
-  // canvas width/height stored at offsets 24 and 27 as uint24 LE (value - 1)
+  // Canvas dimensions are stored at offsets 24 and 27 as little-endian uint24 values minus one.
   buf[24] = (width - 1) & 0xff;
   buf[25] = ((width - 1) >> 8) & 0xff;
   buf[26] = ((width - 1) >> 16) & 0xff;
@@ -217,7 +217,7 @@ describe('imageDimensions', () => {
   });
 
   it('returns null for JPEG with segments but no SOF marker', () => {
-    // SOI + one non-SOF APP0 segment (marker 0xe0, length 0x0004): no SOF follows
+    // This JPEG contains SOI and APP0 but no start-of-frame segment.
     const buf = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00]);
     assert.strictEqual(imageDimensions(buf, 'image/jpeg'), null);
   });
@@ -226,7 +226,7 @@ describe('imageDimensions', () => {
     const buf = Buffer.alloc(10);
     buf[0] = 0x89;
     buf[1] = 0x50;
-    // buffer too short to hold dimensions
+    // The buffer is too short to hold dimensions.
     assert.strictEqual(imageDimensions(buf, 'image/png'), null);
   });
 });

@@ -1,6 +1,5 @@
 # Weather plugin
 
-Load the `forecast` skill (via the loadSkill tool, action="load", argument="forecast")
-whenever the user asks about weather, temperature, rain, or what to wear for an
-outdoor activity. The skill defines how to phrase the lookup and how to present
-the result. Follow it instead of improvising a format.
+When the user asks about weather or clothing for outdoor conditions, call
+`loadSkill` with `action: "load"` and `argument: "forecast"`. Follow the
+loaded skill's lookup and response format.

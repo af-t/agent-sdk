@@ -10,12 +10,11 @@ rl.on('line', (line) => {
   try {
     const msg = JSON.parse(line);
     if (msg.method === 'initialize') {
-      // Respond with malformed JSON instead of a valid object
+      // This response is malformed JSON rather than a complete object.
       console.log('{ "jsonrpc": "2.0", "id": ' + msg.id + ', "result": { "incomplete": true ');
-      // Note: No closing brace, missing serverInfo, etc.
+      // The response has no closing brace.
     }
   } catch {
-    // If we receive something not JSON (like the malformed JSON we just sent if it was echoed back),
-    // just ignore it.
+    // Ignore non-JSON input, including an echoed copy of the malformed response.
   }
 });

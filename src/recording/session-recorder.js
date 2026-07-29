@@ -28,7 +28,7 @@ export function createSessionRecorder({ dir, level = 'snapshots', model, redact,
 
   stream.on('error', (err) => {
     alive = false;
-    componentLogger.warn({ error: err, filePath }, 'Recording stream failed; disabling recording');
+    componentLogger.warn({ error: err, filePath }, 'Recording stream failed, so recording is disabled');
   });
 
   function write(obj) {
@@ -38,7 +38,7 @@ export function createSessionRecorder({ dir, level = 'snapshots', model, redact,
       try {
         rec = redact(obj);
       } catch (err) {
-        componentLogger.warn({ error: err, type: obj.type }, 'Redact hook threw; dropping record');
+        componentLogger.warn({ error: err, type: obj.type }, 'Redaction hook failed, so this record was dropped');
         return;
       }
       if (!rec) return; // redact dropped the record
@@ -46,15 +46,14 @@ export function createSessionRecorder({ dir, level = 'snapshots', model, redact,
     try {
       stream.write(JSON.stringify(rec) + '\n');
     } catch (err) {
-      componentLogger.warn({ error: err, filePath }, 'Write failed; disabling recording');
+      componentLogger.warn({ error: err, filePath }, 'Recording write failed, so recording is disabled');
       alive = false;
     }
   }
 
   write({ t: now(), type: 'session_start', id, level, model });
 
-  // assistant + toolCalls recorded from the run loop
-  // so capture is identical in stream and non-stream modes
+  // The run loop records assistant content and tool calls in both transport modes.
   function recordAssistant(turn, message) {
     if (!alive || !message) return;
     if (typeof turn === 'number') curTurn = turn;
@@ -69,7 +68,7 @@ export function createSessionRecorder({ dir, level = 'snapshots', model, redact,
     }
   }
 
-  // tool + steer events arrive via broadcast in both modes
+  // Broadcast delivers tool and steer events in both transport modes.
   function record(event, turn) {
     if (!alive || !event || typeof event !== 'object') return;
     if (typeof turn === 'number') curTurn = turn;

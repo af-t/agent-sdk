@@ -1,242 +1,148 @@
 ---
 name: code-remediation
-description: Systematic code remediation workflow for fixing bugs, security issues, and technical debt across a codebase. Covers delegation patterns, security hardening checklist, error handling standardization, and code review methodology. Use when tasked with implementing a remediation plan (like TODO.md), fixing verified issues, or performing security hardening.
+description: Repair verified bugs, security defects, and technical debt without weakening existing safeguards.
 ---
 
-# Code Remediation Workflow
+# Code remediation
 
-## Overview
+Use this workflow when a repository has a concrete defect list or a verified
+security problem. Read the implementation and its tests before changing
+anything. Confirm each reported problem against the current source.
 
-This skill captures patterns for efficiently working through a large remediation plan. It covers:
+## Set the order
 
-- **Delegation workflow**: Using sub-agents for implementation and review
-- **Security hardening**: Path traversal, SSRF, env sanitization, secrets management
-- **Error handling**: Standardized tool error patterns, circuit breakers, timeouts
-- **Code review**: Systematic verification of correctness, security, edge cases
+| Priority | Work                                                        |
+| -------- | ----------------------------------------------------------- |
+| P0       | Defects that silently produce the wrong result              |
+| P1       | Path traversal, secret exposure, SSRF, or command injection |
+| P2       | Abort, timeout, retry, and error-handling defects           |
+| P3       | Naming, configuration, or module-boundary work              |
+| P4       | Local tooling and maintenance improvements                  |
 
-## Core Principles
+Fix higher-risk items first when one change does not depend on another. Keep
+unrelated refactors out of the patch.
 
-### 1. Prioritize by Impact
+## Work one finding at a time
 
-| Priority | Category                     | Examples                                                         |
-| -------- | ---------------------------- | ---------------------------------------------------------------- |
-| P0       | Critical Bug Hotfixes        | Logic bugs that silently produce wrong results                   |
-| P1       | Security Hardening           | Path traversal, secret leakage, SSRF, command injection          |
-| P2       | Reliability & Error Handling | Empty catches, timeouts, circuit breakers, error standardization |
-| P3       | Architecture                 | Provider abstraction, config improvements, naming consistency    |
-| P4       | Tool Improvements            | Portability, in-memory operations, tests                         |
+For each finding:
 
-Always fix P0 and P1 before touching anything else. Security bugs compound.
+1. Locate the behavior and the nearest tests.
+2. Add or identify a check that fails for the reported reason.
+3. Make the smallest change that fixes that failure.
+4. Run focused checks.
+5. Review the diff for lost security or protocol behavior.
+6. Run the repository's full verification before committing.
 
-### 2. Incremental Marking
+If the repository has a remediation checklist, mark an item complete only
+after its check passes.
 
-Mark progress **immediately after each item**, not at the end. This:
+## Path containment
 
-- Prevents losing track of what's done
-- Provides clear rollback points
-- Makes review easier
-
-### 3. Delegation Workflow (Most Efficient)
-
-For complex phases, use this three-actor pattern:
-
-```
-You (Orchestrator)
-  │
-  ├──→ delegateTask #1 (Implementor)
-  │     ├── Read all relevant files
-  │     ├── Apply all changes for the phase
-  │     ├── Mark the plan file [x] for each item
-  │     └── Return summary
-  │
-  ├──→ delegateTask #2 (Reviewer)
-  │     ├── Read all modified files
-  │     ├── Check: correctness, security, edge cases, regressions
-  │     ├── Check: imports, consistency, plan file marks
-  │     └── Report findings (✅ OK / ⚠️ FINDING / 🚨 CRITICAL)
-  │
-  └──→ You (Fixer)
-        ├── Fix 🚨 CRITICAL issues immediately
-        ├── Fix ⚠️ FINDING if quick/important
-        └── Defer minor findings or skip intentional
-```
-
-**When to use this:**
-
-- Multiple files need changes (>3 files)
-- Changes are well-defined and can be described clearly
-- Review requires careful cross-file verification
-
-**When NOT to use this (do yourself):**
-
-- Single-file changes
-- Trivial fixes (1-2 lines)
-- Review findings that are minor (fix directly instead of re-delegating)
-
----
-
-## Security Hardening Checklist
-
-### Path Traversal Prevention
+Pass caller-controlled paths through `resolveSafePath`. The helper rejects null
+bytes, encoded traversal characters, protocol handlers, parent traversal, and
+paths outside the project or an explicit trusted root. It also resolves
+existing ancestors and checks symlink targets.
 
 ```js
-// BAD: no validation
-const fullPath = path.resolve(filePath);
-
-// GOOD: resolve paths through the path-safety module
 import { resolveSafePath } from '../../support/path-safety.js';
-const fullPath = resolveSafePath(filePath);
+
+const fullPath = resolveSafePath(filePath, context.agent.trustedPaths, {
+  restricted: context.agent.restricted,
+});
 ```
 
-**`resolveSafePath()` must handle:**
+Do not replace every `path.resolve` call mechanically. Paths used only to
+construct an internal location can be safe. Trace the value's source and the
+operation performed on it.
 
-1. ❌ Null bytes (`\0`): CVE-2021-3805 bypass
-2. ❌ URL-encoded traversal (`%2e%2e`, `%2f`, `%5c`): double encoding
-3. ❌ Protocol handlers (`file://`, etc.): SSRF via file path
-4. ❌ Directory traversal (`../../etc/passwd`): escape from the project root
-5. ❌ Symlink TOCTOU: a resolved file can redirect outside the root
+Tests should cover:
 
-### Environment Variable Leakage
+- a null byte;
+- encoded slash or parent traversal;
+- a protocol such as `file://`;
+- a relative path that escapes the project;
+- an existing symlink that points outside its allowed root;
+- a trusted external root when the feature supports one.
+
+## Child environments
+
+Never spread the host environment directly into a child process. Remove
+secrets from inherited values and sanitize caller-supplied values:
 
 ```js
-// BAD: passes ALL env vars including API keys
-env: { ...process.env }
-
-// GOOD: remove inherited secrets and sanitize caller-supplied variables
 import { removeSecrets, sanitizeChildEnvironment } from '../../support/environment.js';
-env: { ...removeSecrets(process.env), ...sanitizeChildEnvironment(this.config.env || {}) }
+
+const environment = {
+  ...removeSecrets(process.env),
+  ...sanitizeChildEnvironment(options.env || {}),
+};
 ```
 
-**`removeSecrets()` must remove environment variables containing:**
+The sanitizer removes names associated with API keys, credentials, tokens,
+passwords, OpenRouter, Tavily, and private keys. It also blocks loader and
+startup variables such as `LD_PRELOAD`, `NODE_OPTIONS`, `BASH_ENV`, and
+language-specific library paths.
 
-- `api_key`, `apikey`, `api-key`
-- `secret`, `token`, `password`
-- `credential`, `auth`
-- `openrouter`, `tavily` (provider-specific)
-- `private_key`, `privatekey`
+Tests should put distinctive secret values in both inherited and custom
+environments. Assert that logs, warnings, subprocess output, and thrown errors
+do not contain them.
 
-### API Key Encapsulation
+## Log redaction and ownership
+
+Use the logger supplied through the current context or constructor. Do not
+import a mutable process-wide logger.
 
 ```js
-// BAD: public property, leaks via JSON.stringify
-this.apiKey = apiKey;
+context.logger.warn({ component: 'worker', error }, 'Worker request failed');
+```
 
-// GOOD: private field + read-only getter
-class Agent {
-  #apiKey;
+Put errors and structured fields in the context object. Keep the message short.
+The SDK's logger facade redacts sensitive keys and known secret patterns before
+forwarding a record.
 
-  constructor() {
-    this.#apiKey = apiKey;
-  }
+A consumer-supplied logger belongs to the consumer. SDK cleanup must not close,
+flush, or reconfigure it.
 
-  get apiKey() {
-    return this.#apiKey;
-  }
+## SSRF checks
+
+`fetchUrl` accepts only HTTP and HTTPS. It rejects localhost and private,
+reserved, link-local, and unspecified addresses. For hostnames, it checks
+resolved IPv4 and IPv6 addresses and pins the connection to the validated
+address set so a second DNS lookup cannot change the target.
+
+Keep the check on every redirect. Tests should include direct IP addresses,
+hostnames that resolve to blocked addresses, IPv4-mapped IPv6, redirects to
+blocked targets, and an abort during a request.
+
+## Shell safeguards
+
+`runShell` blocks destructive root or home deletion, disk formatting and raw
+device writes, shutdown commands, input redirected into a shell, pipes into a
+shell, and evaluation of sensitive paths. It warns for commands such as
+`sudo`, `chmod`, `chown`, process termination, downloads, and device
+redirection.
+
+Do not weaken normalization when changing these rules. Glued operators such as
+`x|bash` and `x>/dev/sda` must be treated like their spaced forms. Preserve the
+environment sanitizer for both PTY and child-process execution.
+
+## Tool errors
+
+Tools throw on failure. The registry wraps ordinary exceptions in `ToolError`,
+while existing `ToolError` instances pass through unchanged.
+
+```js
+if (!target) {
+  throw new Error('A target path is required.');
 }
 ```
 
-### Secret Redaction in Logs
+Do not return a success-looking string that starts with `ERROR:`. Keep abort
+errors distinguishable so callers can stop retries and active work.
 
-```js
-// BAD: secrets visible in console
-console.error(`${msg}`, ...args);
+## Retry and timeout cleanup
 
-// GOOD: redact before logging
-const patterns = [
-  /(sk-(?:or|ant)-[a-zA-Z0-9_-]+)/g, // OpenRouter keys
-  /(tvly-[a-zA-Z0-9_-]+)/g, // Tavily keys
-  /(Bearer\s+)[a-zA-Z0-9._-]+/g, // Bearer tokens
-];
-function redact(msg) {
-  /* apply patterns */
-}
-logger.error(`${redact(msg)}`, ...args.map(redact));
-```
-
-### SSRF Protection (Web Fetch)
-
-```js
-// Block these targets:
-const BLOCKED_IPS = [
-  /^127\./,
-  /^10\./,
-  /^192\.168\./, // Private IPv4
-  /^172\.(1[6-9]|2\d|3[01])\./, // RFC 1918
-  /^::1$/,
-  /^fc00:/,
-  /^fe80:/, // IPv6 private
-];
-
-// Block protocols besides http/https
-if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-  throw new Error('Protocol not allowed');
-}
-
-// Block localhost hostnames
-if (hostname === 'localhost' || hostname === '127.0.0.1') {
-  throw new Error('Localhost not allowed');
-}
-```
-
-### Command Injection Prevention (runShell Tool)
-
-```js
-// Use blocklist for destruction-level commands
-const BLOCKED = [
-  'rm -rf /',
-  'dd if=',
-  'mkfs',
-  ':(){ :|:& };:', // fork bomb
-  'shutdown',
-  'reboot',
-  'poweroff',
-  'wget -O - | sh',
-  'curl | sh',
-];
-
-// Warn on suspicious patterns
-const SUSPICIOUS = [/\b(eval|exec|source)\s+.*(\/etc\/|\.ssh|\.env)/, /\bsudo\b/, /\bchown\b/, /\bchmod\s+[0-7]+\b/];
-```
-
-### Temp File Security
-
-```js
-// BAD: predictable filename
-path.join(os.tmpdir(), `temp${Date.now() + Math.random()}`);
-
-// GOOD: unpredictable UUID
-import crypto from 'node:crypto';
-path.join(os.tmpdir(), `.appname-${crypto.randomUUID()}`);
-```
-
----
-
-## Error Handling Patterns
-
-### Standard: Tools Throw, Agent Catches
-
-```js
-// In every tool: THROW on error, don't return string
-try {
-  // ... tool logic ...
-} catch (error) {
-  throw new Error(`Operation failed: ${error.message}`);
-}
-
-// In agent loop: CATCH the throw
-try {
-  const result = await this.tools.execute(name, input, context);
-} catch (toolErr) {
-  this.messages.push({
-    role: 'tool',
-    content: `Error: ${toolErr.message}`,
-    tool_call_id: tc.id
-  });
-  continue;
-}
-```
-
-### Circuit Breaker for Retries
+Use the shared retry and payload limits:
 
 ```js
 import { LIMITS } from '../../support/payload.js';
@@ -250,164 +156,44 @@ await retry(operation, {
 });
 ```
 
-### Empty Catch Blocks
+Always clear timers and detach abort listeners on every settlement path:
 
 ```js
-// BAD: silent failure, impossible to debug
-catch {}
+const controller = new AbortController();
+const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-// GOOD: log with context
-catch (err) { logger.debug('Operation failed:', err.message); }
-// or at minimum: add a comment explaining why it's safe to skip
-catch { /* path doesn't exist: skip silently */ }
-```
-
-### Timeout Pattern
-
-```js
-async function requestWithTimeout(url, options, timeoutMs) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timer); // Always clean up
-  }
+try {
+  return await fetch(url, { signal: controller.signal });
+} finally {
+  clearTimeout(timer);
 }
 ```
 
----
+## Review the patch
 
-## Code Review Methodology
+Check the completed diff against these questions:
 
-When reviewing changes, check these dimensions:
+- Does the test fail when the fix is removed?
+- Does the code preserve path, environment, SSRF, shell, and redaction rules?
+- Do caller aborts stop network, tool, and background work?
+- Do temporary files, processes, timers, and listeners have failure-safe
+  cleanup?
+- Are public names and provider wire names kept in their respective casing?
+- Do messages describe the present failure without leaking inputs or secrets?
+- Are imports, exports, and tests updated together?
 
-### 1. Correctness
-
-- Does the logic produce the right result?
-- Are edge cases handled (null, undefined, empty, 0)?
-- Are error paths tested?
-
-### 2. Security
-
-- Are all file paths validated with `resolveSafePath()`?
-- Are child process environment variables sanitized with `sanitizeChildEnvironment()`?
-- Are API keys private fields (not serializable)?
-- Are secrets redacted from logs?
-- Is SSRF prevented in fetch operations?
-- Are temp file names unpredictable?
-
-### 3. Regressions
-
-- Does the change break existing functionality?
-- Are imports/exports still compatible?
-- Are renamed things updated everywhere?
-
-### 4. Consistency
-
-- Does the change follow the project's established patterns?
-- Is error handling consistent with other tools?
-- Are naming conventions followed?
-
-### 5. Import/Export Verification
-
-- Every new import is actually used
-- Every renamed export has all references updated
-- No circular dependencies
-
----
-
-## Workflow Example
-
-### Starting a Remediation Phase
-
-```
-1. Read the plan file: understand the phase scope
-2. Group items by complexity:
-   - Simple (1 file, 1 change) → do yourself
-   - Complex (multiple files, coordinated changes) → delegate
-3. For complex items:
-   a. delegateTask #1: "Implement all items in this group"
-      - Give file paths, specific changes, and mark the plan file
-   b. delegateTask #2: "Review all changes in these files"
-      - Check correctness, security, edge cases, regressions
-   c. Fix findings yourself (don't re-delegate for minor fixes)
-4. Mark the plan file [x] as each item completes
-```
-
-### Reporting Findings
-
-Categorize findings as:
-
-- **✅ OK**: No issues, implementation is correct
-- **⚠️ FINDING**: Minor issue or improvement suggestion
-- **🚨 CRITICAL**: Bug or security hole that must be fixed before proceeding
-
-### When to NOT delegateTask
-
-- Single-file, single-line changes (faster to do yourself)
-- Review findings that are minor (fix directly)
-- Exploratory work where requirements aren't clear yet
-- Changes that require understanding of the full system context
-
----
-
-## Best Practices
-
-1. **Read before you write**: Always read the current file state before making changes
-2. **One change at a time**: Apply changes incrementally, not all at once
-3. **Mark as you go**: Update the plan file [x] immediately after each item
-4. **delegateTask complex, do simple**: Use sub-agents for multi-file changes, do trivial fixes yourself
-5. **Review before accepting**: Always verify delegated work with a reviewer
-6. **Fix criticals immediately**: Never leave 🚨 CRITICAL findings unresolved
-7. **Size limits are security**: Add max read/write sizes to prevent resource exhaustion
-8. **Default deny for paths**: Block everything outside project root by default
-9. **Least privilege for env**: Only pass necessary env vars to child processes
-10. **Deep freeze config**: Make configuration immutable to prevent runtime mutation
+Run the repository's exact lint, formatting, and test commands. Inspect
+`git diff --check` and the staged diff before committing.
 
 ## Resources
 
-### references/security-checklist.md
+`references/security-checklist.md` is the short review checklist.
 
-Quick-reference checklist for security hardening reviews. Covers 7 categories with checkboxes:
-
-- Path Traversal, Secret Leakage, SSRF Prevention, Command Injection, File Operations, Config & Environment
-- Print or use digitally during code review
-
-### scripts/remediation_helper.sh
-
-runShell script for automated security auditing
+`scripts/remediation_helper.sh` searches JavaScript sources for likely path,
+environment, logging, error, and SSRF problems:
 
 ```bash
-# source the script
-source scripts/remediation_helper.sh
-
-# or execute immediately
-bash scripts/remediation_helper.sh
+bash scripts/remediation_helper.sh src/
 ```
 
-**Usage examples:**
-
-```bash
-# Find missed traversal paths
-check_path_traversal src/
-
-# Check env leakage
-check_env_leakage src/
-
-# Search empty catch blocks
-check_empty_catches src/
-
-# Check all
-run_all_checks src/
-```
-
-The script scans for:
-
-- Unguarded `path.resolve()` calls
-- Missing `resolveSafePath` imports
-- `process.env` leaked to child processes
-- Public `apiKey` assignments
-- Empty catch blocks
-- Tools still returning `ERROR:` strings
-- Missing SSRF protection on fetch calls
+Treat its output as leads to inspect, not proof that a line is unsafe.

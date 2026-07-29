@@ -8,7 +8,7 @@ const mockRes = (status, bodyObj) => ({
   json: async () => bodyObj,
 });
 
-// multimodal tool message fixture
+// This fixture represents a tool message with an image attachment.
 const multimodalToolMsg = {
   role: 'tool',
   tool_call_id: 'c1',
@@ -35,7 +35,7 @@ describe('Agent: multimodal degradation', () => {
   it('retries with degraded payload after 400 and resolves to final content', async () => {
     const agent = new Agent({ apiKey: 'sk-test' });
 
-    // pre-populate a multimodal tool message in conversation history
+    // Conversation history begins with a multimodal tool result.
     agent.messages = [
       { role: 'user', content: [{ type: 'text', text: 'look at this' }] },
       {
@@ -63,10 +63,9 @@ describe('Agent: multimodal degradation', () => {
 
     const result = await agent.run('continue');
 
-    // exactly two fetch calls
     assert.strictEqual(callCount, 2, 'expected exactly two fetch calls');
 
-    // first call still has array content with image_url
+    // The original request includes the image attachment.
     const firstToolMsg = bodies[0].messages.find((m) => m.role === 'tool');
     assert.ok(Array.isArray(firstToolMsg.content), 'first request: tool content should be array');
     assert.ok(
@@ -74,7 +73,7 @@ describe('Agent: multimodal degradation', () => {
       'first request: should still have image_url part',
     );
 
-    // second call: tool message is degraded (string, no image_url)
+    // The retry replaces the image attachment with text.
     const secondToolMsg = bodies[1].messages.find((m) => m.role === 'tool');
     assert.strictEqual(typeof secondToolMsg.content, 'string', 'second request: tool content should be a string');
     assert.ok(!secondToolMsg.content.includes('image_url'), 'second request: should not contain image_url');
@@ -83,8 +82,7 @@ describe('Agent: multimodal degradation', () => {
   });
 
   it('subsequent run() sends already-degraded payload on first fetch', async () => {
-    // reuse an agent that has already degraded once (from previous test state is NOT reused
-    // since it's a fresh agent: we replicate the scenario by running through degradation first)
+    // This fresh agent first passes through the degradation path.
     const agent = new Agent({ apiKey: 'sk-test' });
 
     agent.messages = [
@@ -97,24 +95,23 @@ describe('Agent: multimodal degradation', () => {
       { ...multimodalToolMsg },
     ];
 
-    // first run to trigger degradation
     let phase = 'degrade';
     globalThis.fetch = async (_url, opts) => {
       const body = JSON.parse(opts.body);
       if (phase === 'degrade') {
         const tc = body.messages.find((m) => m.role === 'tool');
         if (tc && Array.isArray(tc.content) && tc.content.some((p) => p.type === 'image_url')) {
-          // first real call: reject to trigger degradation flag
+          // Rejecting rich content marks this run as text-only.
           return mockRes(400, { error: { message: 'unsupported content' } });
         }
-        // retry after degradation
+        // The degraded request succeeds.
         phase = 'done';
         return mockRes(200, {
           choices: [{ message: { content: 'first run done', tool_calls: null } }],
           usage: {},
         });
       }
-      // should not be reached in first run
+      // The first run ends before this branch.
       return mockRes(200, {
         choices: [{ message: { content: 'unexpected', tool_calls: null } }],
         usage: {},
@@ -123,7 +120,7 @@ describe('Agent: multimodal degradation', () => {
 
     await agent.run('continue');
 
-    // second run: mock returns 200 immediately; capture what was sent
+    // The second run captures the request and succeeds immediately.
     const secondRunBodies = [];
     globalThis.fetch = async (_url, opts) => {
       secondRunBodies.push(JSON.parse(opts.body));
@@ -137,7 +134,7 @@ describe('Agent: multimodal degradation', () => {
 
     assert.strictEqual(secondRunBodies.length, 1, 'expected exactly one fetch on second run');
     const toolMsg = secondRunBodies[0].messages.find((m) => m.role === 'tool');
-    // tool message should already be degraded (string): no image_url
+    // The degraded tool message is text and contains no image URL.
     assert.strictEqual(typeof toolMsg.content, 'string', 'second run: tool content should be pre-degraded string');
     assert.ok(!toolMsg.content.includes('image_url'), 'second run: no image_url in degraded content');
   });

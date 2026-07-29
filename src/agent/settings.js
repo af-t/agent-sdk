@@ -1,13 +1,12 @@
-// Constructor options and environment config resolved into the settings an
-// agent carries. An explicit option always wins over the environment, and both
-// are allowed to leave a setting unset so the provider applies its own default.
+// Explicit constructor options take precedence over environment configuration.
+// An unset value lets the provider apply its default.
 
 function firstDefined(option, fallback) {
   return option !== undefined ? option : fallback;
 }
 
-// Reasoning effort has three spellings, in increasing priority: the environment,
-// the `effort` option, and `reasoning.effort`.
+// Reasoning effort increases in priority from the environment to `effort` and
+// then to `reasoning.effort`.
 function resolveReasoning({ effort, reasoning }, config) {
   let resolvedEffort = config.reasoning.effort;
   if (effort !== undefined) {
@@ -41,8 +40,8 @@ function resolveReasoning({ effort, reasoning }, config) {
   };
 }
 
-// The sampling and reasoning settings, which become public agent fields so a
-// caller can change any of them between runs and forkAt() can carry them over.
+// Sampling and reasoning values are public agent fields that callers can
+// change between runs and forkAt can copy.
 export function resolveModelSettings(options, config) {
   return {
     temperature: firstDefined(options.temperature, config.temperature),
@@ -60,9 +59,7 @@ export function resolveModelSettings(options, config) {
   };
 }
 
-// Which providers OpenRouter may route a request to. `order`/`only` are also
-// accepted as top-level options, which is how they were spelled before the
-// provider object existed.
+// order and only are accepted either at the top level or inside provider.
 export function resolveProviderRouting({ order, only, provider }, config) {
   const ignore = provider?.ignore || provider?.avoid || config.provider.avoid;
   return {

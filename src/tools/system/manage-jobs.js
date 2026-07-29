@@ -1,5 +1,5 @@
 const description =
-  'Inspect and control background jobs started in this session: runShell background commands, delegateTask subagents, and scheduleWakeup timers. action="list" enumerates jobs (running only by default; pass all=true to include finished ones). action="stop" terminates a running job by its jobId. Side effect: "stop" sends SIGTERM/SIGKILL to a background process or aborts a background subagent.';
+  'List or stop background shell commands, subagents, and wake-up timers from this session. Listing shows running jobs by default. Stopping terminates a process or aborts a subagent.';
 const inputSchema = {
   type: 'object',
   additionalProperties: false,
@@ -7,16 +7,15 @@ const inputSchema = {
     action: {
       type: 'string',
       enum: ['list', 'stop'],
-      description: 'list = show background jobs; stop = terminate a running job by jobId.',
+      description: 'List jobs or stop one running job.',
     },
     jobId: {
       type: 'string',
-      description: 'Background job id (bg-xxxxx). Required when action="stop".',
+      description: 'Background job ID. Required for stop.',
     },
     all: {
       type: 'boolean',
-      description:
-        'When action="list", include finished jobs (exited/crashed/killed/done) in addition to running ones. Default false.',
+      description: 'Include finished jobs when listing. The default is false.',
     },
   },
   required: ['action'],

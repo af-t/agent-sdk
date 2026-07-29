@@ -242,7 +242,7 @@ test('Agent.replay requires tools and skillRegistry to be supplied together', as
       () => Agent.replay(rec, options),
       (error) =>
         error instanceof ConfigError &&
-        error.message === 'Agent.replay: tools and skillRegistry must be provided together',
+        error.message === 'Agent.replay requires tools and skillRegistry to be provided together',
     );
   }
 });

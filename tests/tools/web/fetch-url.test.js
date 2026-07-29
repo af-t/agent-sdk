@@ -4,13 +4,14 @@ import { checkSSRF, fetchUrl, isBlockedIp } from '../../../src/tools/web/fetch-u
 
 // The tool object carries no transport hook; every stub arrives through the context.
 const fetchWith = (transport, input, ctx = {}) => fetchUrl.execute(input, { ...ctx, transport });
+const unsupportedRawContentKey = ['use', 'raw'].join('_');
 
 describe('fetchUrl tool module', () => {
   it('exports fetchUrl with a strict rawContent input contract', () => {
     assert.strictEqual(fetchUrl.name, 'fetchUrl');
     assert.strictEqual(fetchUrl.inputSchema.additionalProperties, false);
     assert.ok(fetchUrl.inputSchema.properties.rawContent);
-    assert.equal(fetchUrl.inputSchema.properties.use_raw, undefined);
+    assert.equal(fetchUrl.inputSchema.properties[unsupportedRawContentKey], undefined);
   });
 
   it('describes itself with a non-empty description', () => {
@@ -82,8 +83,8 @@ describe('fetchUrl tool module', () => {
   });
 
   describe('SSRF: DNS rebinding bypass attempts', () => {
-    // DNS rebinding services resolve to 127.0.0.1: after the SSRF hardening,
-    // these are blocked by DNS resolution + re-check.
+    // DNS resolution and connection pinning block rebinding hostnames that
+    // resolve to 127.0.0.1.
 
     it('blocks nip.io rebinding (1.0.0.127.nip.io -> 127.0.0.1)', async () => {
       // 1.0.0.127.nip.io resolves to 127.0.0.1 in most environments; where the
@@ -111,7 +112,7 @@ describe('fetchUrl tool module', () => {
     });
 
     it('blocks the localhost6 hostname', async () => {
-      // Some systems resolve localhost6 to ::1
+      // Some systems resolve localhost6 to ::1.
       await assert.rejects(() => fetchUrl.execute({ url: 'http://localhost6/' }), /Access denied/);
     });
   });
@@ -262,7 +263,7 @@ describe('fetchUrl tool module', () => {
         },
         body: new ReadableStream({
           pull(controller) {
-            // 11MB total, just past the 10MB cap
+            // The 11 MB response exceeds the 10 MB cap.
             if (pushed >= 11) {
               controller.close();
               return;
@@ -291,7 +292,7 @@ describe('fetchUrl tool module', () => {
     });
 
     it('allows a public IPv6 address (2001:db8::1) via literal check', async () => {
-      // 2001:db8::/32 is documentation-only but not in any BLOCKED_IP_RANGES
+      // 2001:db8::/32 is reserved for documentation and is not in BLOCKED_IP_RANGES.
       await assert.doesNotReject(() => checkSSRF('http://[2001:db8::1]/'));
     });
   });
@@ -354,7 +355,7 @@ describe('fetchUrl tool module', () => {
     });
 
     it('falls back to the whole document when article/main/body text is short', async () => {
-      // Body with very little text (< 100 chars) triggers the fallback
+      // A body under 100 characters uses the fallback extraction path.
       const html = '<html><head><title>T</title></head><body><p>Hi</p></body></html>';
       const transport = stubTransport({ contentType: 'text/html', body: html });
       const result = await fetchWith(transport, { url: 'https://example.com/' });

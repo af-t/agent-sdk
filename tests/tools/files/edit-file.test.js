@@ -320,8 +320,7 @@ describe('editFile: multi-action and edge cases', () => {
   });
 
   it('multi-edit: line-based delete then line-based replace targets correct original line', async () => {
-    // Deleting lines 1-2 shifts the file by -2. original line 4 must land at
-    // adjusted position 2 in the mutated content.
+    // Deleting lines 1-2 moves original line 4 to position 2.
     await execute({
       path: TEST_FILE,
       edits: [
@@ -337,8 +336,7 @@ describe('editFile: multi-action and edge cases', () => {
   });
 
   it('multi-edit: line-based insert then line-based replace targets correct original line', async () => {
-    // Inserting after line 2 shifts the file by +1. original line 4 must land
-    // at adjusted position 5 in the mutated content.
+    // Inserting after line 2 moves original line 4 to position 5.
     await execute({
       path: TEST_FILE,
       edits: [
@@ -357,8 +355,8 @@ describe('editFile: multi-action and edge cases', () => {
   });
 
   it('multi-edit: oldText replace then line-based replace: zero delta keeps line numbers intact', async () => {
-    // oldText replace on "foo bar" → "FOO BAR": same line count, delta=0.
-    // Subsequent line-based replace at original line 4 must not be shifted.
+    // Replacing "foo bar" with "FOO BAR" keeps the same line count.
+    // The following line-based replacement still targets original line 4.
     await execute({
       path: TEST_FILE,
       edits: [
@@ -538,17 +536,17 @@ describe('editFile: fileState read-before-edit guard', () => {
     assert.deepEqual(entry.rangesRead, [[1, entry.totalLines]]);
   });
 
-  it('works without ctx.agent (legacy callers, no state checks)', async () => {
-    const legacyFile = path.join(FIXTURES, 'edit-state-legacy.txt');
-    await fs.writeFile(legacyFile, INITIAL, 'utf8');
+  it('works without ctx.agent or state checks', async () => {
+    const standaloneFile = path.join(FIXTURES, 'edit-state-standalone.txt');
+    await fs.writeFile(standaloneFile, INITIAL, 'utf8');
     try {
       const result = await execute({
-        path: legacyFile,
+        path: standaloneFile,
         edits: [{ action: 'replace', oldText: 'foo bar', newText: 'OK' }],
       });
       assert.ok(result.includes('Updated'));
     } finally {
-      await fs.rm(legacyFile, { force: true });
+      await fs.rm(standaloneFile, { force: true });
     }
   });
 
@@ -561,7 +559,7 @@ describe('editFile: fileState read-before-edit guard', () => {
       () => execute({ path: tmpFile, edits: [{ action: 'replace', startLine: 4, endLine: 5, newText: 'X' }] }, ctx),
       /lines 4-5 have not been read/,
     );
-    // an edit rejected by the guard must not touch the file
+    // The guard rejects the edit before the file changes.
     assert.equal(await fs.readFile(tmpFile, 'utf8'), INITIAL);
   });
 
@@ -580,7 +578,7 @@ describe('editFile: fileState read-before-edit guard', () => {
   it('exempts oldText edits from the range check (content-anchored)', async () => {
     const raw = await fs.readFile(tmpFile, 'utf8');
     const state = new Map();
-    // only line 1 read, but oldText targets line 2: still allowed
+    // Content-anchored edits can target line 2 when only line 1 was read.
     state.set(tmpFile, { hash: hashContent(raw), lastReadTurn: 1, rangesRead: [[1, 1]], totalLines: 5 });
     const ctx = makeCtx(state);
     const result = await execute(
@@ -605,7 +603,7 @@ describe('editFile: fileState read-before-edit guard', () => {
   it('preserves a partial read range after a successful edit (regression for 6056d27)', async () => {
     const raw = await fs.readFile(tmpFile, 'utf8');
     const state = new Map();
-    // a genuinely partial range: it must NOT become [[1, totalLines]] after the edit
+    // This partial range remains partial after the edit.
     state.set(tmpFile, { hash: hashContent(raw), lastReadTurn: 1, rangesRead: [[2, 3]], totalLines: 5 });
     const ctx = makeCtx(state);
     await execute({ path: tmpFile, edits: [{ action: 'replace', oldText: 'foo bar', newText: 'FOO' }] }, ctx);
@@ -627,7 +625,7 @@ describe('editFile: CRLF line endings', () => {
   after(() => fs.rm(crlfFile, { force: true }));
 
   beforeEach(async () => {
-    // write file with Windows CRLF line endings
+    // This fixture uses Windows CRLF line endings.
     await fs.writeFile(crlfFile, 'Line one: hello world\r\nLine two: foo bar\r\nLine three: baz qux\r\n', 'utf8');
   });
 
@@ -675,7 +673,7 @@ describe('editFile: preserves untouched content', () => {
   after(() => fs.rm(wsFile, { force: true }));
 
   beforeEach(async () => {
-    // trailing spaces are intentional (markdown hard breaks)
+    // The trailing spaces represent Markdown hard breaks.
     await fs.writeFile(wsFile, 'first line  \nmarkdown break  \ntarget line\nlast line\n', 'utf8');
   });
 
@@ -765,9 +763,8 @@ describe('editFile: mixed content-anchored and line-based edits', () => {
   beforeEach(reset);
 
   it('line-based edit above an earlier oldText edit that added lines is not shifted', async () => {
-    // Regression: an oldText edit that adds a line (here, +1 line at line 4) must not
-    // shift a later startLine edit above it. A buggy global offset previously shifted
-    // the startLine=2 target down to line 3.
+    // An oldText edit that adds a line below startLine 2 cannot move that
+    // earlier line-based target.
     await execute({
       path: TEST_FILE,
       edits: [
@@ -849,7 +846,7 @@ describe('editFile: mixed content-anchored and line-based edits', () => {
         }),
       /edit\[1\]: line 3 was changed by an earlier edit in this call/,
     );
-    // failed multi-edit must not touch the file
+    // Atomic validation leaves the file unchanged.
     assert.equal(await fs.readFile(TEST_FILE, 'utf8'), INITIAL);
   });
 
@@ -865,10 +862,10 @@ describe('editFile: mixed content-anchored and line-based edits', () => {
   });
 
   it('line-based edit on the line immediately after an oldText delete-with-trailing-newline is not falsely invalidated', async () => {
-    // The over-nulling bug: oldText 'Line two: foo bar\n' has a trailing
-    // newline, so its own split('\n').length (2) over-counts the whole-line
-    // span it actually touches (1 startLine: line 2). The buggy code nulled out
-    // line 3 too, even though line 3's content never changed.
+    // oldText 'Line two: foo bar\n' has a trailing newline, so
+    // split('\n').length over-counts the whole-line
+    // span it touches (one startLine at line 2). Line 3 remains tracked because
+    // its content is unchanged.
     await execute({
       path: TEST_FILE,
       edits: [

@@ -34,7 +34,7 @@ function captureFetch() {
 
 function findReminderPart(payload) {
   // Aggregates every <system-reminder> part on the last user message.
-  // First-turn and per-turn now produce separate blocks; tests inspect joined text.
+  // First-turn and per-turn injectors produce separate blocks, so the assertions inspect joined text.
   const userMessages = payload.messages.filter((m) => m.role === 'user');
   const userMsg = userMessages[userMessages.length - 1];
   if (!userMsg || !Array.isArray(userMsg.content)) return null;
@@ -61,7 +61,7 @@ describe('Agent: injector registry', () => {
     const agent = new Agent({ apiKey: 'sk' });
     agent.registerInjector({ name: 'demo', scope: 'per-turn', run: () => 'x' });
     agent.unregisterInjector('demo');
-    // Re-register after removal should succeed (no duplicate error).
+    // Removing the registration leaves its name available.
     agent.registerInjector({ name: 'demo', scope: 'per-turn', run: () => 'x' });
   });
 
@@ -216,7 +216,7 @@ describe('Agent: builtin date injector', () => {
     });
     await agent.run('hi');
 
-    // No other injectors registered, so no reminder block should appear at all.
+    // With no other injectors registered, the request has no reminder block.
     const part = findReminderPart(fetchStub.captured[0]);
     assert.equal(part, null, 'expected no reminder block when date is disabled and no other injectors registered');
   });
@@ -320,7 +320,7 @@ describe('Agent: cache_control preservation with injection', () => {
     assert.match(origUser.content[1].text, /PER_BODY/);
     assert.equal(origUser.content[2].text, 'hello');
 
-    // Payload sees BOTH blocks (separate parts): both from history now.
+    // The payload includes both history blocks as separate parts.
     const userMsg = fetchStub.captured[0].messages.find((m) => m.role === 'user');
     const reminderTexts = userMsg.content
       .filter((p) => typeof p.text === 'string' && p.text.startsWith('<system-reminder>'))
@@ -361,7 +361,7 @@ describe('Agent: onBeforeRequest hook', () => {
     const order = [];
     agent.onBeforeRequest((p) => {
       order.push('first');
-      // reminder present when hook fires
+      // The request hook sees the injected reminder.
       const userMsg = p.messages.find((m) => m.role === 'user');
       assert.ok(userMsg.content.some((c) => typeof c.text === 'string' && c.text.includes('INJ_TEXT')));
       p.tag_a = true;
@@ -401,7 +401,7 @@ describe('Agent: onBeforeRequest hook', () => {
     global.fetch = stubFinal('ok');
     const agent = new Agent({ apiKey: 'sk-test', injectors: { date: false } });
     agent.onBeforeRequest(() => {
-      // non-retryable so retry surfaces fast
+      // A non-retryable response makes the retry fail immediately.
       const err = new Error('hook failure');
       err.status = 400;
       throw err;
@@ -418,7 +418,7 @@ describe('Agent: onBeforeRequest hook', () => {
     global.fetch = async (_url, _opts) => {
       fetchCalls++;
       if (fetchCalls === 1) {
-        // First attempt: retryable 5xx error so retry triggers a retry.
+        // The first attempt returns a retryable 5xx response.
         return { ok: false, status: 503, json: async () => ({ error: { message: 'transient' } }) };
       }
       return makeJsonResponse({
@@ -591,7 +591,7 @@ describe('Agent: contextFiles first-turn injector', () => {
     const fetchStub = captureFetch();
     global.fetch = fetchStub;
 
-    // Create a temp project dir with AGENTS.md at cwd
+    // The temporary project exposes AGENTS.md from cwd.
     const tmpDir = path.join(fixtureDir, 'tmp-test-project');
     const origCwd = process.cwd();
     try {
@@ -647,7 +647,7 @@ describe('Agent: skillList first-turn injector', () => {
     const part = findReminderPart(fetchStub.captured[0]);
     assert.ok(part, 'expected a <system-reminder> block with skill list');
     assert.match(part.text, /Available skills/);
-    // builtin skills should appear
+    // Built-in skills remain available.
     assert.match(part.text, /code-remediation/);
     assert.match(part.text, /tmux/);
     assert.match(part.text, /using-memory/);
@@ -690,7 +690,7 @@ describe('Agent: skillList first-turn injector', () => {
 
     const part = findReminderPart(fetchStub.captured[0]);
     assert.ok(part);
-    // Find the skill list section
+    // The assertion isolates the skill-list section.
     const lines = part.text.split('\n');
     for (const line of lines) {
       if (line.startsWith('- ') && line.includes(': ')) {

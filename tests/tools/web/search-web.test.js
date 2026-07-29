@@ -275,7 +275,7 @@ describe('DuckDuckGo HTML scraping fallback', () => {
   });
 
   it('skips result when URL decode fails', async () => {
-    // Use an invalid percent-encoding that makes decodeURIComponent throw
+    // Invalid percent encoding makes decodeURIComponent reject the value.
     const html = [
       '<div class="result results_links_deep web-result">',
       '<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2F%ZZ&rut=x">Broken Link</a>',

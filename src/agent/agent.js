@@ -37,8 +37,8 @@ function resolveStoragePath(p) {
   return path.resolve(expanded);
 }
 
-// Intro line of the user message that carries rich tool output. It is also how
-// the degraded payload is recognised once the parts themselves are gone.
+// The rich-output user message keeps this marker after its attachments are
+// removed, which lets degradation replace the incomplete message.
 const RICH_CONTENT_INTRO = 'Multimodal content from the previous tool results:';
 const RICH_CONTENT_DROPPED =
   '[Multimodal content could not be displayed. This model does not support it. Do not describe or guess the content.]';
@@ -146,8 +146,7 @@ class Agent {
     this.subagents = new Map();
     this.fileState = new FileState();
     this.currentTurn = 0;
-    // Max request turns before forcing a break.
-    // Set to 0 for unlimited (used by subagents via delegateTask).
+    // Zero allows unlimited request turns, which delegated subagents use.
     if (maxTurns !== undefined) {
       this.maxTurns = maxTurns;
     } else if (config.maxTurns !== undefined) {
@@ -173,7 +172,10 @@ class Agent {
         try {
           base = fs.readFileSync(path.join(__dirname, '..', '..', 'RULE.md'), 'utf8');
         } catch {
-          this.logger.debug({ component: 'agent' }, 'No RULE.md found; using default instruction');
+          this.logger.debug(
+            { component: 'agent' },
+            'No RULE.md was found, so the agent is using its default instruction',
+          );
         }
 
         return base;
@@ -205,7 +207,6 @@ class Agent {
       ? path.join(resolvedTmpDir, `todos-${Math.random().toString(36).slice(2, 7)}.json`)
       : path.resolve(`.${this.appName}/todos.json`);
 
-    // plugins feed skills and injector
     this.skillRegistry.configure({ pluginsDir: this._pluginsDir });
 
     const _projectRoot = path.resolve(process.cwd());
@@ -217,8 +218,7 @@ class Agent {
 
     this.backgroundJobs = new BackgroundJobs({
       logger: this.logger,
-      // Without a configured tmp dir, background logs go to a per-process
-      // directory under the system temp dir, created on first use.
+      // The fallback log directory is process-scoped and created on first use.
       logDirectory: resolvedTmpDir || path.join(os.tmpdir(), `${this.appName}-${process.pid}`),
       isBusy: () => this.isRunning,
     });
@@ -273,7 +273,7 @@ class Agent {
     }
   }
 
-  // Shorthand/compatibility getter and setter for reasoning effort
+  // effort is the shorthand for reasoning.effort.
   get effort() {
     return this.reasoning?.effort ?? loadEnvironmentConfig().reasoning.effort ?? 'high';
   }
@@ -291,7 +291,7 @@ class Agent {
     }
   }
 
-  // Read-only API key: used by the delegateTask tool for sub-agents
+  // delegateTask reads the API key through this getter when it creates a child.
   get apiKey() {
     return this.#apiKey;
   }
@@ -309,13 +309,13 @@ class Agent {
     return this;
   }
 
-  // Queue a prompt for the active run loop. Non-blocking; returns false when
+  // Queue a prompt for the active run loop. The call is nonblocking and returns false when
   // idle (no loop to steer) or when the prompt is empty.
   steer(prompt) {
     return this.runLoop.steer(prompt);
   }
 
-  // Rebuild an Agent that re-drives a recorded run with no network calls.
+  // Rebuild an Agent that drives a recorded run without network calls.
   // Each turn's transport yields the recorded response via the _sendForTest
   // seam. toolMode 'replay' (default) returns recorded tool outputs (no side
   // effects re-run); 'live' re-executes the provided tools for real.
@@ -324,12 +324,12 @@ class Agent {
       throw new Error("Agent.replay requires a 'full'-level recording (record at level 'full' to capture responses)");
     }
     if (toolMode !== 'replay' && toolMode !== 'live') {
-      throw new Error(`Agent.replay: unknown toolMode '${toolMode}' (expected 'replay' or 'live')`);
+      throw new Error(`Agent.replay received unknown toolMode '${toolMode}'. Use 'replay' or 'live'.`);
     }
     const hasTools = tools !== undefined;
     const hasSkillRegistry = skillRegistry !== undefined;
     if (hasTools !== hasSkillRegistry || (hasTools && (!tools || !skillRegistry))) {
-      throw new ConfigError('Agent.replay: tools and skillRegistry must be provided together');
+      throw new ConfigError('Agent.replay requires tools and skillRegistry to be provided together');
     }
     const agent = new Agent({
       apiKey: 'replay',
@@ -347,11 +347,10 @@ class Agent {
       },
     });
 
-    // return the recorded response for the turn the loop is on
     agent._sendForTest = async () => {
       const raw = recording.responseAt(agent.currentTurn);
       if (!raw) {
-        // tag non-retryable so retry fails fast
+        // A missing recorded turn cannot succeed on retry.
         const err = new Error(`replay: no recorded response for turn ${agent.currentTurn}`);
         err.status = 400;
         throw err;
@@ -360,8 +359,8 @@ class Agent {
     };
 
     if (toolMode === 'replay') {
-      // stub any recorded tool the registry lacks, so execute()
-      // finds a tool before the override hook supplies its output
+      // The registry needs a definition before the override hook can return a
+      // recorded result for a tool that is not installed.
       const known = new Set(agent.tools.listTools().map((t) => t.name));
       for (const ev of recording.events) {
         if (ev.type !== 'toolCalls') continue;
@@ -376,7 +375,6 @@ class Agent {
           known.add(c.name);
         }
       }
-      // short-circuit each tool with its recorded output, by call id
       agent.tools.onBeforeExecute(({ context }) => {
         const rec = recording.toolResult(context?.tool_call_id);
         if (!rec) return;
@@ -391,10 +389,11 @@ class Agent {
   forkAt(recording, turn) {
     const snap = recording.snapshotAt(turn);
     if (!snap) {
-      throw new Error(`No snapshot at turn ${turn} (record at level 'snapshots' or 'full' to enable forking)`);
+      throw new Error(
+        `The recording has no snapshot at turn ${turn}. Use recording level 'snapshots' or 'full' to fork.`,
+      );
     }
-    // forward read-only pluginsDir only
-    // the fork does not inherit recording
+    // Forks share read-only plugins but do not inherit recording.
     const childLogger = this.logger.child({ component: 'agent', agent: 'fork' });
     const child = new Agent({
       apiKey: this.#apiKey,
@@ -409,7 +408,7 @@ class Agent {
       logger: childLogger,
       skillRegistry: this.skillRegistry,
     });
-    // keep in sync with sampling params in resolveModelSettings
+    // This list mirrors the public settings returned by resolveModelSettings.
     const carry = [
       'temperature',
       'topP',
@@ -459,9 +458,8 @@ class Agent {
     return this.backgroundJobs.onExit(fn);
   }
 
-  // Persistent event listener, independent of run(). Returns a disposer.
-  // Note: an active subscription makes #subscribedCallbacks non-empty, so run()
-  // selects the SSE streaming transport for its duration (intended).
+  // A persistent event listener is independent of run() and returns a disposer.
+  // An active subscription selects the SSE streaming transport for that run.
   subscribe(fn) {
     if (typeof fn !== 'function') throw new TypeError('subscribe expects a function');
     this.#subscribedCallbacks.add(fn);
@@ -491,11 +489,10 @@ class Agent {
     return this.lifecycle.onBeforeRequest(fn);
   }
 
-  // Register a stop hook. Hooks fire on a terminal (no-tool_calls) turn and may
-  // return { action: 'stop' } | undefined (allow stop), { action: 'retry' }
-  // (re-send the same payload), or { action: 'continue', prompt } (inject a
-  // user nudge and keep looping). User hooks run before the built-in recovery
-  // hook; the first non-stop decision wins. Returns a disposer.
+  // Stop hooks fire on a terminal turn with no tool calls. A hook can allow the
+  // stop, retry the same payload, or continue with a user nudge. User hooks run
+  // before built-in recovery, and the first non-stop decision wins. Registration
+  // returns a disposer.
   onStop(fn) {
     return this.lifecycle.onStop(fn);
   }
@@ -567,9 +564,9 @@ class Agent {
       if (msg.role === 'assistant') {
         return sanitizeAssistantReasoning(msg, this.dialect);
       }
-      // Tool messages carry internal history/UI metadata (durationMs) that must
-      // not reach the provider. Rebuild the exact wire shape rather than clone +
-      // delete (which deopts V8 to dictionary mode), so no internal field leaks.
+      // Tool messages carry internal history and UI metadata that cannot reach
+      // the provider. Rebuilding the wire shape prevents leaks and avoids
+      // deoptimizing cloned objects through property deletion.
       if (msg.role === 'tool') {
         const content =
           !isOpenAI && idx === messagesCopy.length - 1 && typeof msg.content === 'string'
@@ -634,7 +631,7 @@ class Agent {
       if (this.provider) {
         if (this.provider.order !== undefined) providerPayload.order = this.provider.order;
         if (this.provider.only !== undefined) providerPayload.only = this.provider.only;
-        // Wire field is `ignore` per OpenRouter provider docs
+        // OpenRouter names this wire field `ignore`.
         const ignoreVal = this.provider.ignore !== undefined ? this.provider.ignore : this.provider.avoid;
         if (ignoreVal !== undefined) providerPayload.ignore = ignoreVal;
         if (this.provider.sort !== undefined) providerPayload.sort = this.provider.sort;
@@ -652,7 +649,7 @@ class Agent {
 
     await this.lifecycle.runBeforeRequest(payload);
 
-    // A provider already refused this run's rich parts: send text only.
+    // A provider that refused rich parts receives text-only retries for this run.
     if (this.#multimodalUnsupported) degradePayload(payload);
 
     return payload;
@@ -661,16 +658,13 @@ class Agent {
   #triggerAutoWake() {
     if (this.autoWake && !this.#wakeScheduled) {
       this.#wakeScheduled = true;
-      // Coalesce multiple rapid exits into a single wake-up by deferring
-      // via queueMicrotask.  All events that arrive before the microtask
-      // fires will be queued in the background jobs and drained together.
+      // A microtask coalesces rapid exits into one wake-up and one drain.
       queueMicrotask(() => {
         this.#wakeScheduled = false;
-        if (this.isRunning) return; // a user-initiated run started in the meantime
-        if (!this.backgroundJobs.hasPendingExits()) return; // already consumed
+        if (this.isRunning) return;
+        if (!this.backgroundJobs.hasPendingExits()) return;
 
-        // Drain the queued events into messages *before* running so the
-        // model sees the reminder on the very first turn of the wake-up.
+        // The resumed run must see queued exits in its first request.
         drainBackgroundExits(this.backgroundJobs, this.messages);
 
         const notify = typeof this.autoWakeNotify === 'function' ? this.autoWakeNotify : null;
@@ -731,7 +725,7 @@ class Agent {
         }
       }
     } else if (this.backgroundJobs.logDirectory) {
-      // auto-created fallback dir; remove entirely
+      // The fallback directory belongs to this agent process.
       try {
         await rm(this.backgroundJobs.logDirectory, { recursive: true, force: true });
       } catch (err) {
@@ -777,8 +771,8 @@ class Agent {
       this.messages[this.#richUserMsgIdx] = { role: 'user', content: RICH_CONTENT_DROPPED };
       this.#richUserMsgIdx = -1;
     }
-    // Degrading left the rich user message as a bare intro line: say plainly
-    // that its attachments are gone instead of announcing content that isn't there.
+    // A bare rich-content intro becomes an explicit notice that its attachments
+    // are no longer available.
     for (const msg of payload.messages) {
       if (msg.role === 'user' && msg.content === RICH_CONTENT_INTRO) {
         msg.content = RICH_CONTENT_DROPPED;
@@ -807,8 +801,7 @@ class Agent {
     if (sent) this.#richUserMsgIdx = -1;
   }
 
-  // True once a provider has refused this run's rich content. Tools read it to
-  // stop attaching parts that would only be stripped again.
+  // Tools stop attaching rich parts once the provider has refused them for this run.
   get _multimodalUnsupported() {
     return this.#multimodalUnsupported;
   }
@@ -820,8 +813,7 @@ class Agent {
     return this.#recoveryHook;
   }
 
-  // Everything the run loop needs for one run. Live accessors where the agent
-  // may change the value mid-run (recorder, turn counter, turn limit).
+  // This context gives the run loop live access to values that can change mid-run.
   #runContext({ signal } = {}) {
     const agent = this;
     return {
@@ -850,8 +842,7 @@ class Agent {
     if (notify) {
       this.#notifyCallbacks.add(notify);
     }
-    // Re-entrancy guard: a run() call made while a loop is active enqueues its
-    // prompt for the active loop instead of starting a second one.
+    // A concurrent run() call queues its prompt on the active loop.
     if (this.runLoop.isRunning) {
       // The active loop keeps the context it started with, so there is none to pass.
       return this.runLoop.run(prompt, null);
@@ -862,10 +853,8 @@ class Agent {
     } finally {
       this.#notifyCallbacks.clear();
 
-      // Post-run safety net: if background exits arrived during the window
-      // between the run loop's last drain and this point (the loop was still
-      // running), re-trigger the autoWake mechanism so they are not stranded
-      // (fixes the "window miss" race condition).
+      // Exits can arrive after the run loop's last drain but before it becomes
+      // idle. Rechecking here prevents those events from remaining queued.
       if (this.backgroundJobs.hasPendingExits()) {
         this.#triggerAutoWake();
       }

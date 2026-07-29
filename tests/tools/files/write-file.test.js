@@ -10,7 +10,7 @@ const LARGE_TEST_FILE = path.join(FIXTURES, 'write-large-test.txt');
 describe('writeFile execute', () => {
   before(async () => {
     await fs.mkdir(FIXTURES, { recursive: true });
-    // Clean up any leftover from previous runs
+    // The setup removes stale fixture output.
     await fs.rm(TEST_FILE, { force: true });
     await fs.rm(LARGE_TEST_FILE, { force: true });
   });
@@ -55,12 +55,12 @@ describe('writeFile execute', () => {
     const content = 'y'.repeat(size);
     const result = await mod.writeFile.execute({ path: LARGE_TEST_FILE, content });
     assert.ok(result.includes('Wrote'));
-    // Verify file was written
+    // The successful result corresponds to a persisted file.
     const stat = await fs.stat(LARGE_TEST_FILE);
     assert.equal(stat.size, size);
   });
 
-  it('rejects content just over 10MB limit (10MB + 1 byte)', async () => {
+  it('rejects content one byte over the 10 MB limit', async () => {
     const mod = await import('../../../src/tools/files/write-file.js');
     const size = 10 * 1024 * 1024 + 1; // 10MB + 1 byte
     const content = 'z'.repeat(size);
@@ -70,12 +70,12 @@ describe('writeFile execute', () => {
   it('handles multi-byte UTF-8 characters near the size limit', async () => {
     const mod = await import('../../../src/tools/files/write-file.js');
     // Use 3-byte UTF-8 characters (e.g., many CJK chars are 3 bytes)
-    // Create content that's just under 10MB with multi-byte chars
+    // Multibyte content remains below the 10 MB byte limit.
     const char = '\u4e16'; // 世: 3 bytes in UTF-8
     const charBytes = Buffer.byteLength(char, 'utf8');
     assert.equal(charBytes, 3, 'Expected 3-byte UTF-8 character');
 
-    // Build a string that approaches but doesn't exceed 10MB
+    // The multibyte string remains below the 10 MB byte limit.
     const maxSize = 10 * 1024 * 1024;
     const charsNeeded = Math.floor(maxSize / charBytes);
     const content = char.repeat(charsNeeded);
@@ -87,7 +87,7 @@ describe('writeFile execute', () => {
     assert.ok(result.includes('Wrote'));
   });
 
-  it('rejects multi-byte UTF-8 content just over 10MB', async () => {
+  it('rejects multibyte UTF-8 content over 10 MB', async () => {
     const mod = await import('../../../src/tools/files/write-file.js');
     const char = '\u4e16'; // 3 bytes in UTF-8
     const charBytes = Buffer.byteLength(char, 'utf8');
@@ -104,20 +104,20 @@ describe('writeFile execute', () => {
     const mod = await import('../../../src/tools/files/write-file.js');
     const tempFiles = [];
     try {
-      // Rapidly write 20 small files to test for disk exhaustion issues
+      // Twenty concurrent small writes exercise repeated file creation.
       for (let i = 0; i < 20; i++) {
         const filePath = path.join(FIXTURES, `rapid-write-${i}.txt`);
         tempFiles.push(filePath);
         const result = await mod.writeFile.execute({ path: filePath, content: `data-${i}` });
         assert.ok(result.includes('Wrote'));
       }
-      // Verify all files exist
+      // Every concurrent write persists its file.
       for (const fp of tempFiles) {
         const content = await fs.readFile(fp, 'utf8');
         assert.ok(content.startsWith('data-'));
       }
     } finally {
-      // Cleanup
+      // The test owns these temporary files.
       for (const fp of tempFiles) {
         await fs.rm(fp, { force: true });
       }
@@ -153,8 +153,8 @@ describe('writeFile: overwrite guard and fileState', () => {
     return { agent: { fileState: new Map(), currentTurn: 7, trustedPaths: new Set([tmpDir]) } };
   }
 
-  it('writes a new file without ctx.agent (legacy callers)', async () => {
-    const file = path.join(FIXTURES, 'write-state-legacy.txt');
+  it('writes a new file without ctx.agent', async () => {
+    const file = path.join(FIXTURES, 'write-state-standalone.txt');
     await fs.rm(file, { force: true });
     try {
       const result = await mod.writeFile.execute({ path: file, content: 'hello' });

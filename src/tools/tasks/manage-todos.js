@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { resolveSafePath } from '../../support/path-safety.js';
 
-// Hard cap to prevent unbounded growth
+// The cap prevents unbounded todo-file growth.
 const MAX_TODOS = 1000;
 
 const readTodos = async (filePath, trustedPaths = new Set()) => {
@@ -11,7 +11,7 @@ const readTodos = async (filePath, trustedPaths = new Set()) => {
     const data = await fs.readFile(safePath, 'utf8');
     return JSON.parse(data);
   } catch (error) {
-    // Return empty array if file doesn't exist yet
+    // A missing file represents an empty todo list.
     if (error.code === 'ENOENT') {
       return [];
     }
@@ -42,8 +42,7 @@ const formatTodoDetails = (todo) => {
   return { status, priorityLabel, dueInfo };
 };
 
-const description =
-  'Manage a todo list to track tasks and activities. Supports add, list, complete, delete, update, and clear actions with filtering, sorting, priority, category, and due date support. Data is persisted to a JSON file.';
+const description = 'Add, list, complete, update, delete, or clear items in a JSON todo file.';
 
 const inputSchema = {
   type: 'object',
@@ -52,47 +51,46 @@ const inputSchema = {
     action: {
       type: 'string',
       enum: ['add', 'list', 'complete', 'delete', 'update', 'clear'],
-      description: 'Action to perform: add, list, complete, delete, update, or clear',
+      description: 'Operation to perform.',
     },
     text: {
       type: 'string',
-      description: 'Task text (required for "add" action)',
+      description: 'Todo text. Required for add.',
     },
     priority: {
       type: 'string',
       enum: ['low', 'medium', 'high'],
-      description: 'Task priority: low, medium, or high (default: medium)',
+      description: 'Priority. The default is medium.',
     },
     dueDate: {
       type: 'string',
-      description: 'Due date in ISO 8601 format (e.g. 2025-12-31T23:59:59Z)',
+      description: 'Due date in ISO 8601 format.',
     },
     category: {
       type: 'string',
-      description: 'Task category (e.g. "development", "meeting", "documentation")',
+      description: 'Optional category.',
     },
     id: {
       type: 'string',
-      description: 'Todo item ID (required for "complete", "delete", "update" actions)',
+      description: 'Todo ID. Required for complete, delete, and update.',
     },
     completed: {
       type: 'boolean',
-      description: 'Completion status (used with "update" action)',
+      description: 'Completion value for update.',
     },
     filter: {
       type: 'string',
       enum: ['all', 'pending', 'completed'],
-      description: 'Filter for "list" action: all, pending, or completed',
+      description: 'Filter used by list.',
     },
     sortBy: {
       type: 'string',
       enum: ['createdAt', 'priority', 'dueDate'],
-      description: 'Sort order for "list" action: createdAt, priority, or dueDate',
+      description: 'Sort field used by list.',
     },
     todoFile: {
       type: 'string',
-      description:
-        'Custom todo file path (optional, default: the agent-configured path under storagePaths.tmpDir or the appName storage namespace).',
+      description: 'Todo file path. The default comes from the agent storage configuration.',
     },
   },
   required: ['action'],
@@ -167,7 +165,7 @@ const execute = async (
             if (!b.dueDate) return -1;
             return new Date(a.dueDate) - new Date(b.dueDate);
           } else {
-            // createdAt (default): newest first
+            // createdAt sorts the newest item first.
             return new Date(b.createdAt) - new Date(a.createdAt);
           }
         });

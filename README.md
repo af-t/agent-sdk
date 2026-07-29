@@ -1,842 +1,374 @@
-# OpenRouter Agent SDK
+# Agent SDK
 
-Minimal SDK for building AI agents connected to the [OpenRouter API](https://openrouter.ai). Built with Node.js (ES modules), featuring an automatic tool execution loop, MCP support, and a skill discovery system.
+## Overview
 
-## Table of Contents
+`@af-t/agent-sdk` creates an OpenRouter-backed agent with file, shell, web,
+memory, task, and background-job tools. The SDK also exposes registries,
+recording helpers, MCP clients, and event-driven automation.
 
-- [Key Features](#key-features)
-- [Execution Flow](#execution-flow)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Basic Usage](#basic-usage)
-- [Background Jobs](#background-jobs)
-- [Integration into Your Project](#integration-into-your-project)
-- [Available Tools](#available-tools)
-- [MCP Server](#mcp-server)
-- [Skill System](#skill-system)
-- [Context Injection Layer](#context-injection-layer)
-- [Persistent Memory](#persistent-memory)
-- [Project Structure](#project-structure)
-- [API Reference](#api-reference)
-- [Contributing](#contributing)
-- [License](#license)
-
----
-
-## Key Features
-
-- **OpenRouter Integration**: Access 300+ LLM models through a single API with provider routing (order/only).
-- **Automatic Tool Execution Loop**: The agent automatically calls tools, receives results, and continues the conversation until a final answer is produced.
-- **MCP (Model Context Protocol) Support**: Connect your agent to external tools via stdio-based MCP servers.
-- **Skill Discovery System**: Discover and load skills from SKILL.md files across builtin (`src/skills/`) and plugin directories, and pull them into context with the `loadSkill` tool.
-- **Built-in Tools**: File operations (readFile, writeFile, editFile, findFiles, listFiles), shell command execution (runShell with optional **node-pty** support), web search (Tavily), web fetch (using **cheerio**), and subagent delegation.
-- **Safety & Validation**: Tool inputs are validated against their schema (type checks, required fields, enums). Path traversal protection on readFile, writeFile, editFile, listFiles, and findFiles; **.gitignore** filtering on listFiles (and on findFiles when ripgrep is available): readFile, writeFile, and editFile do _not_ consult .gitignore, so ignored files inside the project root (such as `.env`) remain accessible to the agent. Dangerous shell command detection.
-- **Retry with Exponential Backoff**: Auto-retry with jitter to handle rate limits and transient errors.
-- **Abort Signal Support**: Cancel agent execution at any point.
-- **Ephemeral Caching**: Automatic `cache_control` on the system prompt and the final user or string tool-result message in each request.
-
-## Execution Flow
-
-```
-1. createAgent()
-   |
-   ├── loadTools() ──> scan src/tools/ ──> register into ToolRegistry
-   |
-   └── new Agent({ apiKey, model, tools, ... })
-
-2. agent.run(prompt)
-   |
-   ├── push user message to message history
-   |
-   ├── LOOP:
-   |   ├── #send() ──> POST to OpenRouter /v1/chat/completions
-   |   |
-   |   ├── [response contains tool_calls?]
-   |   |   YES ──> for each tool_call:
-   |   |   |       ├── ToolRegistry.execute(name, input)
-   |   |   |       ├── input validation (required, type, enum)
-   |   |   |       └── push result as tool message
-   |   |   |
-   |   |   NO  ──> break (final answer received)
-   |   |
-   |   └── (repeat with tool results as new context)
-   |
-   └── return content of the last message
-```
-
-Simplified diagram:
-
-```
-[Prompt] --> Agent.send() --> OpenRouter API
-                                |
-                          [Tool Calls?]
-                           /        \
-                         YES        NO
-                          |          |
-                    Execute Tool    [DONE]
-                    via Registry     return
-                          |         content
-                    Push Result
-                    to Messages
-                          |
-                    <-- loop back
-```
-
-While a loop is running, additional `run()` or `steer()` calls do not start a second loop: their prompts are queued and merged into the conversation after the current turn's tool results. See [Steering a Running Agent](#steering-a-running-agent).
+The package uses ES modules and requires Node.js 22 or later.
 
 ## Installation
 
-Clone directly from the repository:
-
 ```bash
-git clone git@github.com:af-t/openrouter.git
-cd openrouter
-npm install
+npm install @af-t/agent-sdk
 ```
 
-> **Node.js ≥22 required**: the SDK uses `process.loadEnvFile()` (native in Node 22+). Earlier versions will fail to load `.env`.
-
-## Configuration
-
-Copy `.env.example` to `.env` and fill in your values:
+Set an OpenRouter API key in the environment or pass `apiKey` to
+`createAgent`:
 
 ```bash
-cp .env.example .env
+export OPENROUTER_API_KEY=sk-or-v1-your-key
 ```
 
-| Variable                                                                                                                                                                        | Required | Description                                                                                                                                                         |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OPENROUTER_API_KEY`                                                                                                                                                            | Yes      | Your OpenRouter API key                                                                                                                                             |
-| `OPENROUTER_MODEL`                                                                                                                                                              | No       | Default model (e.g. `inclusionai/ling-2.6-1t:free`)                                                                                                                 |
-| `OPENROUTER_BASE_URL`                                                                                                                                                           | No       | API base URL (default `https://openrouter.ai/api/v1`). A non-`openrouter.ai` host switches the request to the standard OpenAI chat-completions dialect (see below). |
-| `OPENROUTER_MAX_TURNS`                                                                                                                                                          | No       | Maximum number of request cycles per `run()` (default: 25)                                                                                                          |
-| `OPENROUTER_ORDER`                                                                                                                                                              | No       | Comma-separated provider priority order                                                                                                                             |
-| `OPENROUTER_ONLY`                                                                                                                                                               | No       | Restrict to specific providers only                                                                                                                                 |
-| `TAVILY_API_KEY`                                                                                                                                                                | No       | API key for searchWeb tool (from [Tavily](https://tavily.com))                                                                                                      |
-| `DEBUG`                                                                                                                                                                         | No       | Enable debug logging (`true`/`1`)                                                                                                                                   |
-| `OPENROUTER_TEMPERATURE`, `OPENROUTER_TOP_P`, `OPENROUTER_MIN_P`, `OPENROUTER_TOP_K`                                                                                            | No       | Sampling controls                                                                                                                                                   |
-| `OPENROUTER_FREQUENCY_PENALTY`, `OPENROUTER_PRESENCE_PENALTY`, `OPENROUTER_REPETITION_PENALTY`                                                                                  | No       | Repetition controls                                                                                                                                                 |
-| `OPENROUTER_SEED`, `OPENROUTER_MAX_COMPLETION_TOKENS`                                                                                                                           | No       | Deterministic seed; output token cap (`max_completion_tokens`)                                                                                                      |
-| `OPENROUTER_REASONING_EFFORT`, `OPENROUTER_REASONING_MAX_TOKENS`, `OPENROUTER_REASONING_EXCLUDE`, `OPENROUTER_REASONING_ENABLED`                                                | No       | Reasoning controls                                                                                                                                                  |
-| `OPENROUTER_PROVIDER_AVOID`, `OPENROUTER_PROVIDER_SORT`, `OPENROUTER_PROVIDER_ALLOW_FALLBACKS`, `OPENROUTER_PROVIDER_REQUIRE_PARAMETERS`, `OPENROUTER_PROVIDER_DATA_COLLECTION` | No       | Provider routing                                                                                                                                                    |
+## Quick start
 
-### API dialect
+```js
+import { createAgent } from '@af-t/agent-sdk';
 
-The dialect is auto-detected from the `baseUrl` host. An `openrouter.ai` host (or
-subdomain) uses the OpenRouter dialect: OpenRouter-only headers (`HTTP-Referer`,
-`X-OpenRouter-Title`), the `provider` routing block, the unified `reasoning`
-object, `cache_control` prompt-cache markers, and a stable `session_id` per Agent.
-Pass `sessionId` to supply that ID yourself; it helps OpenRouter keep sequential
-turns routed to a provider with a warm prompt cache. Any other host uses the standard
-OpenAI chat-completions dialect: those headers and fields are dropped, and
-`reasoning` is sent as a top-level `reasoning_effort`. Non-standard sampling
-controls (`min_p`, `top_k`, `repetition_penalty`) are still sent as extensions, so
-OpenAI-compatible servers like vLLM and llama.cpp keep working. There is no
-override flag: set `baseUrl` and the dialect follows.
-
-## Basic Usage
-
-```javascript
-import createAgent from './src/index.js';
-
-// Create agent with default config (from .env)
-const agent = await createAgent();
-
-// Or with option overrides
 const agent = await createAgent({
-  apiKey: 'sk-or-v1-...',
   model: 'anthropic/claude-sonnet-4',
 });
 
-// Simple prompt
-const result = await agent.run('What is OpenRouter?');
-console.log(result);
-
-// With notification callback (step-by-step updates)
-const result = await agent.run('Create a README.md for this project.', (update) => {
-  if (update.content) console.log('Content:', update.content);
-  if (update.reasoning) console.log('Reasoning:', update.reasoning);
-  if (update.toolCalls) console.log('Tool calls:', update.toolCalls);
-});
-
-// With abort signal
-const controller = new AbortController();
-setTimeout(() => controller.abort(), 5000); // 5 second timeout
-
 try {
-  const result = await agent.run('Process a heavy task...', null, {
-    signal: controller.signal,
-  });
-} catch (err) {
-  if (err.message === 'Agent run aborted') {
-    console.log('Cancelled by user');
-  }
-}
-
-// Check usage
-console.log(`Cost: $${agent.usage.cost}`);
-console.log(`Total tokens: ${agent.usage.tokens}`);
-```
-
-### Multi-turn Conversation
-
-The agent preserves message history automatically. Call `run()` repeatedly for multi-turn conversations:
-
-```javascript
-await agent.run('Hello, who are you?');
-await agent.run('Can you elaborate on that?'); // has context from previous turn
-
-// Reset conversation and accumulated usage counters
-agent.reset();
-```
-
-### Steering a Running Agent
-
-`run()` is re-entrancy-safe. Calling it again while a loop is in progress, or calling `steer()`, enqueues the prompt instead of starting a second loop. Queued prompts are appended to the conversation after the current turn's tool results, so you can redirect a long-running agent without waiting for it to return:
-
-```javascript
-const runPromise = agent.run('Refactor the whole codebase...');
-
-// Later, from elsewhere in your app: no need to await runPromise first:
-agent.steer('Actually, focus on src/core/ only.');
-
-if (agent.isRunning) {
-  // a run loop is currently active
-}
-
-const result = await runPromise; // resolves after the steered work finishes too
-```
-
-`steer()` returns `true` when the prompt is queued, or `false` when the agent is idle (there is no loop to steer) or the prompt is empty. When a streaming `notify` callback is set, a `{ steerApplied: { count } }` event fires each time queued prompts are drained into the conversation.
-
-### Reactive daemon
-
-`createDaemon` keeps an Agent alive as a long-running process and drives it from
-external events. Each event runs through a programmatic handler you write; the
-handler returns an action that the daemon actuates against the Agent.
-
-```js
-import createAgent, { createDaemon, createTimerSource } from '@af-t/agent-sdk';
-
-const agent = await createAgent();
-
-const daemon = createDaemon({
-  agent,
-  handler: (event, ctx) => {
-    if (event.type === 'tick') return { type: 'run', prompt: 'Do the periodic check.' };
-    return { type: 'ignore' };
-  },
-  sources: [createTimerSource({ intervalMs: 60_000, event: { type: 'tick' }, immediate: true })],
-});
-
-const stopSignal = daemon.start();
-daemon.emit({ type: 'manual', data: 'kick' }); // programmatic source, always available
-// ... later:
-await daemon.stop(); // pass { abort: true } to also cancel an in-flight run
-await agent.cleanup(); // the daemon does not own the Agent's lifecycle
-```
-
-Actions a handler may return: `{ type: 'ignore' }`, `{ type: 'run', prompt, notify? }`,
-`{ type: 'steer', prompt }`, `{ type: 'prompt', text }` (auto-routes to steer while the
-agent is running, otherwise run), and `{ type: 'abort' }`. The handler may also act on
-`ctx` directly (`ctx.agent`, `ctx.isRunning`, `ctx.emit`, `ctx.daemon`, `ctx.signal`) and
-return `null`. A source is any `{ start(emit), stop() }`; `createTimerSource` is built in.
-
-#### File-watch source
-
-`createFileWatchSource(options)` is a zero-dependency daemon source that emits filesystem-change events. It implements the same `{ start(emit), stop() }` interface as `createTimerSource`.
-
-```js
-import createAgent, { createDaemon, createFileWatchSource } from '@af-t/agent-sdk';
-
-const daemon = createDaemon({
-  agent: await createAgent(),
-  handler: (event) => ({
-    type: 'prompt',
-    text: `Changed: ${event.path ?? event.paths.join(', ')}. Re-run the tests.`,
-  }),
-  sources: [
-    createFileWatchSource({
-      paths: ['src', 'tests'],
-      recursive: true,
-      ignore: ['node_modules', '.git', '.log'],
-      coalesce: true,
-    }),
-  ],
-});
-
-daemon.start();
-```
-
-Options: `paths` (string or array, required), `recursive` (default `false`), `usePolling` + `pollIntervalMs` (use `fs.watchFile` for WSL2 `/mnt/c`, network FS, Docker mounts; default `false` / `1000`), `debounceMs` (default `50`; collapses an editor's save burst per path, and is the batch window when `coalesce` is set), `coalesce` (default `false`; `true` emits one batched `{ type, paths, changes }` event per window), `ignore` (substring list), `filter` (`(path, eventType) => boolean`), and `type` (default `'file-change'`).
-
-Per-file events are `{ type, path, eventType }`; coalesced events are `{ type, paths, changes }`. `eventType` is `'rename'` (create/delete/rename) or `'change'` (content).
-
-Note: in `usePolling` mode, directories are expanded to the files present at `start()`; files created afterward are not auto-detected (a `fs.watchFile` limitation). Use the default `fs.watch` backend, or list explicit file paths, when that matters.
-
-#### HTTP/webhook source
-
-`createHttpSource(options)` is a zero-dependency daemon source that turns inbound HTTP requests into events. It owns a `node:http` server and implements the same `{ start(emit), stop() }` interface as `createTimerSource` and `createFileWatchSource` (plus `address()` for the bound port).
-
-```js
-import createAgent, { createDaemon, createHttpSource } from '@af-t/agent-sdk';
-
-const daemon = createDaemon({
-  agent: await createAgent(),
-  sources: [
-    createHttpSource({
-      port: 8787,
-      authToken: process.env.CTRL_TOKEN,
-      hmacSecret: process.env.WEBHOOK_SECRET,
-      routes: [
-        { path: '/control', type: 'http-control', auth: 'token' },
-        { path: '/webhook', type: 'http-webhook', auth: 'hmac' },
-      ],
-    }),
-  ],
-  handler: async (event, ctx) => {
-    if (event.type === 'http-control') {
-      const out = await ctx.agent.run(event.body.prompt, null, { signal: ctx.signal });
-      event.respond(out); // replies with the agent's result
-      return null; // already handled
-    }
-    event.respond({ status: 202, body: { queued: true } });
-    return { type: 'run', prompt: `Webhook: ${JSON.stringify(event.body)}` };
-  },
-});
-
-daemon.start();
-```
-
-Options: `port` (required; integer `0`-`65535`; `0` = ephemeral, read back via `source.address()`), `host` (default `127.0.0.1`), `routes` (array of `{ path, type, auth?, method? }`; `auth` is `none`/`token`/`hmac`, `method` defaults to `POST`), `authToken` (enables `auth:'token'`), `hmacSecret` (enables `auth:'hmac'`), `signatureHeader` (default `x-signature-256`), `signaturePrefix` (default `sha256=`), `healthPath` (default `/health`, `GET` -> `200`, no auth, no event; `null` disables: a `GET` route at this path is rejected at construction since the health check would shadow it), `responseTimeoutMs` (default `30000`; finite, > 0), `bodyLimitBytes` (default `1_000_000`; finite, > 0).
-
-Each matched request emits `{ type, method, path, query, headers, body, rawBody, ip, requestId, respond }`. Call `event.respond(value)` to reply: a string -> `200 text/plain`; an object -> a `{ status, headers, body }` spec (wrap a JSON payload as `respond({ body: {...} })`). Because the daemon awaits the handler, awaiting `ctx.agent.run(...)` before calling `respond` returns the agent's result to the HTTP caller; returning a bare `run` action is fire-and-forget and will `504` unless you also call `respond`. Auth (token + HMAC) uses constant-time comparison; bind stays on `127.0.0.1` by default: terminate TLS upstream before exposing it.
-
-## Background Jobs
-
-runShell commands and delegateTask subagents can run detached from the current turn. The agent returns immediately with a job ID and log path, and delivers a `<system-reminder>` to the run loop when the job finishes. Use the `manageJobs` tool to list running jobs or stop one by its `jobId`.
-
-```javascript
-// Detach a shell command
-const jobInfo = await agent.run('Run the test suite in the background.');
-// The runShell tool was called with background:true: agent got a job ID and log path back.
-
-// Hand a subagent a task in fire-and-forget mode
-// (delegateTask tool called with background:true inside the agent's tool loop)
-```
-
-The `scheduleWakeup` tool complements background jobs: it registers a timer and returns immediately, then notifies the run loop once the delay elapses or the given time arrives, optionally tailing the logs of any watched background job:
-
-```
-scheduleWakeup({ delayMs: 30000 })              // wait 30 s
-scheduleWakeup({ at: '2026-01-01T00:00:00Z' })   // wait until a timestamp
-scheduleWakeup({ delayMs: 60000, watch: ['bg-a1b2c'] }) // wake early if job finishes
-scheduleWakeup({ delayMs: 60000, reason: 'pace check-in', prompt: 'resume the task' }) // self-documenting, custom wake text
-```
-
-Register a listener for background-job completion from outside the run loop:
-
-```javascript
-const disposer = agent.onBackgroundExit(({ id, exitCode, logPath }) => {
-  console.log(`Job ${id} finished (exit ${exitCode}). Log: ${logPath}`);
-});
-// disposer() to unsubscribe
-```
-
-Background jobs are owned by `agent.backgroundJobs`: `list()` returns every job, `get(id)` looks one up, and `kill(id)` stops a running one. All running jobs receive `SIGTERM` (then `SIGKILL` after 2 s) during `agent.cleanup()`.
-
-## Integration into Your Project
-
-### 1. Register Custom Tools
-
-You can add your own tools at any point:
-
-```javascript
-import createAgent from './src/index.js';
-
-const agent = await createAgent();
-
-// Register a single tool
-agent.registerTools({
-  name: 'GetWeather',
-  description: 'Get the current weather for a city',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      city: { type: 'string', description: 'City name' },
-    },
-    required: ['city'],
-  },
-  execute: async ({ city }) => {
-    const res = await fetch(`https://api.weather.com/${city}`);
-    const data = await res.json();
-    return JSON.stringify(data);
-  },
-});
-
-// Register multiple tools at once
-agent.registerTools([toolA, toolB, toolC]);
-```
-
-### 2. Override System Prompt
-
-The agent uses `RULE.md` if it exists in the project root, or falls back to a default prompt. You can override it:
-
-```javascript
-const agent = await createAgent();
-
-// Direct override
-agent.systemPrompt = 'You are a helpful assistant that always answers in rhymes.';
-```
-
-Or create a `RULE.md` file in your project root:
-
-```markdown
-You are an expert AI engineer helping with Node.js debugging.
-Be concise and provide runnable code examples.
-```
-
-### 3. Use the Bare Agent Class
-
-```javascript
-import Agent from './src/agent/agent.js';
-import { ToolRegistry } from './src/registries/tool-registry.js';
-
-const tools = new ToolRegistry();
-tools.register(myCustomTool);
-
-const agent = new Agent({
-  apiKey: 'sk-or-v1-...',
-  model: 'openai/gpt-4o',
-  tools,
-  systemPrompt: 'Your custom prompt here',
-});
-
-await agent.run('Execute task...');
-```
-
-### 4. Connect an MCP Server
-
-```javascript
-// Before running the agent, connect an MCP server
-await agent.tools.connectMcpServer({
-  name: 'my-server',
-  command: 'node',
-  args: ['path/to/mcp-server.js'],
-  env: { MY_API_KEY: 'xxx' },
-});
-// Tools from the MCP server are automatically registered as my_server_<toolName>
-```
-
-## Available Tools
-
-| Tool             | Category | Description                                                                           |
-| ---------------- | -------- | ------------------------------------------------------------------------------------- |
-| `readFile`       | File     | Read text, notebooks, images, PDFs & binary files                                     |
-| `writeFile`      | File     | Write a new file (overwrite)                                                          |
-| `editFile`       | File     | Edit a file with find-and-replace                                                     |
-| `findFiles`      | File     | Search for files by name or content                                                   |
-| `listFiles`      | File     | List directory contents (ls alternative)                                              |
-| `manageTodos`    | Task     | Manage a persistent todo list (add, list, complete, delete, update, clear)            |
-| `recallMemory`   | Task     | Semantic search over stored memory files (embeddings, with lexical fallback)          |
-| `runShell`       | System   | Execute shell commands (pty with fallback to child_process); supports background mode |
-| `delegateTask`   | System   | Hand a task to a sub-agent; supports background mode                                  |
-| `scheduleWakeup` | System   | Schedule a wake-up notification after a delay or at an absolute time                  |
-| `loadSkill`      | System   | List, search, and load skills                                                         |
-| `manageJobs`     | System   | List and stop background jobs (runShell / delegateTask / scheduleWakeup)              |
-| `searchWeb`      | Web      | Web search via Tavily, falling back to DuckDuckGo                                     |
-| `fetchUrl`       | Web      | Extract readable content from a URL                                                   |
-
-### Reading non-text files
-
-`readFile` classifies a file by its magic bytes (and the `.ipynb` extension) and adapts its output:
-
-- **Text**: paginated, line-numbered output (unchanged behavior).
-- **Notebooks (`.ipynb`)**: the JSON is flattened into a readable transcript of cells, with code cell outputs (stdout, results, error tracebacks) inlined.
-- **Images (PNG/JPEG/GIF/WebP)**: returned as an `image_url` content part (a base64 data URI) so vision-capable models actually see the image, preceded by a text part with the file name, dimensions, and size.
-- **PDFs**: returned as a `file` content part; models with native document support (such as Claude) read them directly, and OpenRouter can OCR for the rest.
-- **Other binary files**: a metadata summary (detected type, size) plus a hex preview of the first bytes.
-
-Images above 5 MB and PDFs above 10 MB skip the inline content part and return a metadata summary instead, to keep the context window manageable.
-
-**Automatic degradation.** Not every provider accepts non-text content parts inside a `tool`-role message. If a request is rejected with an HTTP 400 because of multimodal tool content, the agent strips the non-text parts (keeping the descriptive text part), retries once, and degrades all subsequent requests for the rest of the session.
-
-## MCP Server
-
-This SDK supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io): a standard protocol for connecting LLMs with external tools.
-
-**How it works:**
-
-1. Call `agent.tools.connectMcpServer({ name, command, args, env })`
-2. The SDK spawns the MCP server as a child process (stdio-based)
-3. Tools from the MCP server are auto-registered with `<name>_<toolName>` prefix
-4. The agent can immediately use those tools
-
-**Minimal MCP server example (simplified illustration):**
-
-```javascript
-// mcp-weather.js
-import { createInterface } from 'node:readline';
-
-const rl = createInterface({ input: process.stdin });
-rl.on('line', (line) => {
-  const msg = JSON.parse(line);
-  // handle JSON-RPC messages (initialize, tools/list, tools/call, etc.)
-  // Send response to stdout
-});
-```
-
-> For a working MCP server implementation, see `src/integrations/mcp-client.js`. A full production-ready example (e.g., weather tool) is planned for a future release.
-
-See `src/integrations/mcp-client.js` for the full implementation.
-
-## Skill System
-
-The SDK has a discovery system for skills based on `SKILL.md` files. Skills are searched in:
-
-1. **Builtin**: `src/skills/` (inside the package; the only internal source)
-2. **Plugins**: `<pluginsDir>/*/skills/**/SKILL.md`, where `pluginsDir` defaults to `.agent-sdk/plugins` (override via `storagePaths.pluginsDir`). Each plugin may also ship an `AGENTS.md`, surfaced through the `pluginInstructions` injector.
-
-Each SKILL.md contains simple `--- key: value ---` frontmatter (name, description, etc., parsed without a YAML library) and a markdown body.
-
-## Context Injection Layer
-
-Beyond the system prompt and message history, the agent exposes a **third tier** of context: short fragments injected into the last user message right before each request. This lets you ship dynamic, situational information (current date, loaded files, memory index, custom hints) without polluting the system prompt or rewriting message history.
-
-The injection layer is organised as three tiers:
-
-1. **System prompt**: stable instructions resolved once at construction (`systemPrompt` option or `RULE.md`).
-2. **First-turn injectors**: run once on the first `run()` after `reset()` or construction. Used for one-shot context like loaded files, skill catalogues, memory index.
-3. **Per-turn injectors**: run on every request. Used for live signals like the current timestamp.
-
-The combined output of both scopes is joined with `\n\n`, wrapped in a single `<system-reminder>...</system-reminder>` block, and inserted as a new text part immediately before the trailing content part of the last user message. The trailing part keeps its `cache_control: ephemeral` marker, so reminders do not break prompt caching.
-
-### Builtin Injectors
-
-| Name                 | Scope      | What it injects                                                                          |
-| -------------------- | ---------- | ---------------------------------------------------------------------------------------- |
-| `date`               | per-turn   | `Current date: YYYY-MM-DD HH:MM UTC`                                                     |
-| `contextFiles`       | first-turn | Concatenated contents of files listed in `contextFiles` option (defaults to `AGENTS.md`) |
-| `memoryIndex`        | first-turn | Contents of `<memoryDir>/MEMORY.md`, if present                                          |
-| `memoryHint`         | first-turn | Brief description of the memory directory and the available memory types                 |
-| `skillList`          | first-turn | Name + truncated description of every discovered skill                                   |
-| `pluginInstructions` | first-turn | Each plugin's `AGENTS.md`, merged into the first-turn reminder                           |
-
-Disable any builtin individually via the `injectors` option:
-
-```javascript
-const agent = await createAgent({
-  injectors: { date: false, skillList: false },
-});
-```
-
-### Registering Custom Injectors
-
-```javascript
-import os from 'node:os';
-
-const agent = await createAgent();
-
-agent.registerInjector({
-  name: 'host',
-  scope: 'per-turn',
-  run: () => `Hostname: ${os.hostname()}, load: ${os.loadavg()[0].toFixed(2)}`,
-});
-
-// Remove later if you no longer want it
-agent.unregisterInjector('host');
-```
-
-An injector function receives `{ messages, usage, turn }` and returns a `string` (sync or via `Promise`). Return `''` to skip the injector for that turn: the wrapper omits empty fragments entirely.
-
-### Mutating the Outgoing Request
-
-For lower-level access, register a `before-request` hook to inspect or mutate the final payload after injectors have been applied:
-
-```javascript
-agent.onBeforeRequest((payload) => {
-  payload.metadata = { traceId: crypto.randomUUID() };
-});
-```
-
-The hook returns a disposer. Hooks run in registration order and may be async.
-
-## Persistent Memory
-
-The SDK ships a file-based memory protocol that lets the agent persist knowledge across sessions. There are **no dedicated memory tools**: the LLM reads, writes, and edits memory files using `readFile`, `writeFile`, and `editFile`, guided by the `using-memory` skill and the first-turn memory injectors.
-
-### Configurable Storage Paths
-
-Use `storagePaths` to place memory and temporary files outside the project root (e.g. in a user-level config directory):
-
-```js
-const agent = await createAgent({
-  storagePaths: {
-    memoryDir: '~/.config/myapp/workspace/memory', // where memory files live
-    tmpDir: '~/.config/myapp/tmp', // where temp files (todos) go
-  },
-});
-```
-
-- `memoryDir`: directory for persistent memory files (`MEMORY.md` + individual memory files). Default: `.agent-sdk/memory` in the project root (derived from `appName`).
-- `tmpDir`: directory for temporary files. When set, the todo file is created as `todos-XXXXX.json` inside this directory with a random 5-character suffix per agent instance. Default: `.agent-sdk/todos.json` in the project root (derived from `appName`).
-- `pluginsDir`: directory scanned for plugins (each contributing an optional `skills/` folder and `AGENTS.md`). Default: `.agent-sdk/plugins` in the project root (derived from `appName`).
-
-The `.agent-sdk` namespace comes from the `appName` constructor option (default `agent-sdk`, env `AGENT_SDK_APP_NAME`). Set `appName` to rename every default storage directory at once (`.<appName>/memory`, `.<appName>/todos.json`, `.<appName>/plugins`, and the `<appName>-<pid>` background-log dir in the OS temp dir).
-
-Paths support `~` expansion. Both accept paths inside or outside the project root.
-
-### Cleanup
-
-Call `agent.cleanup()` to delete all files in `tmpDir` (non-recursive; the directory itself is preserved). This is consumer-managed: the SDK does not register any process exit handlers.
-
-Recommended pattern:
-
-```js
-const agent = await createAgent({ storagePaths: { tmpDir: '~/.config/myapp/tmp' } });
-
-process.on('SIGINT', async () => {
-  await agent.cleanup();
-  process.exit(0);
-});
-process.on('SIGTERM', async () => {
-  await agent.cleanup();
-  process.exit(0);
-});
-
-// Or after a one-shot run:
-try {
-  await agent.run(prompt);
+  const answer = await agent.run('Explain what this repository does.');
+  console.log(answer);
 } finally {
   await agent.cleanup();
 }
 ```
 
-### File Layout
+`run` accepts an optional event callback and an options object:
 
-```
-<cwd>/.agent-sdk/memory/
-├── MEMORY.md                       # Index: one line per memory
-├── feedback-prefers-pnpm.md        # Individual memory file
-├── project-deadline-q3.md
-└── ...
-```
+```js
+const controller = new AbortController();
 
-The directory is **not auto-created**. The agent (or you) creates files on demand. Override the location via `storagePaths.memoryDir`.
-
-### File Format
-
-Each memory file is a markdown document with simple frontmatter:
-
-```markdown
----
-name: feedback-prefers-pnpm
-description: User prefers pnpm over npm for this project.
-metadata:
-  type: feedback
----
-
-# Prefers pnpm
-
-The user explicitly asked to use pnpm for installs in this repo. Honour it for any onboarding or scripted setup instructions.
+const answer = await agent.run(
+  'Run the tests and summarize any failures.',
+  (event) => {
+    if (event.contentDelta) process.stdout.write(event.contentDelta);
+  },
+  { signal: controller.signal },
+);
 ```
 
-- `name`: kebab-case slug matching the filename (without `.md`).
-- `description`: one-line summary; used by the LLM to scan for relevance.
-- `metadata.type`: one of the registered memory types (see below).
+Provider-shaped request and response data keeps the provider's spelling.
+For example, entries in `agent.messages` and provider tool calls use snake
+case. SDK options, event envelopes, tool schemas, and metadata use camel case.
 
-`MEMORY.md` is a flat index listing each memory as `- [[slug]]: short description`. The agent updates it whenever it adds, renames, or deletes a memory.
+## Configuration
 
-### Memory Types
+Explicit options take precedence over environment variables. Numeric
+environment values are parsed as numbers. Boolean values accept `true`,
+`false`, `1`, and `0`.
 
-Four types ship by default and describe what each category is for:
+| Option                | Environment variable               | Purpose                                 |
+| --------------------- | ---------------------------------- | --------------------------------------- |
+| `apiKey`              | `OPENROUTER_API_KEY`               | OpenRouter API key                      |
+| `baseUrl`             | `OPENROUTER_BASE_URL`              | API base URL                            |
+| `model`               | `OPENROUTER_MODEL`                 | Chat model                              |
+| `appName`             | `AGENT_SDK_APP_NAME`               | Storage namespace                       |
+| `embeddingModel`      | `OPENROUTER_EMBEDDING_MODEL`       | Memory embedding model                  |
+| `maxTurns`            | `OPENROUTER_MAX_TURNS`             | Request-turn limit; `0` means unlimited |
+| `autoWake`            | `OPENROUTER_AUTO_WAKE`             | Resume after a background job exits     |
+| `emptyTurnRecovery`   | `OPENROUTER_EMPTY_TURN_RECOVERY`   | Retry empty terminal turns              |
+| `temperature`         | `OPENROUTER_TEMPERATURE`           | Sampling temperature                    |
+| `topP`                | `OPENROUTER_TOP_P`                 | Top-p sampling                          |
+| `minP`                | `OPENROUTER_MIN_P`                 | Minimum probability sampling            |
+| `topK`                | `OPENROUTER_TOP_K`                 | Top-k sampling                          |
+| `frequencyPenalty`    | `OPENROUTER_FREQUENCY_PENALTY`     | Frequency penalty                       |
+| `presencePenalty`     | `OPENROUTER_PRESENCE_PENALTY`      | Presence penalty                        |
+| `repetitionPenalty`   | `OPENROUTER_REPETITION_PENALTY`    | Repetition penalty                      |
+| `seed`                | `OPENROUTER_SEED`                  | Sampling seed                           |
+| `maxCompletionTokens` | `OPENROUTER_MAX_COMPLETION_TOKENS` | Completion token limit                  |
 
-| Type        | Purpose                                                                            |
-| ----------- | ---------------------------------------------------------------------------------- |
-| `user`      | Information about the user: role, goals, preferences.                              |
-| `feedback`  | Guidance the user gave about how to approach work.                                 |
-| `project`   | Ongoing work context, decisions, deadlines that aren't derivable from code or git. |
-| `reference` | Pointers to external systems: dashboards, tracker projects, channels.              |
+Reasoning settings can be passed together:
 
-Extend or override via `memoryTypes`:
-
-```javascript
+```js
 const agent = await createAgent({
-  memoryTypes: {
-    incident: 'Post-mortem notes and action items from production incidents.',
+  reasoning: {
+    effort: 'high',
+    maxTokens: 2048,
+    exclude: false,
+    enabled: true,
   },
 });
 ```
 
-Custom keys are merged on top of the built-in defaults.
+The matching environment variables are
+`OPENROUTER_REASONING_EFFORT`, `OPENROUTER_REASONING_MAX_TOKENS`,
+`OPENROUTER_REASONING_EXCLUDE`, and `OPENROUTER_REASONING_ENABLED`.
 
-### Protocol
+Provider routing belongs under `provider`:
 
-The `using-memory` builtin skill (see `src/skills/using-memory/SKILL.md`) covers the full protocol: when to save, when not to save, file naming, index conventions, and stale-memory handling. The LLM loads it on demand via the `loadSkill` tool when it decides memory is relevant.
-
-### Semantic Memory Recall
-
-To retrieve the full contents of memories relevant to the current task by meaning, the agent can use the `recallMemory` tool:
-
-- `query` (required) - Natural language query to search stored memories for.
-- `limit` (optional) - Maximum number of memories to return (defaults to `5`, capped at `20`).
-
-#### Retrieval Behavior
-
-1. **First-turn index unchanged:** The agent still receives the flat `MEMORY.md` index in context proactively on the first turn.
-2. **Embeddings-Primary:** If an API key is present and the OpenRouter embeddings endpoint is reachable, memories are ranked using dense vector embeddings (using cosine similarity).
-3. **Lexical Fallback:** If no API key is set or the embeddings call fails, the tool transparently falls back to a zero-dependency, deterministic lexical ranker (TF-IDF + sparse cosine similarity).
-
-#### Vector Cache Sidecar
-
-To avoid redundant API calls and keep retrieval fast, the agent caches generated vectors in a `.embeddings.json` file inside the configured memory directory.
-
-- Cached vectors are validated against a SHA-256 hash of both the file content and the embedding model ID.
-- Vectors for new or changed files are generated on demand.
-- Vectors for deleted files are pruned automatically.
-- _Recommendation:_ Consumers should add `.embeddings.json` to their `.gitignore` files.
-
-#### Configuration
-
-The embedding model can be configured using:
-
-- `OPENROUTER_EMBEDDING_MODEL` environment variable.
-- `embeddingModel` option in the `Agent` constructor.
-- **Default:** `openai/text-embedding-3-small`.
-
-## Project Structure
-
-```
-agent-sdk/
-├── src/
-│   ├── index.js                 # Entry point: createAgent() factory function
-│   ├── config/
-│   │   └── environment.js       # Configuration from environment variables
-│   ├── core/
-│   │   ├── agent.js             # Agent class: LLM interaction + tool loop
-│   │   ├── daemon.js            # Reactive daemon and its timer source
-│   │   ├── memory-recall.js     # Memory ranking behind the recallMemory tool
-│   │   ├── recording.js         # Session recording and replay
-│   │   └── trace-writer.js      # Live subagent trace logs
-│   ├── integrations/
-│   │   └── mcp-client.js        # MCP client (native stdio-based JSON-RPC)
-│   ├── registries/
-│   │   ├── tool-registry.js     # ToolRegistry: register, execute, hooks, MCP
-│   │   └── skill-registry.js    # SkillRegistry: discover & load SKILL.md
-│   ├── skills/                  # Builtin SKILL.md sets
-│   ├── support/
-│   │   ├── errors.js            # Custom error classes (ApiError, ToolError, ConfigError)
-│   │   ├── logger.js            # Structured logger and secret redaction
-│   │   ├── path-safety.js       # Canonical path containment and ignore filters
-│   │   ├── environment.js       # Secret and child-environment filtering
-│   │   ├── payload.js           # Payload limits and output helpers
-│   │   ├── retry.js             # Retrying and abort behavior
-│   │   └── http.js              # API dialects and request headers
-│   └── tools/
-│       ├── files/               # readFile, writeFile, editFile, findFiles, listFiles
-│       ├── tasks/               # manageTodos, recallMemory
-│       ├── system/              # runShell, delegateTask, manageJobs, loadSkill, scheduleWakeup
-│       └── web/                 # fetchUrl, searchWeb
-├── CONTRIBUTING.md              # Contribution guidelines
-├── LICENSE                      # MIT License
-├── package.json
-└── .env.example                 # Configuration template
+```js
+const agent = await createAgent({
+  provider: {
+    order: ['Anthropic', 'Google'],
+    only: ['Anthropic'],
+    avoid: ['Provider A'],
+    sort: 'latency',
+    allowFallbacks: true,
+    requireParameters: false,
+    dataCollection: 'deny',
+  },
+});
 ```
 
-## API Reference
+The corresponding variables are `OPENROUTER_ORDER`, `OPENROUTER_ONLY`,
+`OPENROUTER_PROVIDER_IGNORE`, `OPENROUTER_PROVIDER_SORT`,
+`OPENROUTER_PROVIDER_ALLOW_FALLBACKS`,
+`OPENROUTER_PROVIDER_REQUIRE_PARAMETERS`, and
+`OPENROUTER_PROVIDER_DATA_COLLECTION`.
 
-### `createAgent(options)`
+Use `storagePaths` to put memory, temporary state, or plugins in explicit
+locations:
 
-Factory function to create an Agent instance.
+```js
+const agent = await createAgent({
+  storagePaths: {
+    memoryDir: '/var/lib/my-agent/memory',
+    tmpDir: '/var/lib/my-agent/tmp',
+    pluginsDir: '/var/lib/my-agent/plugins',
+  },
+});
+```
 
-| Option                                                     | Type     | Description                                                                                                                                                                                                               |
-| ---------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apiKey`                                                   | string   | OpenRouter API key (overrides `.env`).                                                                                                                                                                                    |
-| `model`                                                    | string   | Model identifier.                                                                                                                                                                                                         |
-| `sessionId`                                                | string   | Stable OpenRouter session ID. A UUID is generated once per Agent when omitted; not sent in the OpenAI dialect.                                                                                                            |
-| `order`                                                    | string[] | Provider routing order.                                                                                                                                                                                                   |
-| `only`                                                     | string[] | Restrict to specific providers.                                                                                                                                                                                           |
-| `provider`                                                 | object   | Provider routing: `{ order, only, avoid, sort, allowFallbacks, requireParameters, dataCollection }`. Merged with env. Sent on the wire as OpenRouter's `ignore`/`allow_fallbacks`/`require_parameters`/`data_collection`. |
-| `temperature`, `topP`, `minP`, `topK`                      | number   | Sampling controls. Option wins over env.                                                                                                                                                                                  |
-| `frequencyPenalty`, `presencePenalty`, `repetitionPenalty` | number   | Repetition controls.                                                                                                                                                                                                      |
-| `seed`                                                     | number   | Deterministic sampling seed.                                                                                                                                                                                              |
-| `maxCompletionTokens`                                      | number   | Output token cap; sent as `max_completion_tokens`.                                                                                                                                                                        |
-| `responseFormat`                                           | object   | Passed through as `response_format` (e.g. JSON mode).                                                                                                                                                                     |
-| `stop`                                                     | string[] | Stop sequences.                                                                                                                                                                                                           |
-| `reasoning`                                                | object   | `{ effort, maxTokens, exclude, enabled }`. Maps to OpenRouter's `reasoning`.                                                                                                                                              |
-| `systemPrompt`                                             | string   | System prompt override. Falls back to `RULE.md`, then a built-in default.                                                                                                                                                 |
-| `maxTurns`                                                 | number   | Max request cycles per `run()`. Default `25`; `0` means unlimited.                                                                                                                                                        |
-| `effort`                                                   | string   | Reasoning effort: `'low'`, `'medium'`, `'high'`. Default `'high'`.                                                                                                                                                        |
-| `maxToolOutputChars`                                       | number   | Cap (in chars) for tool output before truncation. Default `50_000`.                                                                                                                                                       |
-| `restricted`                                               | boolean  | Security mode. Default `true`. Set `false` to lift path-boundary checks, env filtering, and shell command blocks (logs a warning).                                                                                        |
-| `storagePaths`                                             | object   | `{ memoryDir?, tmpDir?, pluginsDir? }`. Paths support `~` expansion. External dirs are auto-added to `trustedPaths`.                                                                                                      |
-| `contextFiles`                                             | string[] | Files to inject on the first turn. Default `['AGENTS.md']`. Missing files are skipped.                                                                                                                                    |
-| `memoryTypes`                                              | object   | Custom memory type descriptions; merged over the four built-in types.                                                                                                                                                     |
-| `injectors`                                                | object   | Disable built-in injectors by name, e.g. `{ date: false, skillList: false }`.                                                                                                                                             |
+Agents restrict file access and sanitize child-process environments by
+default. Setting `restricted: false` disables those checks and emits a warning.
 
-### `agent.run(prompt, notify?, options?)`
+## Custom logging
 
-| Parameter | Type            | Description                                    |
-| --------- | --------------- | ---------------------------------------------- |
-| `prompt`  | string or array | Prompt text or array of content parts          |
-| `notify`  | function        | Callback `({ content, reasoning, toolCalls })` |
-| `options` | object          | `{ signal: AbortSignal }`                      |
+`createAgent({ logger })` accepts a Pino-style logger directly:
 
-Calling `run()` while a loop is already active does not start a second loop: the prompt is enqueued for the running loop and the in-flight run's promise is returned, so `await` still resolves with the final result.
+```js
+import pino from 'pino';
+import { createAgent } from '@af-t/agent-sdk';
 
-### `agent.steer(prompt)`
+const agent = await createAgent({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  model: 'anthropic/claude-sonnet-4',
+  logger: pino({ level: 'info' }),
+});
+```
 
-Queue a prompt for an already-running loop without waiting for it to finish: see [Steering a Running Agent](#steering-a-running-agent). Synchronous and non-blocking; returns `true` when the prompt is queued, or `false` when the agent is idle (no loop to steer) or the prompt is empty.
+A logger must provide `debug`, `info`, `warn`, and `error` methods. A `child`
+method is optional. The SDK redacts known secrets before forwarding records.
+It never closes, flushes, reconfigures, or otherwise takes ownership of a
+consumer-supplied logger.
 
-### Agent Properties
+Without a custom logger, the SDK writes structured JSON records to the
+console. Set `DEBUG=true` to include debug records.
 
-| Property         | Type           | Description                                                     |
-| ---------------- | -------------- | --------------------------------------------------------------- |
-| `messages`       | array          | Conversation history                                            |
-| `maxTurns`       | number         | Max LLM request cycles                                          |
-| `isSubagent`     | boolean        | Whether the agent is a sub-agent                                |
-| `restricted`     | boolean        | Security mode flag (set at construction)                        |
-| `tools`          | ToolRegistry   | Registry of registered tools                                    |
-| `usage`          | object         | `{ cost: number, tokens: number }`                              |
-| `systemPrompt`   | string         | System prompt (can be overridden)                               |
-| `isRunning`      | boolean        | Whether a run loop is currently active                          |
-| `backgroundJobs` | BackgroundJobs | Background jobs started in this session (`list`, `get`, `kill`) |
-| `subagents`      | Map            | Named subagent instances keyed by ID (scoped to this agent)     |
+## Tools
 
-### Agent Methods
+An agent created without a custom registry receives these tools:
 
-| Method                                   | Description                                                                                                  |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `registerTools(tool \| tool[])`          | Register one or more tools after construction. Returns the agent.                                            |
-| `reset()`                                | Clear messages and reset accumulated usage.                                                                  |
-| `registerInjector({ name, scope, run })` | Register a context injector. `scope` is `'first-turn'` or `'per-turn'`.                                      |
-| `unregisterInjector(name)`               | Remove a previously registered injector by name.                                                             |
-| `onBeforeRequest(fn)`                    | Hook the outgoing payload. Returns a disposer.                                                               |
-| `onBackgroundExit(fn)`                   | Register a listener for background-job completion (fired when idle). Returns a disposer.                     |
-| `steer(prompt)`                          | Queue a prompt for the active run loop (non-blocking). Returns `true` if queued, `false` when idle or empty. |
-| `cleanup()`                              | Kill running background jobs, delete tmpDir files, and shut down MCP child processes.                        |
+| Tool             | Purpose                                                      |
+| ---------------- | ------------------------------------------------------------ |
+| `readFile`       | Read text and supported media, with line pagination for text |
+| `writeFile`      | Create a file or replace it when explicitly allowed          |
+| `editFile`       | Apply ordered replace, insert, or delete operations          |
+| `findFiles`      | Search file names or contents                                |
+| `listFiles`      | List a directory while respecting ignore rules               |
+| `runShell`       | Run foreground or background shell commands                  |
+| `delegateTask`   | Run a task in a subagent                                     |
+| `manageJobs`     | List or stop background jobs                                 |
+| `scheduleWakeup` | Schedule a nonblocking wake-up timer                         |
+| `manageTodos`    | Store and update a JSON todo list                            |
+| `loadSkill`      | List, search, or load instruction sets                       |
+| `recallMemory`   | Rank stored memory files for a query                         |
+| `fetchUrl`       | Fetch an HTTP or HTTPS URL with SSRF checks                  |
+| `searchWeb`      | Search through Tavily or DuckDuckGo                          |
 
-### ToolRegistry
+Every tool has exactly `{ name, description, inputSchema, execute }`.
+Register one tool or an array with `agent.registerTools`:
 
-| Method                 | Description                                   |
-| ---------------------- | --------------------------------------------- |
-| `register(tool)`       | Register a new tool into the registry         |
-| `execute(name, input)` | Execute a tool with input validation          |
-| `listTools()`          | List all registered tools                     |
-| `getDefinitions()`     | Get tool definitions formatted for OpenRouter |
-| `connectMcpServer()`   | Connect an external MCP server                |
+```js
+const wordCount = {
+  name: 'wordCount',
+  description: 'Count whitespace-separated words in text.',
+  inputSchema: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['text'],
+    properties: {
+      text: { type: 'string', description: 'Text to count.' },
+    },
+  },
+  execute: async ({ text }) => String(text.trim().split(/\s+/).filter(Boolean).length),
+};
 
-## Contributing
+agent.registerTools(wordCount);
+```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines on:
+`registerTools` returns the agent. Tool output is truncated according to the
+call's `outputLimit`, the execution context, or the agent's
+`maxToolOutputChars`, in that order.
 
-- Getting started with development
-- Code style (ES modules, async/await, `//` comments: no JSDoc)
-- Submitting changes (feature branch, pull request)
-- Reporting issues
+## MCP
 
-## License
+Connect a command-based MCP server through the agent's registry:
 
-This project is licensed under the **MIT License**: see [LICENSE](LICENSE) for the full text.
+```js
+await agent.tools.connectMcpServer({
+  name: 'local',
+  command: 'node',
+  args: ['./mcp-server.js'],
+  env: { SERVICE_URL: 'https://service.example' },
+});
 
-Copyright (c) 2026 Angga Firman.
+const tools = agent.tools.listTools();
+```
+
+Remote tools are registered as `<server>.<tool>`. The SDK validates commands,
+sanitizes the child environment, supports abort signals for tool calls, and
+closes MCP clients during `agent.cleanup()`. A supplied registry can be
+constructed directly with `ToolRegistry`.
+
+## Memory
+
+Memory files live in `.<appName>/memory` unless
+`storagePaths.memoryDir` overrides the location. `MEMORY.md` is the index
+injected on the first turn. Other Markdown files hold the full entries.
+
+The agent does not write memories automatically. It uses `readFile`,
+`writeFile`, and `editFile` for storage, while `recallMemory` ranks existing
+entries. With an API key, recall uses embeddings and caches them in
+`.embeddings.json`; if embedding fails for a reason other than cancellation,
+recall falls back to lexical ranking.
+
+See `examples/with-memory.js` and the bundled `using-memory` skill for the file
+format and index rules.
+
+## Automation
+
+`createDaemon` turns source events into agent actions. Sources implement
+`start(emit)` and `stop()`.
+
+```js
+import { createAgent, createDaemon, createTimerSource } from '@af-t/agent-sdk';
+
+const agent = await createAgent();
+const timer = createTimerSource({
+  intervalMs: 60_000,
+  event: { type: 'check' },
+  immediate: true,
+});
+
+const daemon = createDaemon({
+  agent,
+  sources: [timer],
+  handler: (event) => {
+    if (event.type === 'check') {
+      return { type: 'run', prompt: 'Check the current task queue.' };
+    }
+    return { type: 'ignore' };
+  },
+});
+
+daemon.start();
+```
+
+The package also exports `createHttpSource`, `createFileWatchSource`, and
+`createCopilot`. Stop a daemon with `await daemon.stop({ abort: true })` when
+the host shuts down.
+
+## Recording
+
+Enable recording when creating an agent:
+
+```js
+const agent = await createAgent({
+  record: {
+    dir: './sessions',
+    level: 'full',
+    redact: (record) => record,
+  },
+});
+```
+
+Levels are `events`, `snapshots`, and `full`. You can also call
+`agent.startRecording(options)` and `await agent.stopRecording()`.
+
+Load a JSON Lines recording through the public `Recording` export:
+
+```js
+import { Recording } from '@af-t/agent-sdk';
+
+const recording = await Recording.load('./sessions/session-example.jsonl');
+console.log(recording.renderTrace());
+```
+
+`recording.snapshotAt(turn)`, `requestAt(turn)`, `responseAt(turn)`, and
+`toolResult(toolCallId)` query captured data. `agent.forkAt(recording, turn)`
+creates an agent from a stored snapshot.
+
+## API reference
+
+The package exports:
+
+| Export                  | Role                                    |
+| ----------------------- | --------------------------------------- |
+| `createAgent`           | Create and configure an agent           |
+| `ToolRegistry`          | Register, execute, and connect tools    |
+| `SkillRegistry`         | Discover bundled and plugin skills      |
+| `Recording`             | Load and inspect recorded sessions      |
+| `recallMemories`        | Rank memory files without an agent      |
+| `McpClientWrapper`      | Adapt an MCP process to registry tools  |
+| `McpNativeClient`       | Send MCP JSON-RPC requests to a process |
+| `createDaemon`          | Dispatch source events to agent actions |
+| `createTimerSource`     | Emit timer events                       |
+| `createHttpSource`      | Emit authenticated HTTP events          |
+| `createFileWatchSource` | Emit debounced file events              |
+| `createCopilot`         | Supervise an agent from another agent   |
+
+Common agent methods:
+
+| Method                           | Result                                                |
+| -------------------------------- | ----------------------------------------------------- |
+| `run(prompt, notify?, options?)` | Run or steer the conversation                         |
+| `registerTools(tools)`           | Register one tool or an array                         |
+| `steer(prompt)`                  | Queue a prompt for an active run                      |
+| `subscribe(callback)`            | Subscribe to persistent events and receive a disposer |
+| `registerInjector(injector)`     | Register an injector and receive a disposer           |
+| `unregisterInjector(name)`       | Remove matching injectors                             |
+| `onBeforeRequest(callback)`      | Register a request hook and receive a disposer        |
+| `onStop(callback)`               | Register a terminal-turn hook and receive a disposer  |
+| `onBackgroundExit(callback)`     | Register a background-exit listener                   |
+| `startRecording(options)`        | Start recording and return the output path            |
+| `stopRecording()`                | Stop recording and return the output path             |
+| `forkAt(recording, turn)`        | Create an agent from a snapshot                       |
+| `reset()`                        | Clear conversation and per-run state                  |
+| `cleanup()`                      | Stop owned jobs, recorders, tools, and subagents      |
+
+Streaming and subscription callbacks receive camel-case SDK events:
+
+| Event field      | Meaning                                   |
+| ---------------- | ----------------------------------------- |
+| `contentDelta`   | New assistant text                        |
+| `reasoningDelta` | New reasoning text                        |
+| `toolStart`      | Tool name, call ID, and input             |
+| `toolEnd`        | Tool result or error and duration         |
+| `steerApplied`   | Number of queued steering prompts applied |
+| `stopRecovery`   | Empty-turn recovery attempt               |
+| `turnEnd`        | Terminal or tool-producing turn boundary  |
+
+`turnEnd` is sent to subscribers, not the one-run `notify` callback.
+
+## Project structure
+
+| Path                | Contents                                              |
+| ------------------- | ----------------------------------------------------- |
+| `src/agent/`        | Agent state, lifecycle, requests, jobs, and run loop  |
+| `src/automation/`   | Daemon, copilot, HTTP, and file-watch sources         |
+| `src/config/`       | Environment configuration                             |
+| `src/integrations/` | MCP clients                                           |
+| `src/memory/`       | Memory parsing and ranking                            |
+| `src/recording/`    | Session recording and trace rendering                 |
+| `src/registries/`   | Tool and skill registries                             |
+| `src/skills/`       | Bundled skills and helper resources                   |
+| `src/support/`      | Errors, logging, security, payload, and retry helpers |
+| `src/tools/`        | Built-in tool implementations                         |
+| `examples/`         | Runnable usage examples and sample plugins            |
+| `tests/`            | Node test suites                                      |

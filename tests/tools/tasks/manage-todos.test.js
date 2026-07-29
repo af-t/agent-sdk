@@ -103,14 +103,14 @@ describe('manageTodos tool', () => {
     await mod.execute({ action: 'add', text: 'Pending Task', todoFile: testFile });
     await mod.execute({ action: 'add', text: 'Completed Task', todoFile: testFile });
 
-    // Complete the second task (created last, appears first in default sort)
+    // The most recently created task appears first in the default sort.
     const listResult = await mod.execute({ action: 'list', todoFile: testFile });
     const ids = [...listResult.matchAll(/ID: (\w+)/g)].map((m) => m[1]);
     const completedId = ids[0];
 
     await mod.execute({ action: 'complete', id: completedId, todoFile: testFile });
 
-    // Check pending filter: should only show Pending Task
+    // The pending filter excludes the completed task.
     const pendingResult = await mod.execute({
       action: 'list',
       filter: 'pending',
@@ -161,7 +161,7 @@ describe('manageTodos tool', () => {
     assert.ok(result.includes('Todo completed'));
     assert.ok(result.includes('Task to be completed'));
 
-    // Verify in list
+    // The list reflects the completed state.
     const listAfter = await mod.execute({ action: 'list', filter: 'completed', todoFile: testFile });
     assert.ok(listAfter.includes('Task to be completed'));
   });
@@ -210,7 +210,7 @@ describe('manageTodos tool', () => {
     assert.ok(result.includes('Todo deleted'));
     assert.ok(result.includes('Task to delete'));
 
-    // Verify list is empty
+    // Clearing removes every todo.
     const listAfter = await mod.execute({ action: 'list', todoFile: testFile });
     assert.ok(listAfter.includes('No tasks'));
   });
@@ -296,7 +296,7 @@ describe('manageTodos tool', () => {
     const idMatch = listResult.match(/ID: (\w+)/);
     const firstId = idMatch[1];
 
-    // Update only the text: priority must remain HIGH
+    // Updating the text preserves the high priority.
     const result = await mod.execute({
       action: 'update',
       id: firstId,
@@ -304,7 +304,6 @@ describe('manageTodos tool', () => {
       todoFile: testFile,
     });
 
-    // Should only have changed text, not priority
     assert.ok(result.includes('Changed: text'));
     assert.ok(!result.includes('Changed: text, priority'));
     assert.ok(result.includes('Priority: [high] HIGH'));
@@ -323,7 +322,7 @@ describe('manageTodos tool', () => {
       todoFile: testFile,
     });
 
-    // High should appear before Low
+    // Descending priority places High before Low.
     const highIndex = result.indexOf('Task High');
     const lowIndex = result.indexOf('Task Low');
     assert.ok(highIndex < lowIndex);
@@ -352,7 +351,7 @@ describe('manageTodos tool', () => {
   it('rejects add once the todo limit is reached', async () => {
     await cleanup();
     const mod = (await import('../../../src/tools/tasks/manage-todos.js')).manageTodos;
-    // Write 1000 todos directly to avoid slow loop
+    // Direct fixture setup avoids one thousand tool calls.
     const todos = Array.from({ length: 1000 }, (_, i) => ({
       id: `id${i}`,
       text: `Task ${i}`,

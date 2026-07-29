@@ -2,7 +2,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { ConfigError } from '../src/support/errors.js';
 
-// Ensure env is available for createAgent
+// createAgent reads this key from the environment.
 process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || 'sk-test-key-for-index';
 
 describe('createAgent', () => {
@@ -20,7 +20,7 @@ describe('createAgent', () => {
   });
 
   after(() => {
-    // cleanup only if we set it
+    // Restore only the environment value owned by this test.
     if (!process.env.OPENROUTER_API_KEY) {
       delete process.env.OPENROUTER_API_KEY;
     }
@@ -195,14 +195,14 @@ describe('createAgent', () => {
     assert(agent1.tools !== agent2.tools, 'Each agent should have its own ToolRegistry');
   });
 
-  it('readFile actually executes and returns file content', async () => {
+  it('readFile executes and returns file content', async () => {
     const agent = await createAgent();
     const result = await agent.tools.execute('readFile', { path: process.cwd() + '/package.json' }, { agent });
     assert.strictEqual(typeof result, 'string');
     assert.ok(result.includes('openrouter'), 'result should contain openrouter from package.json');
   });
 
-  it('listFiles actually executes and returns directory listing', async () => {
+  it('listFiles executes and returns a directory listing', async () => {
     const agent = await createAgent();
     const result = await agent.tools.execute('listFiles', { path: process.cwd() }, { agent });
     assert.strictEqual(typeof result, 'string');

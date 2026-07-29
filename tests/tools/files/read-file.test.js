@@ -37,9 +37,9 @@ describe('readFile execute', () => {
     const result = await mod.readFile.execute({ path: TEST_FILE, startLine: 5, endLine: 10 });
     assert.ok(result.includes('     5\tLine 5'));
     assert.ok(result.includes('     9\tLine 9'));
-    // line 10 is included since slice = lines[4:10) = lines 5 through 10
+    // The half-open slice from 4 through 10 includes source lines 5 through 10.
     assert.ok(result.includes('    10\tLine 10'));
-    // truncated indicator appears because not all lines were read (endLine < total)
+    // The result marks truncation because endLine is below the total line count.
     assert.ok(result.includes('[... truncated]'));
   });
 
@@ -52,7 +52,7 @@ describe('readFile execute', () => {
 
   it('shows truncated indicator when not reading entire file', async () => {
     const mod = await import('../../../src/tools/files/read-file.js');
-    // 20 lines total, but reading startLine=1,endLine=5 means only first 5 lines
+    // The request reads the first five lines of a 20-line file.
     const result = await mod.readFile.execute({ path: TEST_FILE, startLine: 1, endLine: 5 });
     assert.ok(result.includes('[... truncated]'));
   });
@@ -148,10 +148,10 @@ describe('readFile: image branch', () => {
     const os = await import('node:os');
     tmpDir = await fs.mkdtemp(path.join(os.default.tmpdir(), 'read-image-test-'));
 
-    // minimal valid PNG: signature(8) + IHDR chunk(4 len + 4 type + 13 data + 4 crc = 25)
-    // width=64 at bytes 16-19, height=32 at bytes 20-23
+    // This minimal PNG combines an eight-byte signature with a 25-byte IHDR chunk.
+    // Width occupies bytes 16 through 19, and height occupies bytes 20 through 23.
     const png = Buffer.alloc(8 + 4 + 4 + 13 + 4);
-    // PNG signature
+    // The first eight bytes are the PNG signature.
     png[0] = 0x89;
     png[1] = 0x50;
     png[2] = 0x4e;
@@ -160,19 +160,19 @@ describe('readFile: image branch', () => {
     png[5] = 0x0a;
     png[6] = 0x1a;
     png[7] = 0x0a;
-    // IHDR chunk length = 13
+    // The IHDR data length is 13 bytes.
     png.writeUInt32BE(13, 8);
-    // chunk type = IHDR
+    // The chunk type is IHDR.
     png.write('IHDR', 12, 'ascii');
-    // width = 64
+    // The encoded width is 64.
     png.writeUInt32BE(64, 16);
-    // height = 32
+    // The encoded height is 32.
     png.writeUInt32BE(32, 20);
 
     pngFile = path.join(tmpDir, 'test.png');
     await fs.writeFile(pngFile, png);
 
-    // oversized PNG: just over 5MB starting with PNG signature
+    // This PNG starts with a valid signature but exceeds 5 MB.
     const large = Buffer.alloc(5 * 1024 * 1024 + 1);
     large[0] = 0x89;
     large[1] = 0x50;
@@ -249,7 +249,7 @@ describe('readFile: binary branch', () => {
     const os = await import('node:os');
     tmpDir = await fs.mkdtemp(path.join(os.default.tmpdir(), 'read-binary-test-'));
 
-    // NUL bytes guarantee binary detection
+    // NUL bytes make the binary classification deterministic.
     const buf = Buffer.from([0x00, 0x01, 0x02, 0xff, 0x00, 0xfe, 0xfd, 0x03]);
     binaryFile = path.join(tmpDir, 'test.bin');
     await fs.writeFile(binaryFile, buf);
@@ -347,11 +347,11 @@ describe('readFile: fileState caching', () => {
   it('implements exact-offset caching logic where identical offsets trigger cache and changed offsets or file updates do not', async () => {
     const ctx = makeCtx({ turn: 1 });
 
-    // Ensure clean initial content
+    // Each step starts from known file content.
     const originalContent = Array.from({ length: 20 }, (_, i) => `Line ${i + 1}`).join('\n');
     await fs.writeFile(tmpFile, originalContent, 'utf8');
 
-    // 1. First read of the file should return the content normally
+    // The first read returns the file content.
     const res1 = await mod.readFile.execute({ path: tmpFile, startLine: 1, endLine: 10 }, ctx);
     assert.ok(!res1.startsWith('[CACHED]'), 'initial read should return content normally');
     assert.ok(res1.includes('     1\tLine 1'));
@@ -377,20 +377,20 @@ describe('readFile: fileState caching', () => {
       assert.ok(!res5.startsWith('[CACHED]'), 'read after editing the file should return content normally');
       assert.ok(res5.includes('     2\tLine 2'));
     } finally {
-      // restore file
+      // Restore the shared fixture after the mutation.
       await fs.writeFile(tmpFile, originalContent, 'utf8');
     }
   });
 
-  it('works without ctx.agent (legacy callers)', async () => {
-    const legacyFile = path.join(FIXTURES, 'read-state-legacy.txt');
-    await fs.writeFile(legacyFile, 'a\nb\nc\n', 'utf8');
+  it('works without ctx.agent', async () => {
+    const standaloneFile = path.join(FIXTURES, 'read-state-standalone.txt');
+    await fs.writeFile(standaloneFile, 'a\nb\nc\n', 'utf8');
     try {
-      const result = await mod.readFile.execute({ path: legacyFile });
+      const result = await mod.readFile.execute({ path: standaloneFile });
       assert.ok(result.includes('     1\ta'));
       assert.ok(result.includes('     3\tc'));
     } finally {
-      await fs.rm(legacyFile, { force: true });
+      await fs.rm(standaloneFile, { force: true });
     }
   });
 });
@@ -405,19 +405,19 @@ describe('readFile: video and audio branch', () => {
     const os = await import('node:os');
     tmpDir = await fs.mkdtemp(path.join(os.default.tmpdir(), 'read-media-test-'));
 
-    // MP4 signature at offset 4: "ftyp"
+    // An MP4 ftyp signature starts at offset 4.
     const mp4Bytes = Buffer.alloc(16);
     mp4Bytes.write('ftyp', 4, 'ascii');
     mp4File = path.join(tmpDir, 'test.mp4');
     await fs.writeFile(mp4File, mp4Bytes);
 
-    // Oversized MP4
+    // This MP4 exceeds the inline limit.
     const largeMp4 = Buffer.alloc(25 * 1024 * 1024 + 1);
     largeMp4.write('ftyp', 4, 'ascii');
     oversizedMp4File = path.join(tmpDir, 'large.mp4');
     await fs.writeFile(oversizedMp4File, largeMp4);
 
-    // MP3 ID3 signature: "ID3"
+    // This MP3 begins with an ID3 signature.
     const mp3Bytes = Buffer.alloc(8);
     mp3Bytes.write('ID3', 0, 'ascii');
     mp3File = path.join(tmpDir, 'test.mp3');

@@ -10,8 +10,8 @@ const inputSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    path: { type: 'string', description: 'Destination path' },
-    content: { type: 'string', description: 'Full content to write' },
+    path: { type: 'string', description: 'Destination path.' },
+    content: { type: 'string', description: 'Complete file content.' },
     overwrite: {
       type: 'boolean',
       description: 'Allow a full replacement of an existing file.',
